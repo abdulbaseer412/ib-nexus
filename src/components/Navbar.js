@@ -22,7 +22,7 @@ export default function Navbar() {
                 <a href="#" className="text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white">
                     Notes
                 </a>
-                <a href="#" className="text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white">
+                <a href="/login" className="text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white">
                     Login
                 </a>
 
