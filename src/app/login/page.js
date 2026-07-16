@@ -1,18 +1,32 @@
 "use client";
 
-import { createClient } from "@/utils/supabase";
+import { useSearchParams } from "next/navigation";
+// (add this import at the very top of the file with your other imports)
+
+import { createClient } from "@/utils/supabase-browser";
 import { useState } from "react";
 
 export default function LoginPage() {
   const supabase = createClient();
+  console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+  
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
 
+  const searchParams = useSearchParams();
+  const urlError = searchParams.get("error");
+
   const handleGoogleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
+    if (error) {
+      alert("Google login error: " + error.message);
+      console.error(error);
+    } else {
+      console.log("Redirecting to:", data.url);
+    }
   };
 
   const handleEmailLogin = async (e) => {
@@ -21,6 +35,10 @@ export default function LoginPage() {
       email,
       options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
+    if (error) {
+      alert("Email login error: " + error.message);
+      console.error(error);
+    }
     setMessage(error ? error.message : "Check your email for a login link!");
   };
 
@@ -59,6 +77,10 @@ export default function LoginPage() {
 
         {message && (
           <p className="text-center text-sm text-gray-600 dark:text-gray-300">{message}</p>
+        )}
+
+        {urlError && (
+          <p className="text-center text-sm text-red-500">{decodeURIComponent(urlError)}</p>
         )}
       </div>
     </main>
