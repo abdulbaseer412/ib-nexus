@@ -6,6 +6,17 @@ import { resolvePostAuthRedirect, resolveSignInError } from "@/app/auth/actions"
 import { validateEmail } from "@/lib/validation";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { debugLog } from "@/utils/debug-log";
+
+function safeJson(v) {
+  try {
+    return JSON.parse(JSON.stringify(v));
+  } catch {
+    return { __unserializable: true };
+  }
+}
+
+
 import AuthDivider from "@/components/auth/AuthDivider";
 import FormMessage from "@/components/auth/FormMessage";
 import GoogleButton from "@/components/auth/GoogleButton";
@@ -50,40 +61,72 @@ export default function SignInForm() {
 
   async function handleSignIn(e) {
     e.preventDefault();
-    if (loading) return;
+    if (loading) {
+      debugLog("signin.handleSignIn.ignored_loading", {});
+      return;
+    }
     resetError();
+
+    debugLog("signin.handleSignIn.start", { emailPresent: !!email, next: searchParams.get("next") });
+
 
     const emailResult = validateEmail(email);
     if (!emailResult.valid) {
+      debugLog("signin.handleSignIn.validation.email_invalid", { error: emailResult.error });
       setError(emailResult.error);
       setErrorType("validation");
       return;
     }
 
+
     if (!password) {
+      debugLog("signin.handleSignIn.validation.password_missing");
       setError("Password is required.");
       setErrorType("validation");
       return;
     }
 
+
     setLoading(true);
+    debugLog("signin.handleSignIn.loading_true");
+
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: emailResult.value,
       password,
     });
 
+    debugLog("signin.handleSignIn.supabase_response", {
+      signInError: signInError ? safeJson(signInError) : null,
+    });
+
+
     if (signInError) {
+      debugLog("signin.handleSignIn.signInError.branch", {});
       const resolved = await resolveSignInError(emailResult.value);
+      debugLog("signin.handleSignIn.resolved", safeJson(resolved));
       setError(resolved.message);
       setErrorType(resolved.type);
       setErrorProviders(resolved.providers ?? []);
       setLoading(false);
+      debugLog("signin.handleSignIn.loading_false.after_error");
       return;
     }
 
-    await redirectAfterAuth();
+
+    debugLog("signin.handleSignIn.success_branch.redirect");
+    try {
+      await redirectAfterAuth();
+    } catch (err) {
+      debugLog("signin.handleSignIn.redirect_after_auth.exception", safeJson(err));
+      setError("Sign-in failed. Please try again.");
+      setErrorType("validation");
+    } finally {
+      setLoading(false);
+      debugLog("signin.handleSignIn.loading_false.finally");
+    }
   }
+
 
   // ── Provider-specific full-page states ──────────────────────────────────────
 

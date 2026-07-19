@@ -13,6 +13,8 @@ import { isOAuthOnly, hasPasswordLogin } from "@/lib/auth-providers";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { debugLogServer } from "@/utils/debug-log-server";
+
 
 async function getOrigin() {
   const headersList = await headers();

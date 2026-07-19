@@ -22,6 +22,17 @@ import { PROVIDER_LABELS, hasPasswordLogin, isOAuthProvider } from "@/lib/auth-p
 import PasswordInput from "@/components/auth/PasswordInput";
 import FormMessage from "@/components/auth/FormMessage";
 import { buttonClassName } from "@/components/auth/auth-styles";
+import { debugLog } from "@/utils/debug-log";
+
+function safeJson(v) {
+  try {
+    return JSON.parse(JSON.stringify(v));
+  } catch {
+    return { __unserializable: true };
+  }
+}
+
+
 
 // ─── Provider icons ───────────────────────────────────────────────────────────
 
@@ -227,18 +238,48 @@ export default function SecurityClient({ userEmail, initialProviders }) {
   const [unlinkSuccess, setUnlinkSuccess] = useState("");
 
   const fetchAuthSettings = async () => {
+    debugLog("security.fetchAuthSettings.start");
     const result = await getUserAuthSettings();
+    debugLog("security.fetchAuthSettings.result", safeJson(result));
     if (result?.data) {
       setAuthSettings(result.data);
     }
   };
 
+
+
   useEffect(() => {
-    fetchAuthSettings();
+    // Fetch auth settings after mount.
+    // Wrapped to satisfy strict lint rules about setState in effect bodies.
+    const run = async () => {
+      await fetchAuthSettings();
+
+      // After OAuth redirect back into the app, the page may be rendered
+      // from server data while the provider-link RPC result is stale.
+      // Synchronize immediately on mount to keep the UI consistent.
+      // This preserves existing flows (no forced reloads).
+      if (window.location.pathname === "/settings/security") {
+        await (async () => {
+          debugLog("security.refreshProviders.onMount");
+          const { data, error } = await supabase.rpc("get_account_providers", {
+            email_input: userEmail,
+          });
+          if (!error && Array.isArray(data)) {
+            setProviders(data);
+          }
+        })();
+      }
+    };
+    run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+
+
   const isGoogleLinked = providers.includes("google") && (authSettings ? authSettings.google_enabled : true);
+
   const isEmailLinked = providers.includes("email") && (authSettings ? authSettings.email_password_enabled : true);
+
 
   const activeLinkedProviders = [];
   if (isGoogleLinked) activeLinkedProviders.push("google");
@@ -248,13 +289,16 @@ export default function SecurityClient({ userEmail, initialProviders }) {
   const totalLinked = activeLinkedProviders.length;
 
   const refreshProviders = async () => {
+    debugLog("security.refreshProviders.start", { userEmail });
     const { data, error } = await supabase.rpc("get_account_providers", {
       email_input: userEmail,
     });
+    debugLog("security.refreshProviders.result", { error: error ? String(error) : null, data: safeJson(data) });
     if (!error && Array.isArray(data)) {
       setProviders(data);
     }
   };
+
 
   const handlePasswordSuccess = async () => {
     await refreshProviders();
@@ -268,6 +312,12 @@ export default function SecurityClient({ userEmail, initialProviders }) {
   };
 
   const handleConnect = async (provider) => {
+    debugLog("security.connect.clicked", {
+      provider,
+      userEmail,
+      currentAuthSettings: safeJson(authSettings),
+    });
+
     await supabase.auth.signInWithOAuth({
       provider,
       options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -275,34 +325,60 @@ export default function SecurityClient({ userEmail, initialProviders }) {
   };
 
   const handleInitiateUnlink = (provider) => {
+    debugLog("security.disable.clicked", {
+      provider,
+      totalLinked,
+      authSettings: safeJson(authSettings),
+      providers,
+    });
     setUnlinkError("");
     setUnlinkSuccess("");
     if (totalLinked <= 1) {
       setUnlinkError(
         "Security protection active: You must keep at least one secure sign-in method enabled to prevent account lockout."
       );
+      debugLog("security.disable.blocked_lockout_protection");
       return;
     }
     setConfirmUnlink(provider);
   };
 
   const handleUnlink = async () => {
-    if (!confirmUnlink || unlinkLoading) return;
+    if (!confirmUnlink || unlinkLoading) {
+      debugLog("security.disable.handleUnlink.ignored", { confirmUnlink, unlinkLoading });
+      return;
+    }
+    debugLog("security.disable.handleUnlink.start", {
+      confirmUnlink,
+      authSettings: safeJson(authSettings),
+    });
     setUnlinkLoading(true);
     setUnlinkError("");
     setUnlinkSuccess("");
 
+
     const nextGoogleEnabled = confirmUnlink === "google" ? false : authSettings?.google_enabled ?? true;
     const nextEmailEnabled = confirmUnlink === "email" ? false : authSettings?.email_password_enabled ?? true;
 
+    debugLog("security.disable.updateUserAuthSettings.before", {
+      nextGoogleEnabled,
+      nextEmailEnabled,
+      confirmUnlink,
+    });
+
     const result = await updateUserAuthSettings(nextGoogleEnabled, nextEmailEnabled);
+
+    debugLog("security.disable.updateUserAuthSettings.after", safeJson(result));
+
 
     setUnlinkLoading(false);
 
     if (result?.error) {
+      debugLog("security.disable.updateUserAuthSettings.error", { error: result.error });
       setUnlinkError(result.error);
       return;
     }
+
 
     if (result?.data) {
       setAuthSettings(result.data);

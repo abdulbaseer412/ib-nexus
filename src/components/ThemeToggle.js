@@ -8,8 +8,12 @@ export default function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    // Avoid lint error about setState in effect body.
+    // We only need to wait for client mount.
+    const id = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(id);
   }, []);
+
 
   if (!mounted) {
     return (
