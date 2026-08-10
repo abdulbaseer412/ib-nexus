@@ -15,11 +15,11 @@ function getStrength(password) {
   if (/[0-9]/.test(password)) score++;
   if (/[^a-zA-Z0-9]/.test(password)) score++;
 
-  if (score <= 1) return { score, label: "Weak", color: "bg-red-500" };
-  if (score === 2) return { score, label: "Fair", color: "bg-orange-400" };
-  if (score === 3) return { score, label: "Good", color: "bg-yellow-400" };
-  if (score === 4) return { score, label: "Strong", color: "bg-green-500" };
-  return { score, label: "Very strong", color: "bg-green-600" };
+  if (score <= 1) return { score, label: "Weak", color: "bg-danger" };
+  if (score === 2) return { score, label: "Fair", color: "bg-warning" };
+  if (score === 3) return { score, label: "Good", color: "bg-warning" };
+  if (score === 4) return { score, label: "Strong", color: "bg-success" };
+  return { score, label: "Very strong", color: "bg-success" };
 }
 
 // ─── Eye icons ───────────────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ export default function PasswordInput({
           aria-label={visible ? "Hide password" : "Show password"}
           aria-controls={inputId}
           // Positioned inside the input on the right
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 rounded"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-primary transition-colors disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
         >
           {visible ? <EyeOffIcon /> : <EyeIcon />}
         </button>
@@ -129,22 +129,22 @@ export default function PasswordInput({
                 className={`h-1 flex-1 rounded-full transition-all duration-300 ${
                   bar <= strength.score
                     ? strength.color
-                    : "bg-gray-200 dark:bg-gray-700"
+                    : "bg-border"
                 }`}
               />
             ))}
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
+          <p className="text-xs text-muted">
             Strength:{" "}
             <span
               className={
                 strength.score <= 1
-                  ? "text-red-500"
+                  ? "text-danger"
                   : strength.score === 2
-                  ? "text-orange-400"
+                  ? "text-warning"
                   : strength.score === 3
-                  ? "text-yellow-500"
-                  : "text-green-500"
+                  ? "text-warning"
+                  : "text-success"
               }
             >
               {strength.label}

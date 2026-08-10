@@ -18,12 +18,43 @@ function isAuthRoute(pathname) {
 export async function middleware(request) {
   let response = NextResponse.next({ request });
   const { pathname } = request.nextUrl;
+  const isOAuthCallback = pathname === "/auth/callback";
+
+  // Route prefetches are speculative requests. Running a remote auth check and
+  // a database query for each one puts network work directly on the eventual
+  // navigation path. Protected server layouts still enforce access when a
+  // route is rendered, so a prefetch can safely use the cached route payload.
+  if (
+    request.headers.get("next-router-prefetch") === "1" ||
+    request.headers.get("purpose") === "prefetch"
+  ) {
+    return response;
+  }
+
+  if (isOAuthCallback) {
+    console.log("[MIDDLEWARE:OAUTH-CALLBACK:ENTRY]", {
+      url: request.url,
+      cookieNames: request.cookies.getAll().map(({ name }) => name),
+      pkceVerifierCookies: request.cookies
+        .getAll()
+        .filter(({ name }) => name.includes("code-verifier"))
+        .map(({ name, value }) => ({ name, exists: Boolean(value), valueLength: value?.length ?? 0 })),
+    });
+  }
 
   const supabase = createMiddlewareClient(request, response);
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  if (isOAuthCallback) {
+    console.log("[MIDDLEWARE:OAUTH-CALLBACK:AFTER-GET-USER]", {
+      responseCookieMutations: response.cookies
+        .getAll()
+        .map(({ name, value, ...options }) => ({ name, valueLength: value?.length ?? 0, options })),
+    });
+  }
 
   const redirectWithCookies = (url) => {
     const redirectResponse = NextResponse.redirect(url);
@@ -40,31 +71,10 @@ export async function middleware(request) {
     return redirectWithCookies(loginUrl);
   }
 
-  if (user && (isProtectedRoute(pathname) || isAuthRoute(pathname))) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("onboarding_completed, display_name, ib_program")
-      .eq("id", user.id)
-      .maybeSingle();
-
-    const onboardingComplete = isOnboardingComplete(profile);
-
-    if (isAuthRoute(pathname)) {
-      const destination = onboardingComplete ? "/dashboard" : "/onboarding";
-      return redirectWithCookies(new URL(destination, request.url));
-    }
-
-    if (pathname.startsWith("/onboarding") && onboardingComplete) {
-      return redirectWithCookies(new URL("/dashboard", request.url));
-    }
-
-    if (
-      isProtectedRoute(pathname) &&
-      !pathname.startsWith("/onboarding") &&
-      !onboardingComplete
-    ) {
-      return redirectWithCookies(new URL("/onboarding", request.url));
-    }
+  if (user && isAuthRoute(pathname)) {
+    // Completion is checked in the destination layout. Keeping middleware
+    // auth-only avoids a profiles read on every dashboard route transition.
+    return redirectWithCookies(new URL("/dashboard", request.url));
   }
 
   return response;

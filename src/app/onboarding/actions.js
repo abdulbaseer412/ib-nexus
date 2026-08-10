@@ -44,6 +44,21 @@ export async function completeOnboarding(formData) {
     return { error: "Please select a valid IB programme." };
   }
 
+  const examSession = formData.get("exam_session")?.toString() || null;
+  const schoolName = formData.get("school_name")?.toString() || null;
+  const referralSource = formData.get("referral_source")?.toString() || null;
+  const subjectsStr = formData.get("subjects")?.toString() || "[]";
+  const studyGoalsStr = formData.get("study_goals")?.toString() || "[]";
+
+  let subjects = [];
+  let studyGoals = [];
+  try {
+    subjects = JSON.parse(subjectsStr);
+    studyGoals = JSON.parse(studyGoalsStr);
+  } catch (e) {
+    return { error: "Invalid data format submitted." };
+  }
+
   const supabase = await createServerClient();
 
   // Use upsert so this works whether the profile row exists or not.
@@ -57,6 +72,11 @@ export async function completeOnboarding(formData) {
         full_name: existingProfile?.full_name || displayName,
         email: existingProfile?.email || user.email,
         ib_program: ibProgram,
+        exam_session: examSession,
+        subjects: subjects,
+        study_goals: studyGoals,
+        school_name: schoolName,
+        referral_source: referralSource,
         onboarding_completed: true,
       },
       { onConflict: "id" }

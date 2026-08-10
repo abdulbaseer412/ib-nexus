@@ -12,10 +12,11 @@
  * We call supabase.auth.updateUser({ password }) to set the new password.
  */
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase-browser";
 import { validatePassword, validatePasswordMatch } from "@/lib/validation";
+import { getAuthErrorDetails } from "@/lib/auth-errors";
 import PasswordInput from "@/components/auth/PasswordInput";
 import FormMessage from "@/components/auth/FormMessage";
 import { buttonClassName } from "@/components/auth/auth-styles";
@@ -28,24 +29,29 @@ export default function ResetPasswordForm() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [messageState, setMessageState] = useState(null);
   const [success, setSuccess] = useState(false);
+
+  const submittingRef = useRef(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (loading) return;
+    if (submittingRef.current || loading) return;
+    submittingRef.current = true;
 
-    setError("");
+    setMessageState(null);
 
     const passwordResult = validatePassword(password);
     if (!passwordResult.valid) {
-      setError(passwordResult.error);
+      setMessageState({ type: "error", title: "Weak password", message: passwordResult.error });
+      submittingRef.current = false;
       return;
     }
 
     const matchResult = validatePasswordMatch(password, confirm);
     if (!matchResult.valid) {
-      setError(matchResult.error);
+      setMessageState({ type: "error", title: "Passwords don't match", message: matchResult.error });
+      submittingRef.current = false;
       return;
     }
 
@@ -54,22 +60,18 @@ export default function ResetPasswordForm() {
     const { error: updateError } = await supabase.auth.updateUser({ password });
 
     if (updateError) {
-      const msg = updateError.message.toLowerCase();
-      if (msg.includes("same password")) {
-        setError("New password must be different from your previous password.");
-      } else if (msg.includes("expired") || msg.includes("invalid")) {
-        setError(
-          "This reset link has expired or already been used. Please request a new one."
-        );
-      } else {
-        setError("Could not update your password. Please try again.");
-      }
+      const details = getAuthErrorDetails(updateError);
+      setMessageState({
+        type: details.type || "error",
+        title: details.title,
+        message: details.message,
+      });
       setLoading(false);
+      submittingRef.current = false;
       return;
     }
 
     setSuccess(true);
-    // Sign out so the user logs in fresh with the new password
     await supabase.auth.signOut();
     setTimeout(() => router.push("/login"), 2500);
   }
@@ -77,14 +79,14 @@ export default function ResetPasswordForm() {
   if (success) {
     return (
       <div className="w-full max-w-sm space-y-6 text-center">
-        <div className="w-14 h-14 mx-auto rounded-full bg-green-100 dark:bg-green-950/50 flex items-center justify-center text-2xl">
+        <div className="w-14 h-14 mx-auto rounded-full bg-success-soft flex items-center justify-center text-2xl text-success">
           ✓
         </div>
         <div className="space-y-2">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-primary">
             Password updated
           </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-sm text-secondary">
             Your password has been changed. Redirecting you to sign in…
           </p>
         </div>
@@ -95,10 +97,10 @@ export default function ResetPasswordForm() {
   return (
     <div className="w-full max-w-sm space-y-6">
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+        <h1 className="text-2xl font-bold text-primary">
           Set new password
         </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        <p className="text-sm text-secondary mt-1">
           Choose a strong password for your account.
         </p>
       </div>
@@ -115,7 +117,7 @@ export default function ResetPasswordForm() {
             disabled={loading}
             showStrength
             value={password}
-            onChange={(e) => { setPassword(e.target.value); setError(""); }}
+            onChange={(e) => { setPassword(e.target.value); setMessageState(null); }}
           />
         </div>
 
@@ -129,22 +131,41 @@ export default function ResetPasswordForm() {
             required
             disabled={loading}
             value={confirm}
-            onChange={(e) => { setConfirm(e.target.value); setError(""); }}
+            onChange={(e) => { setConfirm(e.target.value); setMessageState(null); }}
           />
         </div>
 
-        <button type="submit" disabled={loading} className={buttonClassName}>
-          {loading ? "Updating…" : "Update Password"}
+        <button
+          type="submit"
+          disabled={loading}
+          className={`${buttonClassName} flex items-center justify-center gap-2 transition-all duration-200`}
+        >
+          {loading ? (
+            <>
+              <svg className="w-4 h-4 animate-spin shrink-0 text-current" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" />
+              </svg>
+              <span>Updating password...</span>
+            </>
+          ) : (
+            <span>Update Password</span>
+          )}
         </button>
       </form>
 
-      <FormMessage type="error" message={error} />
+      {messageState && (
+        <FormMessage
+          type={messageState.type}
+          title={messageState.title}
+          message={messageState.message}
+        />
+      )}
 
-      <p className="text-center text-sm text-gray-500 dark:text-gray-400">
+      <p className="text-center text-sm text-secondary">
         Remember your password?{" "}
         <Link
           href="/login"
-          className="font-medium text-gray-900 dark:text-white hover:underline"
+          className="font-medium text-primary hover:underline"
         >
           Sign in
         </Link>

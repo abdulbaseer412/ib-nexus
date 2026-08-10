@@ -107,6 +107,16 @@ export async function ensureProfile(user) {
   return profile;
 }
 
+/**
+ * Read-only profile lookup for normal requests. Profile creation and repair
+ * belong to onboarding/auth flows, not to route rendering.
+ */
+export async function getProfile(userId) {
+  if (!userId) return null;
+  const supabase = await createServerClient();
+  return fetchProfile(supabase, userId);
+}
+
 async function fetchProfile(supabase, userId) {
   const { data, error } = await supabase
     .from("profiles")

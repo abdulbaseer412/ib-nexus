@@ -17,12 +17,18 @@
 
 import { createClient } from "@/utils/supabase-browser";
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { updatePassword, getUserAuthSettings, updateUserAuthSettings } from "@/app/auth/actions";
 import { PROVIDER_LABELS, hasPasswordLogin, isOAuthProvider } from "@/lib/auth-providers";
 import PasswordInput from "@/components/auth/PasswordInput";
 import FormMessage from "@/components/auth/FormMessage";
 import { buttonClassName } from "@/components/auth/auth-styles";
 import { debugLog } from "@/utils/debug-log";
+import {
+  clearOAuthLinkSession,
+  preserveOAuthLinkSession,
+  restoreOAuthLinkSession,
+} from "@/lib/auth-linking";
 
 function safeJson(v) {
   try {
@@ -57,7 +63,7 @@ function KeyIcon() {
 
 function CheckIcon() {
   return (
-    <svg className="w-4 h-4 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className="w-4 h-4 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="20 6 9 17 4 12" />
     </svg>
   );
@@ -70,45 +76,53 @@ const PROVIDER_ICONS = {
 
 // ─── Provider row ─────────────────────────────────────────────────────────────
 
-function ProviderRow({ provider, linked, onConnect, onDisconnect }) {
+function ProviderRow({ provider, status, onConnect, onEnable, onDisable }) {
   const label = PROVIDER_LABELS[provider] ?? provider;
   const icon = PROVIDER_ICONS[provider] ?? null;
+
+  let statusText = "Not linked";
+  if (status === "linked") statusText = "Linked to your account";
+  if (status === "disabled") statusText = "Disabled";
 
   return (
     <div className="flex items-center justify-between py-3">
       <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300">
+        <div className="w-8 h-8 rounded-lg bg-surface-alt flex items-center justify-center text-secondary">
           {icon}
         </div>
         <div>
-          <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {linked ? "Linked to your account" : "Not linked"}
+          <p className="text-sm font-medium text-primary">{label}</p>
+          <p className="text-xs text-secondary">
+            {statusText}
           </p>
         </div>
       </div>
-      {linked ? (
-        onDisconnect ? (
-          <button
-            type="button"
-            onClick={onDisconnect}
-            className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline"
-          >
-            {provider === "email" ? "Disable Email & Password Sign-in" : "Disable Google Sign-in"}
-          </button>
-        ) : (
-          <CheckIcon />
-        )
-      ) : (
-        onConnect && (
-          <button
-            type="button"
-            onClick={onConnect}
-            className="text-xs font-medium text-gray-900 dark:text-white hover:underline"
-          >
-            Connect
-          </button>
-        )
+      {status === "linked" && onDisable && (
+        <button
+          type="button"
+          onClick={onDisable}
+          className="text-xs font-medium text-danger hover:underline"
+        >
+          {provider === "email" ? "Disable Email & Password Sign-in" : "Disable Google Sign-in"}
+        </button>
+      )}
+      {status === "disabled" && onEnable && (
+        <button
+          type="button"
+          onClick={onEnable}
+          className="text-xs font-medium text-success hover:underline"
+        >
+          {provider === "email" ? "Enable Email & Password Sign-in" : "Enable Google Sign-in"}
+        </button>
+      )}
+      {status === "not_linked" && onConnect && (
+        <button
+          type="button"
+          onClick={onConnect}
+          className="text-xs font-medium text-primary hover:underline"
+        >
+          Connect
+        </button>
       )}
     </div>
   );
@@ -120,29 +134,37 @@ function PasswordForm({ hasExistingPassword, onSuccess }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [errorType, setErrorType] = useState("error");
   const [success, setSuccess] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
     if (loading) return;
     setError("");
+    setErrorType("error");
     setSuccess("");
     setLoading(true);
 
-    const formData = new FormData(e.currentTarget);
-    const result = await updatePassword(formData);
+    try {
+      const formData = new FormData(e.currentTarget);
+      const result = await updatePassword(formData);
 
-    setLoading(false);
+      setLoading(false);
 
-    if (result?.error) {
-      setError(result.error);
-      return;
-    }
+      if (result?.error) {
+        setError(result.error);
+        if (result.type === "warning") setErrorType("warning");
+        return;
+      }
 
-    if (result?.success) {
-      setSuccess(result.success);
-      setOpen(false);
-      onSuccess?.();
+      if (result?.success) {
+        setSuccess(result.success);
+        setOpen(false);
+        onSuccess?.();
+      }
+    } catch (err) {
+      setLoading(false);
+      setError("An unexpected error occurred. Please try again.");
     }
   }
 
@@ -155,22 +177,22 @@ function PasswordForm({ hasExistingPassword, onSuccess }) {
     : "Add email & password as another way to sign in. Your Google login will still work.";
 
   return (
-    <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
+    <div className="border-t border-divider pt-4">
       {!open ? (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="text-sm font-medium text-gray-900 dark:text-white hover:underline"
+          className="text-sm font-medium text-primary hover:underline"
         >
           {actionLabel}
         </button>
       ) : (
         <div className="space-y-4">
           <div>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+            <p className="text-sm font-semibold text-primary">
               {formTitle}
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            <p className="text-xs text-secondary mt-0.5">
               {formDescription}
             </p>
           </div>
@@ -207,14 +229,14 @@ function PasswordForm({ hasExistingPassword, onSuccess }) {
               <button
                 type="button"
                 onClick={() => { setOpen(false); setError(""); }}
-                className="flex-1 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                className="flex-1 py-2.5 rounded-xl border border-subtle text-sm text-secondary hover:bg-hover hover:text-primary transition-colors"
               >
                 Cancel
               </button>
             </div>
           </form>
 
-          <FormMessage type="error" message={error} />
+          <FormMessage type={errorType} message={error} />
         </div>
       )}
 
@@ -231,11 +253,15 @@ export default function SecurityClient({ userEmail, initialProviders }) {
   const [providers, setProviders] = useState(initialProviders);
   const [authSettings, setAuthSettings] = useState(null);
   const supabase = createClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [confirmUnlink, setConfirmUnlink] = useState(null);
   const [unlinkLoading, setUnlinkLoading] = useState(false);
   const [unlinkError, setUnlinkError] = useState("");
   const [unlinkSuccess, setUnlinkSuccess] = useState("");
+  const [linkError, setLinkError] = useState("");
+  const [linkSuccess, setLinkSuccess] = useState("");
 
   const fetchAuthSettings = async () => {
     debugLog("security.fetchAuthSettings.start");
@@ -249,15 +275,37 @@ export default function SecurityClient({ userEmail, initialProviders }) {
 
 
   useEffect(() => {
-    // Fetch auth settings after mount.
-    // Wrapped to satisfy strict lint rules about setState in effect bodies.
     const run = async () => {
+      const urlError = searchParams.get("error");
+      const urlSuccess = searchParams.get("success");
+      const shouldRestoreSession = searchParams.get("restore_link_session") === "1";
+
+      if (shouldRestoreSession) {
+        debugLog("security.restoreLinkSession.start");
+        const restored = await restoreOAuthLinkSession(supabase);
+        debugLog("security.restoreLinkSession.result", { restored });
+        router.refresh();
+      } else if (urlSuccess || urlError) {
+        clearOAuthLinkSession();
+      }
+
+      if (urlError) {
+        setLinkError(decodeURIComponent(urlError));
+      }
+      if (urlSuccess) {
+        setLinkSuccess(decodeURIComponent(urlSuccess));
+      }
+
+      if (urlError || urlSuccess || shouldRestoreSession) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("error");
+        url.searchParams.delete("success");
+        url.searchParams.delete("restore_link_session");
+        window.history.replaceState(null, "", url.toString());
+      }
+
       await fetchAuthSettings();
 
-      // After OAuth redirect back into the app, the page may be rendered
-      // from server data while the provider-link RPC result is stale.
-      // Synchronize immediately on mount to keep the UI consistent.
-      // This preserves existing flows (no forced reloads).
       if (window.location.pathname === "/settings/security") {
         await (async () => {
           debugLog("security.refreshProviders.onMount");
@@ -268,6 +316,7 @@ export default function SecurityClient({ userEmail, initialProviders }) {
             setProviders(data);
           }
         })();
+        router.refresh();
       }
     };
     run();
@@ -277,15 +326,29 @@ export default function SecurityClient({ userEmail, initialProviders }) {
 
 
   const isGoogleLinked = providers.includes("google") && (authSettings ? authSettings.google_enabled : true);
-
   const isEmailLinked = providers.includes("email") && (authSettings ? authSettings.email_password_enabled : true);
 
+  const hasGoogleIdentity = providers.includes("google");
+  const isGoogleEnabled = authSettings ? authSettings.google_enabled : true;
+  const googleStatus = hasGoogleIdentity
+    ? isGoogleEnabled
+      ? "linked"
+      : "disabled"
+    : "not_linked";
+
+  const hasEmailPassword = providers.includes("email");
+  const isEmailEnabled = authSettings ? authSettings.email_password_enabled : true;
+  const emailStatus = hasEmailPassword
+    ? isEmailEnabled
+      ? "linked"
+      : "disabled"
+    : "not_linked";
 
   const activeLinkedProviders = [];
-  if (isGoogleLinked) activeLinkedProviders.push("google");
-  if (isEmailLinked) activeLinkedProviders.push("email");
+  if (googleStatus === "linked") activeLinkedProviders.push("google");
+  if (emailStatus === "linked") activeLinkedProviders.push("email");
 
-  const hasPassword = isEmailLinked;
+  const hasPassword = hasEmailPassword;
   const totalLinked = activeLinkedProviders.length;
 
   const refreshProviders = async () => {
@@ -318,10 +381,70 @@ export default function SecurityClient({ userEmail, initialProviders }) {
       currentAuthSettings: safeJson(authSettings),
     });
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setLinkError("Your session expired. Please sign in again and retry.");
+      return;
+    }
+
+    setLinkError("");
+    setLinkSuccess("");
+    await preserveOAuthLinkSession(supabase);
+
+    const callbackUrl = new URL(`${window.location.origin}/auth/callback`);
+    callbackUrl.searchParams.set("next", "/settings/security");
+    callbackUrl.searchParams.set("reconnect", provider);
+    callbackUrl.searchParams.set("provider", provider);
+    callbackUrl.searchParams.set("expected_user_id", user.id);
+
     await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: callbackUrl.toString() },
     });
+  };
+
+  const handleEnable = async (provider) => {
+    debugLog("security.enable.clicked", {
+      provider,
+      hasGoogleIdentity: providers.includes("google"),
+      currentAuthSettings: safeJson(authSettings),
+    });
+
+    setLinkError("");
+    setLinkSuccess("");
+    setUnlinkError("");
+    setUnlinkSuccess("");
+
+    if (provider === "google") {
+      if (providers.includes("google")) {
+        const nextEmailEnabled = authSettings?.email_password_enabled ?? true;
+        const result = await updateUserAuthSettings(true, nextEmailEnabled);
+        if (result?.error) {
+          setUnlinkError(result.error);
+          return;
+        }
+        if (result?.data) {
+          setAuthSettings(result.data);
+          setUnlinkSuccess("Google sign-in has been enabled.");
+        }
+      } else {
+        await handleConnect("google");
+      }
+    } else if (provider === "email") {
+      const nextGoogleEnabled = authSettings?.google_enabled ?? true;
+      const result = await updateUserAuthSettings(nextGoogleEnabled, true);
+      if (result?.error) {
+        setUnlinkError(result.error);
+        return;
+      }
+      if (result?.data) {
+        setAuthSettings(result.data);
+        setUnlinkSuccess("Email & password sign-in has been enabled.");
+      }
+    }
   };
 
   const handleInitiateUnlink = (provider) => {
@@ -400,31 +523,36 @@ export default function SecurityClient({ userEmail, initialProviders }) {
 
   return (
     <div className="space-y-6">
+      {/* OAuth link feedback */}
+      <FormMessage type="error" message={linkError} />
+      <FormMessage type="success" message={linkSuccess} />
+
       {/* Error and Success Messages */}
       <FormMessage type="error" message={unlinkError} />
       <FormMessage type="success" message={unlinkSuccess} />
 
       {/* Sign-in methods card */}
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 px-6 py-2 divide-y divide-gray-100 dark:divide-gray-800">
+      <div className="rounded-2xl border border-subtle bg-card-secondary px-6 py-2 divide-y divide-divider">
         <div className="py-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted">
             Sign-in methods
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          <p className="text-xs text-secondary mt-0.5">
             {userEmail}
           </p>
         </div>
 
         {displayProviders.map((provider) => {
-          const isLinked = provider === "google" ? isGoogleLinked : isEmailLinked;
+          const status = provider === "google" ? googleStatus : emailStatus;
           return (
             <ProviderRow
               key={provider}
               provider={provider}
-              linked={isLinked}
+              status={status}
               onConnect={isOAuthProvider(provider) ? () => handleConnect(provider) : null}
-              onDisconnect={
-                isLinked ? () => handleInitiateUnlink(provider) : null
+              onEnable={() => handleEnable(provider)}
+              onDisable={
+                status === "linked" ? () => handleInitiateUnlink(provider) : null
               }
             />
           );
@@ -432,12 +560,12 @@ export default function SecurityClient({ userEmail, initialProviders }) {
       </div>
 
       {/* Password management */}
-      <div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-950/50 p-6 space-y-4">
+      <div className="rounded-2xl border border-subtle bg-card-secondary p-6 space-y-4">
         <div>
-          <p className="text-sm font-semibold text-gray-900 dark:text-white">
+          <p className="text-sm font-semibold text-primary">
             Password
           </p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          <p className="text-xs text-secondary mt-0.5">
             {hasPassword
               ? "You can sign in with your email and password."
               : "You don't have a password yet. Add one to sign in without Google."}
@@ -452,8 +580,8 @@ export default function SecurityClient({ userEmail, initialProviders }) {
 
       {/* Account linking explanation */}
       {!hasPassword && providers.includes("google") && (
-        <div className="rounded-2xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20 p-4">
-          <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+        <div className="rounded-2xl border border-info-strong bg-info-soft p-4">
+          <p className="text-xs text-info-strong leading-relaxed">
             <span className="font-semibold">One account, multiple sign-in methods.</span>{" "}
             Adding a password doesn&apos;t create a new account. You&apos;ll be able to sign
             in with either Google or your email and password — both access the same
@@ -465,19 +593,19 @@ export default function SecurityClient({ userEmail, initialProviders }) {
       {/* Confirmation Dialog Modal */}
       {confirmUnlink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 p-6 space-y-4 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+          <div className="w-full max-w-md rounded-2xl border border-subtle bg-elevated p-6 space-y-4 shadow-float">
+            <h3 className="text-lg font-bold text-primary">
               {confirmUnlink === "email"
                 ? "Disable Email & Password Sign-in?"
                 : "Disable Google Sign-in?"}
             </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+            <p className="text-sm text-secondary leading-relaxed">
               {confirmUnlink === "email"
                 ? "You will no longer be able to sign in using your email address and password. Your account will remain active."
                 : "You will no longer be able to sign in using Google. Your account will remain active."}
             </p>
             <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted">
                 You can still sign in using:
               </p>
               <div className="flex flex-col gap-1.5">
@@ -486,7 +614,7 @@ export default function SecurityClient({ userEmail, initialProviders }) {
                   .map((p) => (
                     <div
                       key={p}
-                      className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+                      className="flex items-center gap-2 text-sm text-secondary"
                     >
                       <CheckIcon />
                       <span>{PROVIDER_LABELS[p] ?? p}</span>
@@ -499,7 +627,7 @@ export default function SecurityClient({ userEmail, initialProviders }) {
                 type="button"
                 disabled={unlinkLoading}
                 onClick={handleUnlink}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors disabled:opacity-50"
+                className="btn btn-danger flex-1 py-2.5 rounded-xl text-sm font-medium"
               >
                 {unlinkLoading
                   ? "Disabling…"
@@ -509,7 +637,7 @@ export default function SecurityClient({ userEmail, initialProviders }) {
                 type="button"
                 disabled={unlinkLoading}
                 onClick={() => setConfirmUnlink(null)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+                className="flex-1 py-2.5 rounded-xl border border-subtle text-sm text-secondary hover:bg-hover hover:text-primary transition-colors"
               >
                 Cancel
               </button>

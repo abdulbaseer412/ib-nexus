@@ -22,15 +22,15 @@ export default async function OnboardingPage() {
   const needsProgram = !defaults.hasIbProgram;
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-white dark:bg-black px-4 py-12">
+    <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+          <h1 className="text-2xl font-bold text-primary mb-2">
             {defaults.hasDisplayName
               ? `Welcome, ${defaults.displayName}`
               : "Welcome to IB Nexus"}
           </h1>
-          <p className="text-gray-600 dark:text-gray-400 text-sm">
+          <p className="text-secondary text-sm">
             {needsProgram && defaults.hasDisplayName
               ? "Just one more step — tell us your IB programme."
               : "Tell us a bit about yourself to personalize your experience."}

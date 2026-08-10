@@ -10,10 +10,9 @@ import {
   validatePasswordMatch,
 } from "@/lib/validation";
 import { isOAuthOnly, hasPasswordLogin } from "@/lib/auth-providers";
+import { getAuthErrorDetails } from "@/lib/auth-errors";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { debugLogServer } from "@/utils/debug-log-server";
 
 
 async function getOrigin() {
@@ -42,14 +41,17 @@ export async function getEmailProviders(email) {
     email_input: emailResult.value,
   });
 
-  if (error) return [];
+  if (error) {
+    console.error("[getEmailProviders] RPC error:", error.message, error.code);
+    return [];
+  }
   if (!Array.isArray(data)) return [];
   return data;
 }
 
 /**
  * Resolves the correct error state after a failed signInWithPassword call.
- * Returns { type, message, providers } so the UI can render the right state.
+ * Returns { type, title, message, providers } so the UI can render the right state.
  */
 export async function resolveSignInError(email) {
   const emailResult = validateEmail(email);
@@ -62,7 +64,8 @@ export async function resolveSignInError(email) {
   if (providers.length === 0) {
     return {
       type: "no_account",
-      message: "No account found with this email address.",
+      title: "No account found",
+      message: "We couldn't find an IB Nexus account associated with this email address.",
       providers: [],
     };
   }
@@ -70,6 +73,7 @@ export async function resolveSignInError(email) {
   if (!hasPasswordLogin(providers)) {
     return {
       type: "oauth_only",
+      title: "Different sign-in method required",
       message: "This account was created using a different sign-in method.",
       providers,
     };
@@ -77,7 +81,8 @@ export async function resolveSignInError(email) {
 
   return {
     type: "wrong_password",
-    message: "Incorrect password. Please try again.",
+    title: "Incorrect password",
+    message: "The password you entered is incorrect.",
     providers,
   };
 }
@@ -107,7 +112,11 @@ export async function signUpWithEmail(formData) {
   const providers = await getEmailProviders(emailResult.value);
 
   if (providers.length > 0) {
-    return { type: "duplicate", providers, error: "duplicate" };
+    return {
+      type: "duplicate",
+      providers,
+      error: "An account with this email already exists. Please sign in instead.",
+    };
   }
 
   const supabase = await createServerClient();
@@ -121,36 +130,77 @@ export async function signUpWithEmail(formData) {
   });
 
   if (error) {
+    // Log raw error for debugging — never shown to users
+    console.error("[signUpWithEmail] Supabase error:", error.message, error.code, error.status);
+
     const msg = error.message.toLowerCase();
     if (msg.includes("already registered") || msg.includes("already been registered")) {
       const existingProviders = await getEmailProviders(emailResult.value);
-      return { type: "duplicate", providers: existingProviders, error: "duplicate" };
+      return {
+        type: "duplicate",
+        providers: existingProviders,
+        error: "An account with this email already exists. Please sign in instead.",
+      };
     }
-    return { error: error.message, type: "unknown" };
+    const details = getAuthErrorDetails(error);
+    return { error: details.message, type: details.type, title: details.title, providers: [] };
   }
 
   if (data.user?.identities?.length === 0) {
     const existingProviders = await getEmailProviders(emailResult.value);
-    return { type: "duplicate", providers: existingProviders, error: "duplicate" };
+    return {
+      type: "duplicate",
+      providers: existingProviders,
+      error: "An account with this email already exists. Please sign in instead.",
+    };
   }
 
   if (data.session && data.user) {
-    const profile = await ensureProfile(data.user);
-    revalidatePath("/", "layout");
-    redirect(getPostAuthRedirect(profile));
+    await ensureProfile(data.user);
+    return {
+      success: true,
+      redirect: "/dashboard",
+      session: true,
+    };
   }
 
   return {
-    success: "Account created! Check your email to confirm your address, then sign in.",
-    type: "confirmation",
+    success: true,
+    redirect: `/check-email?email=${encodeURIComponent(emailResult.value)}`,
+    confirmation: true,
+    email: emailResult.value,
   };
+}
+
+/**
+ * Resends a verification email to a given user email address.
+ */
+export async function resendVerificationEmail(email) {
+  const emailResult = validateEmail(email);
+  if (!emailResult.valid) return { error: emailResult.error, type: "validation" };
+
+  const supabase = await createServerClient();
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: emailResult.value,
+    options: {
+      emailRedirectTo: `${await getOrigin()}/auth/callback`,
+    },
+  });
+
+  if (error) {
+    const details = getAuthErrorDetails(error);
+    return { error: details.message, type: details.type, title: details.title };
+  }
+
+  return { success: "Verification email resent! Check your inbox." };
 }
 
 /**
  * Called after any successful client-side sign-in to sync the profile
  * and return the correct redirect destination.
  */
-export async function resolvePostAuthRedirect() {
+export async function resolvePostAuthRedirect(signInMethod = null) {
   const supabase = await createServerClient();
   const {
     data: { user },
@@ -166,14 +216,14 @@ export async function resolvePostAuthRedirect() {
     .maybeSingle();
 
   if (!settingsError && settings) {
-    const currentProvider = user.app_metadata?.provider;
+    const authMethod = signInMethod ?? user.app_metadata?.provider;
 
-    if (currentProvider === "email" && settings.email_password_enabled === false) {
+    if (authMethod === "email" && settings.email_password_enabled === false) {
       await supabase.auth.signOut();
       return `/login?error=${encodeURIComponent("Email & Password sign-in has been disabled for this account. Please sign in using Google.")}`;
     }
 
-    if (currentProvider === "google" && settings.google_enabled === false) {
+    if (authMethod === "google" && settings.google_enabled === false) {
       await supabase.auth.signOut();
       return `/login?error=${encodeURIComponent("Google sign-in has been disabled for this account. Please use Email & Password.")}`;
     }
@@ -240,14 +290,36 @@ export async function updatePassword(formData) {
   if (!matchResult.valid) return { error: matchResult.error };
 
   const supabase = await createServerClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return { error: "Not authenticated" };
+  }
+
   const { error } = await supabase.auth.updateUser({ password });
 
   if (error) {
-    if (error.message.toLowerCase().includes("same password")) {
-      return { error: "New password must be different from your current password." };
+    const msg = error.message.toLowerCase();
+    if (
+      msg.includes("same password") ||
+      msg.includes("should be different") ||
+      msg.includes("different from") ||
+      msg.includes("must be different") ||
+      msg.includes("same_password")
+    ) {
+      return { error: "Your new password must be different from your current password.", type: "warning" };
     }
     return { error: "Could not update password. Please try again." };
   }
+
+  // Synchronize user_auth_settings so email_password_enabled is true
+  await supabase
+    .from("user_auth_settings")
+    .update({
+      email_password_enabled: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", user.id);
 
   revalidatePath("/settings/security");
   return { success: "Password updated successfully." };
@@ -316,6 +388,18 @@ export async function updateUserAuthSettings(googleEnabled, emailPasswordEnabled
   // Lockout Prevention: At least one method must be enabled
   if (!googleEnabled && !emailPasswordEnabled) {
     return { error: "You cannot disable your only remaining sign-in method." };
+  }
+
+  const providers = await getEmailProviders(user.email);
+  const hasGoogle = providers.includes("google");
+  const hasEmail = providers.includes("email");
+
+  if (!googleEnabled && (!hasEmail || !emailPasswordEnabled)) {
+    return { error: "You cannot disable Google sign-in without a password set up on your account." };
+  }
+
+  if (!emailPasswordEnabled && (!hasGoogle || !googleEnabled)) {
+    return { error: "You cannot disable password sign-in without a connected Google account." };
   }
 
   const { data, error } = await supabase

@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
-import { ensureProfile } from "@/lib/profile-service";
+import { getProfile } from "@/lib/profile-service";
 import { isOnboardingComplete } from "@/lib/profile";
 
 export const getAuthUser = cache(async () => {
@@ -25,7 +25,7 @@ export const getAuthSession = cache(async () => {
     return { user: null, profile: null };
   }
 
-  const profile = await ensureProfile(user);
+  const profile = await getProfile(user.id);
   return { user, profile };
 });
 
@@ -40,8 +40,11 @@ export async function requireAuth() {
 }
 
 export async function requireCompleteProfile() {
-  const user = await requireAuth();
-  const profile = await ensureProfile(user);
+  const { user, profile } = await getAuthSession();
+
+  if (!user) {
+    redirect("/login");
+  }
 
   if (!profile || !isOnboardingComplete(profile)) {
     redirect("/onboarding");

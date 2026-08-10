@@ -50,10 +50,8 @@ export default function UserMenu({ displayName, email, avatarUrl }) {
   };
 
   const menuItems = [
-    { label: "Dashboard", href: "/dashboard" },
-    { label: "Profile", href: "/profile" },
+    { label: "Study Hub", href: "/dashboard" },
     { label: "Settings", href: "/settings" },
-    { label: "Security", href: "/settings/security" },
   ];
 
   return (
@@ -65,10 +63,10 @@ export default function UserMenu({ displayName, email, avatarUrl }) {
         aria-expanded={open}
         aria-haspopup="menu"
         aria-label={`Account menu for ${displayName}`}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm text-secondary hover:bg-hover transition-colors"
       >
         <span
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-gray-200 dark:bg-gray-800 text-xs font-medium overflow-hidden shrink-0"
+          className="flex items-center justify-center w-7 h-7 rounded-full bg-surface-alt text-xs font-medium text-primary overflow-hidden shrink-0"
           aria-hidden="true"
         >
           {avatarUrl ? (
@@ -99,18 +97,18 @@ export default function UserMenu({ displayName, email, avatarUrl }) {
       <div
         role="menu"
         aria-label="Account menu"
-        className={`absolute right-0 mt-2 w-56 origin-top-right rounded-2xl border border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl shadow-lg shadow-black/5 dark:shadow-black/20 transition-all duration-200 ease-out ${
+        className={`bg-dropdown absolute right-0 mt-2 w-56 origin-top-right rounded-2xl border border-subtle backdrop-blur-xl shadow-float transition-all duration-200 ease-out ${
           open
             ? "opacity-100 scale-100 translate-y-0 pointer-events-auto"
             : "opacity-0 scale-95 -translate-y-1 pointer-events-none"
         }`}
       >
-        <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
-          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+        <div className="px-4 py-3 border-b border-divider">
+          <p className="text-sm font-semibold text-primary truncate">
             {displayName}
           </p>
           {email && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+            <p className="text-xs text-muted truncate mt-0.5">
               {email}
             </p>
           )}
@@ -121,22 +119,23 @@ export default function UserMenu({ displayName, email, avatarUrl }) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch
               role="menuitem"
               onClick={closeMenu}
-              className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
+              className="block px-4 py-2 text-sm text-secondary hover:bg-hover hover:text-primary transition-colors"
             >
               {item.label}
             </Link>
           ))}
         </div>
 
-        <div className="py-1.5 border-t border-gray-100 dark:border-gray-800">
+        <div className="py-1.5 border-t border-divider">
           <button
             type="button"
             role="menuitem"
             onClick={handleLogout}
             disabled={signingOut}
-            className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50"
+            className="w-full text-left px-4 py-2 text-sm text-danger hover:bg-danger-soft transition-colors disabled:opacity-50"
           >
             {signingOut ? "Signing out…" : "Log Out"}
           </button>

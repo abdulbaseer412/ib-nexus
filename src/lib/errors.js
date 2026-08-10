@@ -1,3 +1,5 @@
+import { mapAuthError } from "./auth-errors";
+
 const isDev = process.env.NODE_ENV === "development";
 
 export function exposeError(error, fallback, context) {
@@ -24,5 +26,6 @@ export function exposeError(error, fallback, context) {
 }
 
 export function exposeAuthError(error, fallback, context) {
-  return exposeError(error, fallback, context);
+  if (!error) return fallback;
+  return mapAuthError(error, context);
 }

@@ -66,8 +66,8 @@ export default function ProfileForm({
       <input type="hidden" name="avatar_url" value={avatarDataUrl} />
 
       {/* Profile Picture Section */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 pb-6 border-b border-gray-200 dark:border-gray-800">
-        <div className="flex items-center justify-center w-16 h-14 sm:w-16 sm:h-16 rounded-full bg-gray-200 dark:bg-gray-800 text-xl font-semibold text-gray-700 dark:text-gray-200 overflow-hidden shrink-0">
+      <div className="flex flex-col sm:flex-row items-center gap-4 pb-6 border-b border-divider">
+        <div className="flex items-center justify-center w-16 h-14 sm:w-16 sm:h-16 rounded-full bg-surface-alt text-xl font-semibold text-secondary overflow-hidden shrink-0">
           {avatarPreview ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -80,7 +80,7 @@ export default function ProfileForm({
           )}
         </div>
         <div className="flex flex-col gap-1.5 w-full sm:w-auto">
-          <p className="text-sm font-medium text-gray-900 dark:text-white text-center sm:text-left">
+          <p className="text-sm font-medium text-primary text-center sm:text-left">
             Profile picture
           </p>
           <div className="flex items-center justify-center sm:justify-start gap-2">
@@ -88,7 +88,7 @@ export default function ProfileForm({
               type="button"
               disabled={pending}
               onClick={() => fileInputRef.current?.click()}
-              className="px-3 py-1.5 rounded-xl border border-gray-300 dark:border-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors disabled:opacity-50"
+              className="px-3 py-1.5 rounded-xl border border-subtle text-xs font-medium text-secondary hover:bg-hover hover:text-primary transition-colors disabled:opacity-50"
             >
               Upload Photo
             </button>
@@ -97,7 +97,7 @@ export default function ProfileForm({
                 type="button"
                 disabled={pending}
                 onClick={handleRemove}
-                className="px-3 py-1.5 rounded-xl border border-red-200 dark:border-red-900/50 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors disabled:opacity-50"
+                className="px-3 py-1.5 rounded-xl border border-danger-strong text-xs font-medium text-danger hover:bg-danger-soft transition-colors disabled:opacity-50"
               >
                 Remove Photo
               </button>
@@ -116,7 +116,7 @@ export default function ProfileForm({
       <div>
         <label
           htmlFor="display_name"
-          className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
+          className="block text-sm font-medium text-secondary mb-1.5"
         >
           Display name
         </label>
@@ -134,7 +134,7 @@ export default function ProfileForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+        <label className="block text-sm font-medium text-secondary mb-1.5">
           IB Programme
         </label>
         <ProgramSelect
@@ -145,13 +145,13 @@ export default function ProfileForm({
       </div>
 
       {state.error && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-sm text-danger">
           {state.error}
         </p>
       )}
 
       {state.success && (
-        <p role="status" className="text-sm text-green-600 dark:text-green-400">
+        <p role="status" className="text-sm text-success">
           {state.success}
         </p>
       )}
@@ -159,7 +159,7 @@ export default function ProfileForm({
       <button
         type="submit"
         disabled={pending}
-        className="w-full py-2.5 rounded-xl bg-black text-white dark:bg-white dark:text-black font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+        className="btn btn-primary w-full py-2.5 rounded-xl font-medium"
       >
         {pending ? "Saving…" : "Save Changes"}
       </button>

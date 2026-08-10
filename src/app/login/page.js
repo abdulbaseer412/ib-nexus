@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import { redirect } from "next/navigation";
+import { getAuthUser } from "@/lib/auth";
 import SignInForm from "./SignInForm";
 
 export const metadata = {
@@ -17,12 +19,19 @@ function SignInFallback() {
   );
 }
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const user = await getAuthUser();
+  if (user) {
+    redirect("/dashboard");
+  }
+
   return (
-    <main className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-white dark:bg-black px-4 py-12">
-      <Suspense fallback={<SignInFallback />}>
-        <SignInForm />
-      </Suspense>
+    <main className="surface min-h-[calc(100vh-4rem)] px-4 py-12">
+      <div className="card animate-in mx-auto flex w-full max-w-md flex-col items-center justify-center p-7 sm:p-10">
+        <Suspense fallback={<SignInFallback />}>
+          <SignInForm />
+        </Suspense>
+      </div>
     </main>
   );
 }

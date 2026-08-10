@@ -1,6 +1,13 @@
 import OAuthButton from "./OAuthButton";
 
-/** @deprecated Use OAuthButton with provider="google" instead. */
-export default function GoogleButton(props) {
-  return <OAuthButton provider="google" {...props} />;
+export default function GoogleButton({ intent = "signin", signupEmail = "", flowSource, ...props }) {
+  return (
+    <OAuthButton
+      provider="google"
+      intent={intent}
+      signupEmail={signupEmail}
+      flowSource={flowSource}
+      {...props}
+    />
+  );
 }

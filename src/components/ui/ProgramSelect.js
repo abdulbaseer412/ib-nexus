@@ -69,13 +69,13 @@ export default function ProgramSelect({ name, defaultValue = "", disabled = fals
         aria-label="IB Programme"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
-        className="w-full px-4 py-2.5 rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-left text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-600 disabled:opacity-50 transition-shadow flex items-center justify-between"
+        className="w-full px-4 py-2.5 rounded-xl border border-subtle bg-input text-left text-primary focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 transition-shadow flex items-center justify-between"
       >
-        <span className={selected ? "" : "text-gray-400 dark:text-gray-500"}>
+        <span className={selected ? "" : "text-muted"}>
           {selected ? selected.label : "Select your programme"}
         </span>
         <svg
-          className={`w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+          className={`w-4 h-4 text-muted shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -89,7 +89,7 @@ export default function ProgramSelect({ name, defaultValue = "", disabled = fals
         <ul
           role="listbox"
           aria-label="IB Programme options"
-          className="absolute z-50 mt-1.5 w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-lg shadow-black/10 dark:shadow-black/40 overflow-hidden"
+          className="absolute z-50 mt-1.5 w-full rounded-xl border border-subtle bg-dropdown shadow-float overflow-hidden"
         >
           {IB_PROGRAMS.map((program) => (
             <li
@@ -99,8 +99,8 @@ export default function ProgramSelect({ name, defaultValue = "", disabled = fals
               onClick={() => select(program.value)}
               className={`px-4 py-2.5 text-sm cursor-pointer transition-colors ${
                 value === program.value
-                  ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white font-medium"
-                  : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                  ? "bg-accent-soft text-primary font-medium"
+                  : "text-secondary hover:bg-hover"
               }`}
             >
               {program.label}

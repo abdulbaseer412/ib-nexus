@@ -1,33 +1,32 @@
 "use client";
 
-import { useTheme } from "next-themes";
-import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
+import { useTheme } from "./ThemeProvider";
+import { useSyncExternalStore } from "react";
+
+const emptySubscribe = () => () => {};
 
 export default function ThemeToggle() {
   const { theme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+  const isMounted = useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
-  useEffect(() => {
-    // Avoid lint error about setState in effect body.
-    // We only need to wait for client mount.
-    const id = setTimeout(() => setMounted(true), 0);
-    return () => clearTimeout(id);
-  }, []);
-
-
-  if (!mounted) {
-    return (
-      <div className="w-[72px] h-[30px] rounded-full border border-gray-300 dark:border-gray-700" />
-    );
+  if (!isMounted) {
+    return <div className="h-9 w-9 rounded-xl border border-subtle" />;
   }
 
+  const dark = theme === "dark";
   return (
     <button
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="px-3 py-1 rounded-full border border-gray-300 dark:border-gray-700 text-sm hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
-      aria-label="Toggle theme"
+      type="button"
+      onClick={() => setTheme(dark ? "light" : "dark")}
+      className="grid h-9 w-9 place-items-center rounded-xl border border-subtle text-muted hover:bg-hover hover:text-primary transition"
+      aria-label={`Switch to ${dark ? "light" : "dark"} theme`}
     >
-      {theme === "dark" ? "☀️ Light" : "🌙 Dark"}
+      {dark ? <Sun size={17} /> : <Moon size={17} />}
     </button>
   );
 }
