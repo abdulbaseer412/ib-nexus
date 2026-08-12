@@ -54,7 +54,7 @@ export async function createNote(formData) {
   const level = formData.get("level");
   const initialContent = formData.get("initial_content");
   const parentId = formData.get("parent_id");
-  const examImportance = formData.get("exam_importance") || "Core Concept";
+  const examImportance = formData.get("exam_importance") || "Mid-Level";
 
   if (!title || !subject) {
     throw new Error("Title and Subject are required");
@@ -90,7 +90,7 @@ export async function createNote(formData) {
   redirect(`/dashboard/notes/${data.id}`);
 }
 
-export async function createFolder(title, subject, parentId = null) {
+export async function createFolder(title, subject, parentId = null, examImportance = "Mid-Level") {
   const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
@@ -103,7 +103,7 @@ export async function createFolder(title, subject, parentId = null) {
       subject,
       is_folder: true,
       parent_id: parentId || null,
-      exam_importance: "Core Concept",
+      exam_importance: examImportance,
       content: null
     })
     .select()
@@ -144,12 +144,14 @@ export async function updateNoteMetadata(id, formData) {
   const subject = formData.get("subject");
   const topic = formData.get("topic");
   const level = formData.get("level");
+  const examImportance = formData.get("exam_importance");
 
   const updates = { updated_at: new Date().toISOString() };
   if (title) updates.title = title;
   if (subject) updates.subject = subject;
   if (topic !== null) updates.topic = topic;
   if (level !== null) updates.level = level;
+  if (examImportance) updates.exam_importance = examImportance;
 
   const { error } = await supabase
     .from("ib_notes")

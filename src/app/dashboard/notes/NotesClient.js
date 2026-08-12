@@ -9,7 +9,7 @@ import {
   CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity,
   Camera, X, FolderUp, Folder, ChevronRight
 } from "lucide-react";
-import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent, createFolder } from "./actions";
+import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent, createFolder, updateNoteMetadata } from "./actions";
 import { createClient } from "@/utils/supabase-browser";
 import { Modal, Button, Input, Dropdown } from "@/components/ui";
 
@@ -33,6 +33,7 @@ export default function NotesClient({ initialNotes }) {
   const [loading, setLoading] = useState(false);
   const [deleteNoteId, setDeleteNoteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [editNode, setEditNode] = useState(null); // { id, title, subject, exam_importance, topic, level, is_folder }
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   
   // Camera Capture
@@ -140,8 +141,9 @@ export default function NotesClient({ initialNotes }) {
     const formData = new FormData(e.target);
     const title = formData.get("title");
     const subject = formData.get("subject") || "General";
+    const examImportance = formData.get("exam_importance") || "Mid-Level";
     try {
-      const res = await createFolder(title, subject, currentFolderId);
+      const res = await createFolder(title, subject, currentFolderId, examImportance);
       if (res.success) {
         setNotes(prev => [res.data, ...prev]);
         setIsCreatingFolder(false);
@@ -161,6 +163,30 @@ export default function NotesClient({ initialNotes }) {
     try {
       await createNote(formData);
     } catch (e) {
+      setLoading(false);
+    }
+  }
+
+  async function handleEditDetails(e) {
+    e.preventDefault();
+    setLoading(true);
+    const formData = new FormData(e.target);
+    try {
+      const res = await updateNoteMetadata(editNode.id, formData);
+      if (res.success) {
+        setNotes(prev => prev.map(n => n.id === editNode.id ? { 
+          ...n, 
+          title: formData.get("title") || n.title,
+          subject: formData.get("subject") || n.subject,
+          exam_importance: formData.get("exam_importance") || n.exam_importance,
+          topic: formData.get("topic") || n.topic,
+          level: formData.get("level") || n.level
+        } : n));
+        setEditNode(null);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
       setLoading(false);
     }
   }
@@ -518,7 +544,7 @@ export default function NotesClient({ initialNotes }) {
               <Input 
                 value={search} 
                 onChange={e => setSearch(e.target.value)} 
-                className="pl-9 w-full bg-[var(--surface-alt)]" 
+                className="!pl-9 w-full bg-[var(--surface-alt)]" 
                 placeholder="Search knowledge base..." 
               />
             </div>
@@ -586,9 +612,9 @@ export default function NotesClient({ initialNotes }) {
                 className="bg-[var(--surface-alt)] border border-divider rounded-lg px-3 py-1.5 text-sm font-medium text-secondary focus:border-accent focus:outline-none transition"
               >
                 <option value="All">All Priorities</option>
-                <option value="High Yield">High Yield 🔴</option>
-                <option value="Core Concept">Core Concept 🟡</option>
-                <option value="Supplementary">Supplementary 🔵</option>
+                <option value="Most Important">Most Important 🔴</option>
+                <option value="Mid-Level">Mid-Level 🟡</option>
+                <option value="Least Important">Least Important 🔵</option>
               </select>
             </div>
           </div>
@@ -600,13 +626,13 @@ export default function NotesClient({ initialNotes }) {
             ) : viewMode === "grid" ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filteredNotes.map(note => (
-                  <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onFolderClick={() => setCurrentFolderId(note.id)} />
+                  <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onEditClick={() => setEditNode(note)} onFolderClick={() => setCurrentFolderId(note.id)} />
                 ))}
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 {filteredNotes.map(note => (
-                  <NoteListItem key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onFolderClick={() => setCurrentFolderId(note.id)} />
+                  <NoteListItem key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onEditClick={() => setEditNode(note)} onFolderClick={() => setCurrentFolderId(note.id)} />
                 ))}
               </div>
             )}
@@ -636,6 +662,57 @@ export default function NotesClient({ initialNotes }) {
         </div>
       </Modal>
 
+      {/* Edit Details Modal */}
+      <Modal open={!!editNode} onClose={() => !loading && setEditNode(null)} title={`Edit ${editNode?.is_folder ? 'Folder' : 'Note'} Details`}>
+        {editNode && (
+          <form onSubmit={handleEditDetails} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-primary mb-1.5 block">Title</label>
+              <Input name="title" required defaultValue={editNode.title} autoFocus className="bg-[var(--surface-alt)]" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-primary mb-1.5 block">Subject</label>
+              <select name="subject" defaultValue={editNode.subject || "General"} className="field w-full bg-[var(--surface-alt)]">
+                <option value="General">General</option>
+                {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {!editNode.is_folder && (
+                <>
+                  <div>
+                    <label className="text-sm font-medium text-primary mb-1.5 block">Topic (Optional)</label>
+                    <Input name="topic" defaultValue={editNode.topic || ""} className="bg-[var(--surface-alt)]" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-primary mb-1.5 block">Level</label>
+                    <select name="level" defaultValue={editNode.level || "Core"} className="field w-full bg-[var(--surface-alt)]">
+                      <option value="HL">HL</option>
+                      <option value="SL">SL</option>
+                      <option value="Core">Core</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              <div className={editNode.is_folder ? "col-span-2" : "col-span-2"}>
+                <label className="text-sm font-medium text-primary mb-1.5 block">Priority</label>
+                <select name="exam_importance" defaultValue={editNode.exam_importance || "Mid-Level"} className="field w-full bg-[var(--surface-alt)]">
+                  <option value="Mid-Level">Mid-Level 🟡</option>
+                  <option value="Most Important">Most Important 🔴</option>
+                  <option value="Least Important">Least Important 🔵</option>
+                </select>
+              </div>
+            </div>
+            <div className="pt-4 flex justify-end gap-3 border-t border-divider">
+              <button type="button" onClick={() => setEditNode(null)} className="btn btn-secondary">Cancel</button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
       {/* Create Folder Modal */}
       <Modal open={isCreatingFolder} onClose={() => !loading && setIsCreatingFolder(false)} title="New Folder">
         <form onSubmit={handleCreateFolder} className="space-y-4">
@@ -648,6 +725,14 @@ export default function NotesClient({ initialNotes }) {
             <select name="subject" className="field w-full bg-[var(--surface-alt)]">
               <option value="General">General</option>
               {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium text-primary mb-1.5 block">Priority</label>
+            <select name="exam_importance" className="field w-full bg-[var(--surface-alt)]">
+              <option value="Mid-Level">Mid-Level 🟡</option>
+              <option value="Most Important">Most Important 🔴</option>
+              <option value="Least Important">Least Important 🔵</option>
             </select>
           </div>
           <div className="pt-4 flex justify-end gap-3 border-t border-divider">
@@ -684,6 +769,14 @@ export default function NotesClient({ initialNotes }) {
                 <option value="HL">HL</option>
                 <option value="SL">SL</option>
                 <option value="Core">Core</option>
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="text-sm font-medium text-primary mb-1.5 block">Priority</label>
+              <select name="exam_importance" className="field w-full bg-[var(--surface-alt)]">
+                <option value="Mid-Level">Mid-Level 🟡</option>
+                <option value="Most Important">Most Important 🔴</option>
+                <option value="Least Important">Least Important 🔵</option>
               </select>
             </div>
           </div>
@@ -772,11 +865,11 @@ export default function NotesClient({ initialNotes }) {
 }
 
 export function PriorityBadge({ priority, className = "" }) {
-  if (!priority || priority === "Medium") return null;
+  if (!priority) return null;
   const config = {
-    "High Yield": { color: "text-red-500 bg-red-500/10 border-red-500/20", icon: "🔴" },
-    "Core Concept": { color: "text-yellow-600 bg-yellow-500/10 border-yellow-500/20", icon: "🟡" },
-    "Supplementary": { color: "text-blue-500 bg-blue-500/10 border-blue-500/20", icon: "🔵" }
+    "Most Important": { color: "text-red-500 bg-red-500/10 border-red-500/20", icon: "🔴" },
+    "Mid-Level": { color: "text-yellow-600 bg-yellow-500/10 border-yellow-500/20", icon: "🟡" },
+    "Least Important": { color: "text-blue-500 bg-blue-500/10 border-blue-500/20", icon: "🔵" }
   }[priority] || { color: "text-muted bg-[var(--surface)] border-divider", icon: "" };
 
   return (
@@ -786,7 +879,7 @@ export function PriorityBadge({ priority, className = "" }) {
   );
 }
 
-function NoteCard({ note, onToggle, onDeleteClick, onFolderClick }) {
+function NoteCard({ note, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
   let previewText = "No content yet.";
   try {
     if (note.content) {
@@ -855,6 +948,9 @@ function NoteCard({ note, onToggle, onDeleteClick, onFolderClick }) {
             <Clock size={12} /> {timeAgo(note.updated_at)}
           </span>
           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2" onClick={e => e.stopPropagation()}>
+            <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="hover:text-primary transition" title="Edit Details">
+              <PenLine size={14} />
+            </button>
             <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
               <Star size={14} className={note.is_favorite ? "fill-current" : ""} />
             </button>
@@ -874,7 +970,7 @@ function NoteCard({ note, onToggle, onDeleteClick, onFolderClick }) {
   );
 }
 
-function NoteListItem({ note, onToggle, onDeleteClick, onFolderClick }) {
+function NoteListItem({ note, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
   const timeAgo = (dateStr) => {
     const diffMs = new Date() - new Date(dateStr);
     const diffMins = Math.floor(diffMs / 60000);
@@ -909,6 +1005,9 @@ function NoteListItem({ note, onToggle, onDeleteClick, onFolderClick }) {
       <div className="flex items-center gap-6 shrink-0 ml-4">
         <span className="text-xs text-muted hidden sm:block">Edited {timeAgo(note.updated_at)}</span>
         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="text-muted hover:text-primary transition p-1" title="Edit Details">
+            <PenLine size={16} />
+          </button>
           <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className={`hover:text-yellow-500 transition p-1 ${note.is_favorite ? "text-yellow-500" : "text-muted"}`} title={note.is_favorite ? "Unfavorite" : "Favorite"}>
             <Star size={16} className={note.is_favorite ? "fill-current" : ""} />
           </button>
