@@ -6,6 +6,9 @@ import { ToastProvider } from "@/components/ui";
 export const metadata = {
   title: "IB Nexus",
   description: "The all-in-one platform for IB students",
+  verification: {
+    google: "97BLhkWS1aklkv7yqov_9UD5lykl__oIK2zpt441_0Q",
+  },
 };
 
 export default function RootLayout({ children }) {
