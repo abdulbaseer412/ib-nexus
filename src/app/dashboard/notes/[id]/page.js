@@ -9,7 +9,8 @@ export const metadata = {
 
 export default async function NoteEditorPage({ params }) {
   await requireAuth();
-  const note = await getNote(params.id);
+  const resolvedParams = await params;
+  const note = await getNote(resolvedParams.id);
   
   if (!note) {
     notFound();
