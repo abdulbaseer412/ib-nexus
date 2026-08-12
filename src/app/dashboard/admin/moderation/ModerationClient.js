@@ -13,14 +13,18 @@ import {
   moderateStudyGroupAction,
   updateStudyGroup,
   fetchStudyGroupMembersForModeration,
-  removeStudyGroupMember
+  removeStudyGroupMember,
+  fetchFeedbacksForModeration,
+  moderateFeedbackAction,
+  deleteFeedbackAction
 } from "../../community/actions";
 
-export default function ModerationClient({ initialPending, initialPendingStudyGroups, counts, userId }) {
-  const [reviewType, setReviewType] = useState("posts"); // "posts" | "study-groups"
+export default function ModerationClient({ initialPending, initialPendingStudyGroups, initialPendingFeedbacks, counts, userId }) {
+  const [reviewType, setReviewType] = useState("posts"); // "posts" | "study-groups" | "feedbacks"
   const [activeTab, setActiveTab] = useState("pending");
   const [posts, setPosts] = useState(initialPending);
   const [studyGroups, setStudyGroups] = useState(initialPendingStudyGroups || []);
+  const [feedbacks, setFeedbacks] = useState(initialPendingFeedbacks || []);
   const [editingGroup, setEditingGroup] = useState(null);
   const [managingGroup, setManagingGroup] = useState(null);
   const [isPending, startTransition] = useTransition();
@@ -32,9 +36,12 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
       if (type === "posts") {
         const data = await fetchPostsForModeration("pending");
         setPosts(data);
-      } else {
+      } else if (type === "study-groups") {
         const data = await fetchStudyGroupsForModeration("pending");
         setStudyGroups(data);
+      } else if (type === "feedbacks") {
+        const data = await fetchFeedbacksForModeration("pending");
+        setFeedbacks(data);
       }
     });
   };
@@ -45,9 +52,12 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
       if (reviewType === "posts") {
         const data = await fetchPostsForModeration(status);
         setPosts(data);
-      } else {
+      } else if (reviewType === "study-groups") {
         const data = await fetchStudyGroupsForModeration(status);
         setStudyGroups(data);
+      } else if (reviewType === "feedbacks") {
+        const data = await fetchFeedbacksForModeration(status === "approved" ? "resolved" : status);
+        setFeedbacks(data);
       }
     });
   };
@@ -92,6 +102,33 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
     });
   };
 
+  const handleModerateFeedback = (feedbackId, action) => {
+    setFeedbacks(current => current.filter(f => f.id !== feedbackId));
+    startTransition(async () => {
+      try {
+        await moderateFeedbackAction(feedbackId, action);
+      } catch (err) {
+        console.error(err);
+        const data = await fetchFeedbacksForModeration(activeTab === "approved" ? "resolved" : activeTab);
+        setFeedbacks(data);
+      }
+    });
+  };
+
+  const handleDeleteFeedback = (feedbackId) => {
+    if (!window.confirm("Are you sure you want to permanently delete this feedback?")) return;
+    setFeedbacks(current => current.filter(f => f.id !== feedbackId));
+    startTransition(async () => {
+      try {
+        await deleteFeedbackAction(feedbackId);
+      } catch (err) {
+        console.error(err);
+        const data = await fetchFeedbacksForModeration(activeTab === "approved" ? "resolved" : activeTab);
+        setFeedbacks(data);
+      }
+    });
+  };
+
   return (
     <main className="surface min-h-[calc(100vh-72px)] p-5 sm:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -121,6 +158,12 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
             >
               Study Groups
             </button>
+            <button 
+              onClick={() => handleTypeChange("feedbacks")} 
+              className={`px-4 py-2 rounded-lg text-sm font-semibold transition ${reviewType === "feedbacks" ? "bg-[var(--surface)] text-white shadow-sm" : "text-muted hover:text-secondary"}`}
+            >
+              Feedback & Support
+            </button>
           </div>
         </header>
 
@@ -147,6 +190,11 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
                   {counts.pendingStudyGroups}
                 </span>
               )}
+              {reviewType === "feedbacks" && counts.pendingFeedbacks > 0 && activeTab !== "pending" && (
+                <span className="bg-amber-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  {counts.pendingFeedbacks}
+                </span>
+              )}
             </button>
             <button
               onClick={() => handleTabChange("approved")}
@@ -154,7 +202,7 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
                 activeTab === "approved" ? "bg-green-500/10 text-green-500 font-medium" : "text-muted hover:bg-[var(--surface)]"
               }`}
             >
-              <CheckCircle2 size={16} /> Approved Content
+              <CheckCircle2 size={16} /> {reviewType === "feedbacks" ? "Resolved Content" : "Approved Content"}
             </button>
             
             {reviewType === "posts" && (
@@ -188,13 +236,51 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
             )}
 
             {/* Empty State */}
-            {!isPending && ((reviewType === "posts" && posts.length === 0) || (reviewType === "study-groups" && studyGroups.length === 0)) && (
+            {!isPending && ((reviewType === "posts" && posts.length === 0) || (reviewType === "study-groups" && studyGroups.length === 0) || (reviewType === "feedbacks" && feedbacks.length === 0)) && (
               <div className="flex flex-col items-center justify-center text-center p-12 border border-dashed border-[var(--border)] rounded-2xl bg-[var(--card)]">
                 <ShieldAlert size={32} className="text-muted mb-4 opacity-50" />
                 <h3 className="text-lg font-semibold text-secondary">Queue is empty</h3>
-                <p className="mt-2 text-sm text-muted">No {activeTab} {reviewType === "posts" ? "posts" : "study groups"} to display right now.</p>
+                <p className="mt-2 text-sm text-muted">No {activeTab} {reviewType === "posts" ? "posts" : reviewType === "study-groups" ? "study groups" : "feedbacks"} to display right now.</p>
               </div>
             )}
+
+            {/* Feedback Cards */}
+            {!isPending && reviewType === "feedbacks" && feedbacks.map(feedback => (
+              <div key={feedback.id} className="card p-5 sm:p-6 rounded-2xl border border-[var(--border)] bg-[var(--card)] hover:border-[var(--divider)] transition">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-semibold text-lg text-primary">{feedback.name} <span className="text-sm font-normal text-muted">({feedback.email})</span></h3>
+                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 text-indigo-500 text-xs font-semibold">
+                      {feedback.category}
+                    </div>
+                    <p className="mt-4 text-sm text-secondary whitespace-pre-wrap">{feedback.message}</p>
+                    <div className="mt-3 flex items-center gap-3 text-xs text-muted font-medium">
+                      <span className="flex items-center gap-1"><Clock size={14} /> {new Date(feedback.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  
+                  {/* Actions */}
+                  <div className="flex flex-col gap-2 shrink-0">
+                    {activeTab === "pending" && (
+                      <button 
+                        onClick={() => handleModerateFeedback(feedback.id, "resolved")}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-green-500/10 hover:bg-green-500/20 text-green-600 font-semibold transition text-sm"
+                        disabled={isPending}
+                      >
+                        <Check size={16} /> Resolve
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => handleDeleteFeedback(feedback.id)}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-danger/10 hover:bg-danger/20 text-danger font-semibold transition text-sm"
+                      disabled={isPending}
+                    >
+                      <Trash2 size={16} /> Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
 
             {/* Post Cards */}
             {!isPending && reviewType === "posts" && posts.map(post => (

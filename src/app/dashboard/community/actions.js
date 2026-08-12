@@ -985,13 +985,19 @@ export async function fetchModerationCounts() {
       .select("id", { count: "exact", head: true })
       .eq("is_active", false);
 
+    const { count: pendingFeedbacks } = await supabase
+      .from("ib_contact_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
+
     return { 
       pending: pending || 0, 
       reports: reports || 0,
-      pendingStudyGroups: pendingStudyGroups || 0
+      pendingStudyGroups: pendingStudyGroups || 0,
+      pendingFeedbacks: pendingFeedbacks || 0
     };
   } catch {
-    return { pending: 0, reports: 0 };
+    return { pending: 0, reports: 0, pendingStudyGroups: 0, pendingFeedbacks: 0 };
   }
 }
 
@@ -1035,6 +1041,53 @@ export async function moderateStudyGroupAction(groupId, action) {
   }
   
   revalidatePath("/dashboard/community", "layout");
+  revalidatePath("/dashboard/admin/moderation", "layout");
+  return { success: true };
+}
+
+export async function fetchFeedbacksForModeration(status = "pending") {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const { data } = await supabase
+    .from("ib_contact_messages")
+    .select("*")
+    .eq("status", status)
+    .order("created_at", { ascending: false });
+
+  return data || [];
+}
+
+export async function moderateFeedbackAction(feedbackId, action) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  if (action !== "resolved") {
+    throw new Error("Invalid moderation action.");
+  }
+
+  const { error } = await supabase
+    .from("ib_contact_messages")
+    .update({ status: action })
+    .eq("id", feedbackId);
+
+  if (error) throw new Error("Failed to moderate feedback.");
+
+  revalidatePath("/dashboard/admin/moderation", "layout");
+  return { success: true };
+}
+
+export async function deleteFeedbackAction(feedbackId) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  const { error } = await supabase
+    .from("ib_contact_messages")
+    .delete()
+    .eq("id", feedbackId);
+
+  if (error) throw new Error("Failed to delete feedback.");
+
   revalidatePath("/dashboard/admin/moderation", "layout");
   return { success: true };
 }

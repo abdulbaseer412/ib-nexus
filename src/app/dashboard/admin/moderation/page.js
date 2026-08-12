@@ -1,5 +1,5 @@
 import { requireCompleteProfile } from "@/lib/auth";
-import { fetchModerationCounts, fetchPostsForModeration, fetchStudyGroupsForModeration, checkIsAdmin } from "../../community/actions";
+import { fetchModerationCounts, fetchPostsForModeration, fetchStudyGroupsForModeration, fetchFeedbacksForModeration, checkIsAdmin } from "../../community/actions";
 import { redirect } from "next/navigation";
 import ModerationClient from "./ModerationClient";
 
@@ -14,16 +14,18 @@ export default async function ModerationPage() {
     redirect("/dashboard");
   }
 
-  const [counts, initialPending, initialPendingStudyGroups] = await Promise.all([
+  const [counts, initialPending, initialPendingStudyGroups, initialPendingFeedbacks] = await Promise.all([
     fetchModerationCounts(),
     fetchPostsForModeration("pending"),
     fetchStudyGroupsForModeration("pending"),
+    fetchFeedbacksForModeration("pending"),
   ]);
 
   return (
     <ModerationClient
       initialPending={initialPending}
       initialPendingStudyGroups={initialPendingStudyGroups}
+      initialPendingFeedbacks={initialPendingFeedbacks}
       counts={counts}
       userId={user.id}
     />
