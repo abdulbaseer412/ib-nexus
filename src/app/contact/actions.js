@@ -3,8 +3,6 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function submitContactForm(prevState, formData) {
   try {
     const name = formData.get("name");
@@ -35,6 +33,7 @@ export async function submitContactForm(prevState, formData) {
 
     if (process.env.RESEND_API_KEY) {
       try {
+        const resend = new Resend(process.env.RESEND_API_KEY);
         await resend.emails.send({
           from: "IB Nexus Support <onboarding@resend.dev>",
           to: email,
