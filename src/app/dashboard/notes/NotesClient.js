@@ -35,6 +35,10 @@ export default function NotesClient({ initialNotes }) {
   const [cameraLoading, setCameraLoading] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  
+  // File Import
+  const importFileRef = useRef(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   useEffect(() => {
     setNotes(initialNotes || []);
@@ -213,6 +217,64 @@ export default function NotesClient({ initialNotes }) {
     }, "image/jpeg", 0.9);
   };
 
+  const handleImportDocument = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setIsImporting(true);
+    const supabase = createClient();
+    const uploadedLinks = [];
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `imports/${crypto.randomUUID()}_${Date.now()}.${fileExt}`;
+      
+      const { error } = await supabase.storage.from('notes_media').upload(fileName, file);
+      if (!error) {
+        const { data: { publicUrl } } = supabase.storage.from('notes_media').getPublicUrl(fileName);
+        uploadedLinks.push({ name: file.name, url: publicUrl, isImage: file.type.startsWith('image/') });
+      }
+    }
+
+    if (uploadedLinks.length > 0) {
+      const initialContent = {
+        type: 'doc',
+        content: [
+          ...uploadedLinks.map(link => {
+            if (link.isImage) {
+              return { type: 'image', attrs: { src: link.url, alt: link.name, title: null } };
+            }
+            return {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  marks: [{ type: 'link', attrs: { href: link.url, target: '_blank', class: null } }],
+                  text: `📄 ${link.name}`
+                }
+              ]
+            };
+          }),
+          { type: 'paragraph' }
+        ]
+      };
+
+      const formData = new FormData();
+      formData.append("title", files.length === 1 ? files[0].name.split('.')[0] : "Imported Documents");
+      formData.append("subject", "General");
+      formData.append("initial_content", JSON.stringify(initialContent));
+      
+      try {
+        await createNote(formData);
+      } catch (err) {
+        // NEXT_REDIRECT
+      }
+    }
+    
+    setIsImporting(false);
+    if (importFileRef.current) importFileRef.current.value = "";
+  };
+
   return (
     <main className="surface min-h-[calc(100vh-72px)] p-4 sm:p-8">
       {/* Header */}
@@ -233,17 +295,41 @@ export default function NotesClient({ initialNotes }) {
         </div>
       </header>
 
+      {/* AI Informative Banner */}
+      <div className="mt-8 p-4 rounded-xl bg-accent/10 border border-accent/20 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="p-3 bg-accent/20 rounded-lg shrink-0">
+          <BrainCircuit size={24} className="text-accent" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-accent text-sm mb-1">AI-Powered Knowledge Base</h3>
+          <p className="text-sm text-secondary">
+            Any notes, images, or documents you save here will later be analyzed by your AI Tutor. 
+            The AI will thoroughly read everything to help you study 10x faster, generate personalized active recall flashcards, and give you immediate feedback!
+          </p>
+        </div>
+      </div>
+
       {/* Quick Action / Command Area */}
       {notes.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">
           <button onClick={startCamera} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition group">
             <Camera size={14} className="text-accent group-hover:scale-110 transition-transform" /> Quick capture
           </button>
-          <button onClick={() => setIsCreating(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition">
-            <FolderPlus size={14} /> New collection
-          </button>
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition">
-            <DownloadCloud size={14} /> Import document
+          
+          <input 
+            type="file" 
+            ref={importFileRef} 
+            className="hidden" 
+            multiple 
+            onChange={handleImportDocument} 
+          />
+          <button 
+            onClick={() => importFileRef.current?.click()} 
+            disabled={isImporting}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition"
+          >
+            {isImporting ? <Clock size={14} className="animate-spin" /> : <DownloadCloud size={14} />} 
+            {isImporting ? "Importing..." : "Import document"}
           </button>
         </div>
       )}
