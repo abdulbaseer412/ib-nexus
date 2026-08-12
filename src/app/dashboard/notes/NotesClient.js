@@ -7,7 +7,7 @@ import {
   Search, Plus, PenLine, Clock, Star, Archive, 
   MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, 
   CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity,
-  Camera, X
+  Camera, X, FolderUp
 } from "lucide-react";
 import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent } from "./actions";
 import { createClient } from "@/utils/supabase-browser";
@@ -38,7 +38,9 @@ export default function NotesClient({ initialNotes }) {
   
   // File Import
   const importFileRef = useRef(null);
+  const importFolderRef = useRef(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isImportingFolder, setIsImportingFolder] = useState(false);
 
   useEffect(() => {
     setNotes(initialNotes || []);
@@ -275,6 +277,68 @@ export default function NotesClient({ initialNotes }) {
     if (importFileRef.current) importFileRef.current.value = "";
   };
 
+  const handleImportFolder = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setIsImportingFolder(true);
+    const supabase = createClient();
+    const uploadedLinks = [];
+
+    // Extract root folder name
+    const folderName = files[0].webkitRelativePath ? files[0].webkitRelativePath.split('/')[0] : "Imported Folder";
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `imports/${crypto.randomUUID()}_${Date.now()}.${fileExt}`;
+      
+      const { error } = await supabase.storage.from('notes_media').upload(fileName, file);
+      if (!error) {
+        const { data: { publicUrl } } = supabase.storage.from('notes_media').getPublicUrl(fileName);
+        // keep track of relative path so we can display it nicely
+        uploadedLinks.push({ name: file.webkitRelativePath || file.name, url: publicUrl, isImage: file.type.startsWith('image/') });
+      }
+    }
+
+    if (uploadedLinks.length > 0) {
+      const initialContent = {
+        type: 'doc',
+        content: [
+          ...uploadedLinks.map(link => {
+            if (link.isImage) {
+              return { type: 'image', attrs: { src: link.url, alt: link.name, title: null } };
+            }
+            return {
+              type: 'paragraph',
+              content: [
+                {
+                  type: 'text',
+                  marks: [{ type: 'link', attrs: { href: link.url, target: '_blank', class: null } }],
+                  text: `📄 ${link.name}`
+                }
+              ]
+            };
+          }),
+          { type: 'paragraph' }
+        ]
+      };
+
+      const formData = new FormData();
+      formData.append("title", folderName);
+      formData.append("subject", "General");
+      formData.append("initial_content", JSON.stringify(initialContent));
+      
+      try {
+        await createNote(formData);
+      } catch (err) {
+        // NEXT_REDIRECT
+      }
+    }
+    
+    setIsImportingFolder(false);
+    if (importFolderRef.current) importFolderRef.current.value = "";
+  };
+
   return (
     <main className="surface min-h-[calc(100vh-72px)] p-4 sm:p-8">
       {/* Header */}
@@ -325,11 +389,29 @@ export default function NotesClient({ initialNotes }) {
           />
           <button 
             onClick={() => importFileRef.current?.click()} 
-            disabled={isImporting}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition"
+            disabled={isImporting || isImportingFolder}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition disabled:opacity-50"
           >
             {isImporting ? <Clock size={14} className="animate-spin" /> : <DownloadCloud size={14} />} 
-            {isImporting ? "Importing..." : "Import document"}
+            {isImporting ? "Importing files..." : "Import files"}
+          </button>
+
+          <input 
+            type="file" 
+            ref={importFolderRef} 
+            className="hidden" 
+            webkitdirectory="true"
+            directory="true"
+            multiple 
+            onChange={handleImportFolder} 
+          />
+          <button 
+            onClick={() => importFolderRef.current?.click()} 
+            disabled={isImporting || isImportingFolder}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition disabled:opacity-50"
+          >
+            {isImportingFolder ? <Clock size={14} className="animate-spin" /> : <FolderUp size={14} />} 
+            {isImportingFolder ? "Importing folder..." : "Import folder"}
           </button>
         </div>
       )}
