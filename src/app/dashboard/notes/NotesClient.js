@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { 
   Search, Plus, PenLine, Clock, Star, Archive, 
   MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, 
-  CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity
+  CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity,
+  Camera, X
 } from "lucide-react";
-import { createNote, toggleNoteState, duplicateNote, deleteNote } from "./actions";
+import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent } from "./actions";
+import { createClient } from "@/utils/supabase-browser";
 import { Modal, Button, Input, Dropdown } from "@/components/ui";
 
 const SUBJECTS = ["Biology", "Chemistry", "Mathematics", "Economics", "English", "Physics", "TOK", "History"];
@@ -27,6 +29,12 @@ export default function NotesClient({ initialNotes }) {
   const [deleteNoteId, setDeleteNoteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  
+  // Camera Capture
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
 
   useEffect(() => {
     setNotes(initialNotes || []);
@@ -105,6 +113,106 @@ export default function NotesClient({ initialNotes }) {
     }
   }
 
+  // Camera Functions
+  const startCamera = async () => {
+    setIsCameraOpen(true);
+    setCameraLoading(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "environment" } 
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Camera access denied or unavailable", err);
+      alert("Unable to access camera.");
+      setIsCameraOpen(false);
+    } finally {
+      setCameraLoading(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = async () => {
+    if (!videoRef.current) return;
+    setCameraLoading(true);
+    
+    // Create canvas to capture frame
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    
+    // Convert to blob
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        setCameraLoading(false);
+        return;
+      }
+      
+      const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+      const supabase = createClient();
+      
+      // We need a temporary unique name, we don't have note ID yet
+      const tempId = crypto.randomUUID();
+      const fileName = `captures/${tempId}_${Date.now()}.jpg`;
+
+      const { data, error } = await supabase.storage
+        .from('notes_media')
+        .upload(fileName, file);
+
+      if (error) {
+        console.error("Upload failed", error);
+        alert("Failed to upload capture.");
+        setCameraLoading(false);
+        return;
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('notes_media')
+        .getPublicUrl(fileName);
+
+      // Create new note with captured image
+      const formData = new FormData();
+      formData.append("title", "Camera Capture");
+      formData.append("subject", "General");
+      
+      const initialContent = {
+        type: 'doc',
+        content: [
+          { type: 'paragraph' },
+          { 
+            type: 'image', 
+            attrs: { src: publicUrl, alt: 'Camera Capture', title: null } 
+          },
+          { type: 'paragraph' }
+        ]
+      };
+      formData.append("initial_content", JSON.stringify(initialContent));
+      
+      try {
+        // Stop camera before redirect
+        stopCamera();
+        
+        // Let createNote redirect automatically (we intercept it)
+        await createNote(formData);
+      } catch (e) {
+        // Catch NEXT_REDIRECT
+      }
+      setCameraLoading(false);
+    }, "image/jpeg", 0.9);
+  };
+
   return (
     <main className="surface min-h-[calc(100vh-72px)] p-4 sm:p-8">
       {/* Header */}
@@ -128,10 +236,10 @@ export default function NotesClient({ initialNotes }) {
       {/* Quick Action / Command Area */}
       {notes.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">
-          <button onClick={() => setIsCreating(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition">
-            <Plus size={14} className="text-accent" /> Quick capture
+          <button onClick={startCamera} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition group">
+            <Camera size={14} className="text-accent group-hover:scale-110 transition-transform" /> Quick capture
           </button>
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition">
+          <button onClick={() => setIsCreating(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition">
             <FolderPlus size={14} /> New collection
           </button>
           <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition">
@@ -337,6 +445,55 @@ export default function NotesClient({ initialNotes }) {
           </div>
         </div>
       </Modal>
+
+      {/* Camera Fullscreen Overlay */}
+      {isCameraOpen && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          <div className="p-4 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent absolute top-0 w-full z-10">
+            <h3 className="text-white font-medium flex items-center gap-2"><Camera size={18} /> Quick Capture</h3>
+            <button onClick={stopCamera} className="p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition backdrop-blur-md">
+              <X size={20} />
+            </button>
+          </div>
+          
+          <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
+            {cameraLoading && !videoRef.current?.srcObject && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-white/50">
+                <Clock size={32} className="animate-spin mb-4" />
+                <p>Starting camera...</p>
+              </div>
+            )}
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              className="w-full h-full object-cover"
+            />
+            
+            {/* Viewfinder Overlay */}
+            <div className="absolute inset-0 border-[2px] border-white/20 pointer-events-none m-8 rounded-2xl">
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-[3px] border-l-[3px] border-white -mt-0.5 -ml-0.5 rounded-tl-2xl"></div>
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-[3px] border-r-[3px] border-white -mt-0.5 -mr-0.5 rounded-tr-2xl"></div>
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-[3px] border-l-[3px] border-white -mb-0.5 -ml-0.5 rounded-bl-2xl"></div>
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-[3px] border-r-[3px] border-white -mb-0.5 -mr-0.5 rounded-br-2xl"></div>
+            </div>
+          </div>
+          
+          <div className="p-8 bg-black flex justify-center pb-12">
+            <button 
+              onClick={capturePhoto} 
+              disabled={cameraLoading}
+              className="w-20 h-20 rounded-full border-[4px] border-white flex items-center justify-center hover:scale-105 active:scale-95 transition-transform disabled:opacity-50 disabled:scale-100"
+            >
+              {cameraLoading ? (
+                <Clock size={24} className="text-white animate-spin" />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-white"></div>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

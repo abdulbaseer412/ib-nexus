@@ -13,6 +13,9 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
+import Image from "@tiptap/extension-image";
+import LinkExtension from "@tiptap/extension-link";
+import { createClient } from "@/utils/supabase-browser";
 import { 
   updateNoteContent, 
   updateNoteMetadata, 
@@ -39,6 +42,10 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
   // AI Readiness
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  // File Upload State
+  const fileInputRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
+
   // Metadata edit states
   const [title, setTitle] = useState(note.title);
   const [examImportance, setExamImportance] = useState(note.exam_importance || "Medium");
@@ -55,6 +62,18 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
       StarterKit,
       TaskList,
       TaskItem.configure({ nested: true }),
+      Image.configure({
+        HTMLAttributes: {
+          class: 'rounded-xl border border-divider max-w-full my-4 cursor-pointer hover:border-accent transition-colors',
+        },
+      }),
+      LinkExtension.configure({
+        openOnClick: true,
+        autolink: true,
+        HTMLAttributes: {
+          class: 'text-accent underline hover:text-accent/80',
+        },
+      }),
       Placeholder.configure({ placeholder: "Start typing your notes here..." })
     ],
     content: note.content ? JSON.parse(note.content) : "",
@@ -143,6 +162,46 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
       setNote(prev => ({ ...prev, revision_readiness: res.score }));
     }
     setIsAnalyzing(false);
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const supabase = createClient();
+    
+    // Generate a unique filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${note.id}/${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
+
+    const { data, error } = await supabase.storage
+      .from('notes_media')
+      .upload(fileName, file, { cacheControl: '3600', upsert: false });
+
+    if (error) {
+      console.error("Upload error:", error);
+      alert("Failed to upload file.");
+      setIsUploading(false);
+      return;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('notes_media')
+      .getPublicUrl(fileName);
+
+    // Insert into editor
+    if (file.type.startsWith('image/')) {
+      editor.chain().focus().setImage({ src: publicUrl }).run();
+    } else {
+      // For PDFs and docs, insert as a link
+      const linkText = file.name;
+      editor.chain().focus().insertContent(`<a href="${publicUrl}" target="_blank">📄 ${linkText}</a> `).run();
+    }
+
+    setIsUploading(false);
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   // Keyboard shortcuts (Cmd+S)
@@ -266,6 +325,23 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
               <div className="w-px h-5 bg-divider mx-1"></div>
               <button onClick={() => editor.chain().focus().toggleBlockquote().run()} className={`p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition ${editor.isActive('blockquote') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>"</button>
               <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={`p-1.5 rounded-lg text-sm font-mono w-8 h-8 flex items-center justify-center transition ${editor.isActive('codeBlock') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>{'</>'}</button>
+              
+              <div className="w-px h-5 bg-divider mx-1"></div>
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                onChange={handleFileUpload} 
+                accept="image/*,.pdf,.doc,.docx,.txt"
+              />
+              <button 
+                onClick={() => fileInputRef.current?.click()} 
+                disabled={isUploading}
+                className="p-1.5 rounded-lg text-sm w-auto px-3 h-8 flex items-center gap-1.5 justify-center text-muted hover:bg-[var(--surface)] hover:text-primary transition"
+              >
+                {isUploading ? <Clock size={14} className="animate-spin" /> : <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
+                {isUploading ? "Uploading..." : "Attach"}
+              </button>
             </div>
 
             {/* Tiptap Content */}

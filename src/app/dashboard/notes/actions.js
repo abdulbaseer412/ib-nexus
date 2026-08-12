@@ -52,10 +52,16 @@ export async function createNote(formData) {
   const subject = formData.get("subject");
   const topic = formData.get("topic");
   const level = formData.get("level");
+  const initialContent = formData.get("initial_content");
 
   if (!title || !subject) {
     throw new Error("Title and Subject are required");
   }
+
+  const defaultContent = {
+    type: 'doc',
+    content: [{ type: 'paragraph' }]
+  };
 
   const { data, error } = await supabase
     .from("ib_notes")
@@ -65,10 +71,7 @@ export async function createNote(formData) {
       subject,
       topic,
       level,
-      content: JSON.stringify({
-        type: 'doc',
-        content: [{ type: 'paragraph' }]
-      })
+      content: initialContent || JSON.stringify(defaultContent)
     })
     .select()
     .single();
