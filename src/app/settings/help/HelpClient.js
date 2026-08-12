@@ -3,23 +3,37 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, LifeBuoy, Mail, MessageSquare, ExternalLink, Send, Sparkles } from "lucide-react";
+import { submitContactForm } from "@/app/contact/actions";
 
-export default function HelpClient({ userEmail }) {
+export default function HelpClient({ userEmail, userName }) {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  const [status, setStatus] = useState("idle"); // idle, loading, success
+  const [status, setStatus] = useState("idle"); // idle, loading, success, error
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatus("loading");
     
-    // Simulate API call for sending support ticket
-    setTimeout(() => {
-      setStatus("success");
-      setSubject("");
-      setMessage("");
-      setTimeout(() => setStatus("idle"), 5000);
-    }, 1500);
+    try {
+      const formData = new FormData();
+      formData.append("name", userName);
+      formData.append("email", userEmail);
+      formData.append("category", subject);
+      formData.append("message", message);
+      
+      const res = await submitContactForm(null, formData);
+      
+      if (res?.error) {
+        setStatus("error");
+      } else {
+        setStatus("success");
+        setSubject("");
+        setMessage("");
+        setTimeout(() => setStatus("idle"), 5000);
+      }
+    } catch (err) {
+      setStatus("error");
+    }
   };
 
   return (
@@ -135,6 +149,12 @@ export default function HelpClient({ userEmail }) {
             {status === "success" && (
               <div className="mt-4 p-3 rounded-xl bg-[rgba(16,185,129,0.1)] border border-[rgba(16,185,129,0.2)] text-[#10b981] text-sm flex items-center gap-2">
                 Your message has been sent successfully! Our support team will get back to you soon.
+              </div>
+            )}
+            
+            {status === "error" && (
+              <div className="mt-4 p-3 rounded-xl bg-danger/10 border border-danger/20 text-danger text-sm flex items-center gap-2">
+                Failed to send message. Please try again later.
               </div>
             )}
           </form>
