@@ -5,8 +5,7 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('notes_media', 'notes_media', true)
 ON CONFLICT (id) DO NOTHING;
 
--- 2. Enable RLS on the storage.objects table if not already enabled
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- 2. RLS is already enabled by default on storage.objects in Supabase
 
 -- 3. Policy: Allow anyone to read (view) the media files
 CREATE POLICY "Public Access"
