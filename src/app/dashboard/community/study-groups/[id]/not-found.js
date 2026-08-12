@@ -15,7 +15,7 @@ export default function NotFound() {
         href="/dashboard/community"
         className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-colors"
       >
-        Back to Community
+        Back to Nexus Network
       </Link>
     </div>
   );

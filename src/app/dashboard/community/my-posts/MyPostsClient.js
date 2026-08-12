@@ -56,7 +56,7 @@ export default function MyPostsClient({ posts, replies, userId, isAdmin }) {
             <span className="p-1.5 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors">
               <ArrowLeft size={16} />
             </span>
-            Back to Community
+            Back to Nexus Network
           </Link>
           
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6">
@@ -123,7 +123,7 @@ export default function MyPostsClient({ posts, replies, userId, isAdmin }) {
                     You haven't started any discussions. Share your knowledge or ask a question!
                   </p>
                   <Link href="/dashboard/community" className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">
-                    Explore Community
+                    Explore Nexus Network
                   </Link>
                 </div>
               ) : (

@@ -147,7 +147,7 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
           <span className="p-1.5 rounded-lg bg-white/5 group-hover:bg-white/10 transition-colors">
             <ArrowLeft size={16} />
           </span>
-          Back to Community
+          Back to Nexus Network
         </Link>
 
         {/* Main Post */}

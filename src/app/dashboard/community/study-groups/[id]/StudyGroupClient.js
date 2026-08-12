@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Send, Users, LogOut, MessageCircle } from "lucide-react";
 import { sendMessage, updatePresence, removePresence, leaveStudyGroup, fetchRoomMessages, fetchRoomPresence } from "../../actions";
-import { COMMUNITY_CATEGORIES } from "../../constants";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
 const C = {

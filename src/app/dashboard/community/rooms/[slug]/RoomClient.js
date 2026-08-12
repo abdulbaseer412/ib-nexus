@@ -12,7 +12,6 @@ import {
   createPostAction, fetchPostsBySubject, sendMessage,
   updatePresence, fetchRoomMessages, fetchRoomPresence, removePresence
 } from "../../actions";
-import { COMMUNITY_CATEGORIES } from "../../constants";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
 const C = {
@@ -228,7 +227,7 @@ export default function RoomClient({
         )}
       </div>
 
-      {/* Ask the Community Modal */}
+      {/* Ask the Nexus Network Modal */}
       {showAskModal && (
         <AskModal
           room={room}
@@ -385,7 +384,7 @@ function OverviewTab({ room, trending, posts, presence, c, onAsk, onSwitchTab })
             boxShadow: `0 0 20px ${c.accent}25`,
           }}
         >
-          <Plus size={15} /> Ask the Community
+          <Plus size={15} /> Ask the Nexus Network
         </button>
       </section>
     </div>
@@ -497,7 +496,7 @@ function DiscussionsTab({ room, initialPosts, c, onAsk }) {
             boxShadow: `0 0 20px ${c.accent}25`,
           }}
         >
-          <Plus size={15} /> Ask the Community
+          <Plus size={15} /> Ask the Nexus Network
         </button>
       </section>
     </div>
@@ -694,7 +693,7 @@ function AskModal({ room, c, onClose }) {
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10 relative z-10">
           <h3 className="text-lg font-bold text-white">
-            Ask the {room.name} Community
+            Ask the {room.name} Network
           </h3>
           <button onClick={onClose} className="rounded-xl p-2 hover:bg-white/10 text-white/40 hover:text-white transition-colors">
             <X size={18} />

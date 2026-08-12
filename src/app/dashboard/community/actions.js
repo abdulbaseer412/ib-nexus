@@ -4,7 +4,7 @@ import { createAdminClient, createServerClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/session";
 import { revalidatePath } from "next/cache";
 
-import { COMMUNITY_CATEGORIES } from "./constants";
+// Using dynamic subjects from database now instead of constants
 
 /* ── Database bootstrap (run once) ───────────────────────────────────────── */
 export async function bootstrapCommunityDB() {
@@ -216,7 +216,11 @@ export async function createPostAction({ title, content, category, postType = "d
     throw new Error("Title, content and category are required.");
   }
 
-  if (!COMMUNITY_CATEGORIES.includes(category)) {
+  // Validate against dynamic subjects
+  const { data: subjects } = await supabase.from("community_subjects").select("name");
+  const validSubjects = subjects?.map(s => s.name) || [];
+  
+  if (!validSubjects.includes(category)) {
     throw new Error("Invalid category selected.");
   }
 
@@ -1009,21 +1013,21 @@ export async function moderateStudyGroupAction(groupId, action) {
   const adminUser = await requireAdmin();
   const supabase = createAdminClient();
 
+  const { data: group } = await supabase.from("community_study_groups").select("*").eq("id", groupId).single();
+  if (!group) throw new Error("Group not found");
+
   if (action === "approve") {
     // 1. Mark as active
     await supabase.from("community_study_groups").update({ is_active: true }).eq("id", groupId);
     
     // 2. Mirror into community_rooms so it can have messages and presence
-    const { data: group } = await supabase.from("community_study_groups").select("*").eq("id", groupId).single();
-    if (group) {
-      await supabase.from("community_rooms").upsert({
-        id: group.id,
-        name: group.name,
-        slug: `study-group-${group.id}`,
-        subject: group.subject,
-        description: group.description
-      });
-    }
+    await supabase.from("community_rooms").upsert({
+      id: group.id,
+      name: group.name,
+      slug: `study-group-${group.id}`,
+      subject: group.subject,
+      description: group.description
+    });
   } else if (action === "reject") {
     // Delete the group (and cascade should handle members)
     await supabase.from("community_study_groups").delete().eq("id", groupId);
@@ -1050,6 +1054,70 @@ export async function updateStudyGroup(groupId, { name, subject, topic, descript
 
   revalidatePath("/dashboard/community", "layout");
   revalidatePath("/dashboard/admin/moderation", "layout");
+  return { success: true };
+}
+
+export async function createSubjectRoomAction({ name, subject, description }) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  if (!name?.trim() || !subject?.trim()) {
+    throw new Error("Name and subject are required.");
+  }
+
+  const cleanName = name.trim();
+  const cleanSubject = subject.trim();
+
+  // 1. Try to insert the subject (might fail if exists due to unique constraint, that's okay)
+  const { error: subjectError } = await supabase
+    .from("community_subjects")
+    .insert({ name: cleanSubject });
+  
+  if (subjectError && subjectError.code !== '23505') { // 23505 is unique violation in Postgres
+    console.warn("Failed to create subject, it might already exist:", subjectError);
+  }
+
+  // 2. Create the specific room
+  const slug = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const { error } = await supabase.from("community_rooms").upsert({
+    subject: cleanSubject,
+    name: cleanName,
+    slug: slug,
+    description: description?.trim() || null
+  });
+
+  if (error) throw new Error("Failed to create subject room.");
+
+  revalidatePath("/dashboard/community", "layout");
+  revalidatePath("/dashboard/admin/moderation", "layout");
+  return { success: true };
+}
+
+export async function deleteSubjectRoomAction(roomId) {
+  const isAdmin = await checkIsAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const supabase = createAdminClient();
+  const { error } = await supabase.from("community_rooms").delete().eq("id", roomId);
+  if (error) throw new Error("Failed to delete room.");
+
+  revalidatePath("/dashboard/community", "layout");
+  return { success: true };
+}
+
+export async function deleteSubjectCategoryAction(subjectName) {
+  const isAdmin = await checkIsAdmin();
+  if (!isAdmin) throw new Error("Unauthorized");
+
+  const supabase = createAdminClient();
+  // 1. Delete the category
+  const { error: catError } = await supabase.from("community_subjects").delete().eq("name", subjectName);
+  if (catError) throw new Error("Failed to delete subject category.");
+
+  // 2. Cascade delete rooms associated with this subject
+  await supabase.from("community_rooms").delete().eq("subject", subjectName);
+
+  revalidatePath("/dashboard/community", "layout");
   return { success: true };
 }
 
@@ -1195,4 +1263,17 @@ export async function fetchMyReplies() {
 
   if (error) return [];
   return data || [];
+}
+
+/* ── Dynamic Subjects ─────────────────────────────────────────────────────── */
+
+export async function fetchSubjects() {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("community_subjects")
+    .select("name")
+    .order("name", { ascending: true });
+    
+  if (error) return [];
+  return data?.map(s => s.name) || [];
 }

@@ -6,7 +6,7 @@ import DiscussionClient from "./DiscussionClient";
 export async function generateMetadata({ params }) {
   const { id } = await params;
   const post = await fetchPostById(id);
-  return { title: post ? `${post.title} — Community — IB Nexus` : "Discussion — IB Nexus" };
+  return { title: post ? `${post.title} — Nexus Network — IB Nexus` : "Discussion — IB Nexus" };
 }
 
 export default async function DiscussionPage({ params }) {

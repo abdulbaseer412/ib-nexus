@@ -12,7 +12,7 @@ const items = [
   ["Study Planner", "/dashboard/planner", CalendarDays],
   ["Resources", "/dashboard/resources", FolderOpen],
   ["AI Tutor", "/dashboard/ai", MessageCircle],
-  ["Community", "/dashboard/community", Users]
+  ["Nexus Network", "/dashboard/community", Users]
 ];
 
 const NavItems = memo(function NavItems({ onNavigate, profile }) {

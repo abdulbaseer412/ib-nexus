@@ -2,35 +2,59 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ArrowLeft, Save, AlertTriangle, X } from "lucide-react";
+import { Check, ArrowLeft, Save, AlertTriangle, X, Plus, Edit3, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { updateSubjectsAction } from "./actions";
+import { updateSubjectsAction, addGlobalSubjectAction, editGlobalSubjectAction, deleteGlobalSubjectAction } from "./actions";
 
-const DP_SUBJECTS = [
-  { category: "Group 1 & 2: Languages", subjects: ["English A Lit", "English A Lang & Lit", "Spanish B", "French B", "Mandarin B", "German B", "German ab initio"] },
-  { category: "Group 3: Individuals & Societies", subjects: ["History", "Geography", "Economics", "Business Management", "Psychology", "Global Politics"] },
-  { category: "Group 4: Sciences", subjects: ["Biology", "Chemistry", "Physics", "Computer Science", "ESS"] },
-  { category: "Group 5: Mathematics", subjects: ["Mathematics AA", "Mathematics AI"] }
-];
-
-const MYP_SUBJECTS = [
-  { category: "Language and Literature", subjects: ["English Lang & Lit", "Spanish Lang & Lit", "German Lang & Lit"] },
-  { category: "Language Acquisition", subjects: ["French", "Spanish", "Mandarin", "German"] },
-  { category: "Individuals and Societies", subjects: ["History", "Geography", "Integrated Humanities"] },
-  { category: "Sciences", subjects: ["Biology", "Chemistry", "Physics", "Integrated Sciences"] },
-  { category: "Mathematics", subjects: ["Mathematics (Standard)", "Mathematics (Extended)"] },
-  { category: "Arts", subjects: ["Visual Arts", "Music", "Drama"] },
-  { category: "Design", subjects: ["Design"] },
-  { category: "Physical and Health Education", subjects: ["PHE"] }
-];
-
-export default function SubjectsClient({ profile }) {
+export default function SubjectsClient({ profile, globalSubjects = [], isAdmin = false }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [selectedSubjects, setSelectedSubjects] = useState(Array.isArray(profile.subjects) ? profile.subjects : []);
   const [status, setStatus] = useState("idle");
   const [showConfirm, setShowConfirm] = useState(false);
+  
+  // Admin state
+  const [adminModal, setAdminModal] = useState({ isOpen: false, type: "add", subject: null });
+  const [adminFormData, setAdminFormData] = useState({ program: "dp", category: "Group 1 & 2: Languages", name: "" });
+
   const isDP = profile?.ib_program?.toLowerCase() === "dp";
+
+  // Compute DP and MYP subjects dynamically from globalSubjects
+  const DP_SUBJECTS = Object.entries(
+    globalSubjects
+      .filter((s) => s.program === "dp")
+      .reduce((acc, curr) => {
+        if (!acc[curr.category]) acc[curr.category] = [];
+        acc[curr.category].push(curr);
+        return acc;
+      }, {})
+  ).map(([category, subjects]) => ({ category, subjects })).sort((a,b) => a.category.localeCompare(b.category));
+
+  const MYP_SUBJECTS = Object.entries(
+    globalSubjects
+      .filter((s) => s.program === "myp")
+      .reduce((acc, curr) => {
+        if (!acc[curr.category]) acc[curr.category] = [];
+        acc[curr.category].push(curr);
+        return acc;
+      }, {})
+  ).map(([category, subjects]) => ({ category, subjects })).sort((a,b) => {
+    const order = [
+      "Language and Literature",
+      "Language Acquisition",
+      "Individuals and Societies",
+      "Sciences",
+      "Mathematics",
+      "Arts",
+      "Design",
+      "Physical and Health Education"
+    ];
+    let aIdx = order.indexOf(a.category);
+    let bIdx = order.indexOf(b.category);
+    if (aIdx === -1) aIdx = 999;
+    if (bIdx === -1) bIdx = 999;
+    return aIdx - bIdx;
+  });
 
   const toggleSubjectDP = (subjName, level) => {
     setSelectedSubjects(prev => {
@@ -57,10 +81,10 @@ export default function SubjectsClient({ profile }) {
     if (!isDP) return [];
 
     const hlCount = selectedSubjects.filter(s => s.level === "HL").length;
-    const g12Count = selectedSubjects.filter(s => DP_SUBJECTS[0].subjects.includes(s.name)).length;
-    const g3Count = selectedSubjects.filter(s => DP_SUBJECTS[1].subjects.includes(s.name) || s.name === "ESS").length;
-    const g4Count = selectedSubjects.filter(s => DP_SUBJECTS[2].subjects.includes(s.name) || s.name === "ESS").length;
-    const g5Count = selectedSubjects.filter(s => DP_SUBJECTS[3].subjects.includes(s.name)).length;
+    const g12Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'dp' && (g.category.includes('Group 1') || g.category.includes('Group 2')))).length;
+    const g3Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'dp' && g.category.includes('Group 3')) || s.name === "ESS").length;
+    const g4Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'dp' && g.category.includes('Group 4')) || s.name === "ESS").length;
+    const g5Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'dp' && g.category.includes('Group 5'))).length;
 
     return [
       { rule: `Exactly 6 subjects (Currently: ${selectedSubjects.length})`, isMet: selectedSubjects.length === 6 },
@@ -75,15 +99,15 @@ export default function SubjectsClient({ profile }) {
   const getMYPRules = () => {
     if (isDP) return [];
 
-    const g1Count = selectedSubjects.filter(s => MYP_SUBJECTS[0].subjects.includes(s.name)).length;
-    const g2Count = selectedSubjects.filter(s => MYP_SUBJECTS[1].subjects.includes(s.name)).length;
-    const g3Count = selectedSubjects.filter(s => MYP_SUBJECTS[2].subjects.includes(s.name)).length;
-    const g4Count = selectedSubjects.filter(s => MYP_SUBJECTS[3].subjects.includes(s.name)).length;
-    const g5Count = selectedSubjects.filter(s => MYP_SUBJECTS[4].subjects.includes(s.name)).length;
+    const g1Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Language and Literature')).length;
+    const g2Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Language Acquisition')).length;
+    const g3Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Individuals and Societies')).length;
+    const g4Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Sciences')).length;
+    const g5Count = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Mathematics')).length;
     
-    const artsCount = selectedSubjects.filter(s => MYP_SUBJECTS[5].subjects.includes(s.name)).length;
-    const designCount = selectedSubjects.filter(s => MYP_SUBJECTS[6].subjects.includes(s.name)).length;
-    const pheCount = selectedSubjects.filter(s => MYP_SUBJECTS[7].subjects.includes(s.name)).length;
+    const artsCount = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Arts')).length;
+    const designCount = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Design')).length;
+    const pheCount = selectedSubjects.filter(s => globalSubjects.some(g => g.name === s.name && g.program === 'myp' && g.category === 'Physical and Health Education')).length;
     const flexCount = artsCount + designCount + pheCount;
     const totalGroups = [g1Count, g2Count, g3Count, g4Count, g5Count, artsCount, designCount, pheCount].filter(c => c > 0).length;
 
@@ -119,6 +143,32 @@ export default function SubjectsClient({ profile }) {
     }
   };
 
+  const handleAdminSubmit = () => {
+    startTransition(async () => {
+      try {
+        if (adminModal.type === "add") {
+          await addGlobalSubjectAction(adminFormData.program, adminFormData.category, adminFormData.name);
+        } else {
+          await editGlobalSubjectAction(adminModal.subject.id, adminFormData.program, adminFormData.category, adminFormData.name);
+        }
+        setAdminModal({ isOpen: false, type: "add", subject: null });
+      } catch (e) {
+        alert("Failed to save subject: " + e.message);
+      }
+    });
+  };
+
+  const handleDeleteGlobal = (id) => {
+    if (!confirm("Are you sure you want to delete this global subject? This may affect users who have already selected it.")) return;
+    startTransition(async () => {
+      try {
+        await deleteGlobalSubjectAction(id);
+      } catch (e) {
+        alert("Failed to delete subject: " + e.message);
+      }
+    });
+  };
+
   return (
     <>
       <main className="min-h-[calc(100vh-4rem)] bg-[var(--background)] px-4 py-8 sm:py-10">
@@ -128,7 +178,20 @@ export default function SubjectsClient({ profile }) {
             <Link href="/dashboard" className="inline-flex items-center gap-2 text-sm text-muted hover:text-primary transition mb-4">
               <ArrowLeft size={16} /> Back to Study Hub
             </Link>
-            <h1 className="text-2xl font-bold text-primary">Manage Subjects</h1>
+            <div className="flex items-center gap-4">
+              <h1 className="text-2xl font-bold text-primary">Manage Subjects</h1>
+              {isAdmin && (
+                <button 
+                  onClick={() => {
+                    setAdminFormData({ program: isDP ? "dp" : "myp", category: isDP ? DP_SUBJECTS[0]?.category : MYP_SUBJECTS[0]?.category, name: "" });
+                    setAdminModal({ isOpen: true, type: "add", subject: null });
+                  }}
+                  className="btn bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 text-sm rounded-lg flex items-center gap-1.5"
+                >
+                  <Plus size={14} /> Add Global Subject
+                </button>
+              )}
+            </div>
             <p className="text-secondary text-sm mt-1">Select your {isDP ? "IB Diploma" : "MYP"} subjects below.</p>
           </div>
           <button 
@@ -151,43 +214,94 @@ export default function SubjectsClient({ profile }) {
                 </h3>
                 <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                   {group.subjects.map((subj) => {
-                    const sel = selectedSubjects.find((s) => s.name === subj);
+                    const sel = selectedSubjects.find((s) => s.name === subj.name);
                     const isSelected = !!sel;
                     if (isDP) {
                       const isHL = sel?.level === "HL";
                       const isSL = sel?.level === "SL";
                       return (
-                        <div key={subj} className="flex items-center justify-between p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-alt)] hover:border-[var(--border-strong)] transition-colors">
-                          <span className="text-sm font-medium">{subj}</span>
+                        <div key={subj.id} className="flex items-center justify-between p-2.5 rounded-xl border border-[var(--border)] bg-[var(--surface-alt)] hover:border-[var(--border-strong)] transition-colors group/item relative">
+                          <span className="text-sm font-medium">{subj.name}</span>
                           <div className="flex gap-1 bg-[var(--surface)] p-1 rounded-lg">
                             <button 
                               type="button" 
-                              onClick={() => toggleSubjectDP(subj, "HL")}
+                              onClick={() => toggleSubjectDP(subj.name, "HL")}
                               className={`rounded-md px-3 py-1 text-xs font-semibold transition ${isHL ? "bg-[var(--accent)] text-white shadow-sm" : "text-muted hover:text-primary"}`}
                             >
                               HL
                             </button>
                             <button 
                               type="button" 
-                              onClick={() => toggleSubjectDP(subj, "SL")}
+                              onClick={() => toggleSubjectDP(subj.name, "SL")}
                               className={`rounded-md px-3 py-1 text-xs font-semibold transition ${isSL ? "bg-[var(--accent)] text-white shadow-sm" : "text-muted hover:text-primary"}`}
                             >
                               SL
                             </button>
                           </div>
+                          
+                          {isAdmin && (
+                            <div className="absolute -top-2 -right-2 hidden group-hover/item:flex items-center gap-1 bg-white dark:bg-zinc-800 shadow-md rounded-md p-1 border border-[var(--border)]">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAdminFormData({ program: subj.program, category: subj.category, name: subj.name });
+                                  setAdminModal({ isOpen: true, type: "edit", subject: subj });
+                                }}
+                                className="p-1 hover:text-indigo-600 transition"
+                              >
+                                <Edit3 size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGlobal(subj.id)}
+                                className="p-1 hover:text-red-500 transition"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     } else {
                       return (
-                        <button
-                          key={subj}
-                          type="button"
-                          onClick={() => toggleSubjectMYP(subj)}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition ${isSelected ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--surface-alt)] hover:border-[var(--border-strong)]"}`}
-                        >
-                          <span className={`text-sm font-medium ${isSelected ? "text-accent" : ""}`}>{subj}</span>
-                          {isSelected && <Check size={16} className="text-accent" />}
-                        </button>
+                        <div key={subj.id} className="relative group/item">
+                          <button
+                            type="button"
+                            onClick={() => toggleSubjectMYP(subj.name)}
+                            className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition ${isSelected ? "border-[var(--accent)] bg-[var(--accent-soft)]" : "border-[var(--border)] bg-[var(--surface-alt)] hover:border-[var(--border-strong)]"}`}
+                          >
+                            <span className="text-sm font-medium">{subj.name}</span>
+                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${isSelected ? "bg-[var(--accent)] border-[var(--accent)]" : "border-[var(--border-strong)]"}`}>
+                              {isSelected && <Check size={12} className="text-white" />}
+                            </div>
+                          </button>
+                          
+                          {isAdmin && (
+                            <div className="absolute -top-2 -right-2 hidden group-hover/item:flex items-center gap-1 bg-white dark:bg-zinc-800 shadow-md rounded-md p-1 border border-[var(--border)]">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAdminFormData({ program: subj.program, category: subj.category, name: subj.name });
+                                  setAdminModal({ isOpen: true, type: "edit", subject: subj });
+                                }}
+                                className="p-1 hover:text-indigo-600 transition"
+                              >
+                                <Edit3 size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteGlobal(subj.id);
+                                }}
+                                className="p-1 hover:text-red-500 transition"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       );
                     }
                   })}
@@ -217,6 +331,98 @@ export default function SubjectsClient({ profile }) {
           </div>
         </div>
         </div>
+        
+        {/* Admin Modal */}
+        {adminModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md bg-[var(--surface)] p-6 rounded-2xl shadow-xl border border-[var(--border)]">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-xl font-bold text-primary">
+                  {adminModal.type === "add" ? "Add Global Subject" : "Edit Global Subject"}
+                </h3>
+                <button onClick={() => setAdminModal({ isOpen: false, type: "add", subject: null })} className="text-muted hover:text-primary">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Program</label>
+                  <select 
+                    value={adminFormData.program}
+                    onChange={(e) => {
+                      const newProgram = e.target.value;
+                      const defaultCategory = newProgram === "dp" ? "Group 1 & 2: Languages" : "Language and Literature";
+                      setAdminFormData({ ...adminFormData, program: newProgram, category: defaultCategory });
+                    }}
+                    className="w-full bg-[var(--surface-alt)] border border-[var(--border)] rounded-xl px-4 py-2"
+                  >
+                    <option value="dp">IB Diploma (DP)</option>
+                    <option value="myp">MYP</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">Category / Group</label>
+                  <select
+                    value={adminFormData.category}
+                    onChange={(e) => setAdminFormData({ ...adminFormData, category: e.target.value })}
+                    className="w-full bg-[var(--surface-alt)] border border-[var(--border)] rounded-xl px-4 py-2"
+                  >
+                    {adminFormData.program === "dp" ? (
+                      <>
+                        <option value="Group 1 & 2: Languages">Group 1 & 2: Languages</option>
+                        <option value="Group 3: Individuals & Societies">Group 3: Individuals & Societies</option>
+                        <option value="Group 4: Sciences">Group 4: Sciences</option>
+                        <option value="Group 5: Mathematics">Group 5: Mathematics</option>
+                        <option value="Group 6: Arts">Group 6: Arts</option>
+                        <option value="Core Requirements">Core Requirements</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Language and Literature">Language and Literature</option>
+                        <option value="Language Acquisition">Language Acquisition</option>
+                        <option value="Individuals and Societies">Individuals and Societies</option>
+                        <option value="Sciences">Sciences</option>
+                        <option value="Mathematics">Mathematics</option>
+                        <option value="Arts">Arts</option>
+                        <option value="Design">Design</option>
+                        <option value="Physical and Health Education">Physical and Health Education</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">Subject Name</label>
+                  <input
+                    type="text"
+                    value={adminFormData.name}
+                    onChange={(e) => setAdminFormData({ ...adminFormData, name: e.target.value })}
+                    placeholder="e.g. Biology"
+                    className="w-full bg-[var(--surface-alt)] border border-[var(--border)] rounded-xl px-4 py-2"
+                  />
+                </div>
+              </div>
+              
+              <div className="mt-8 flex justify-end gap-3">
+                <button 
+                  onClick={() => setAdminModal({ isOpen: false, type: "add", subject: null })}
+                  className="px-4 py-2 text-sm font-medium bg-[var(--surface-alt)] hover:bg-[var(--border)] rounded-xl transition"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleAdminSubmit}
+                  disabled={isPending || !adminFormData.name || !adminFormData.category}
+                  className="px-4 py-2 text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition disabled:opacity-50"
+                >
+                  {isPending ? "Saving..." : "Save Subject"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       {showConfirm && (

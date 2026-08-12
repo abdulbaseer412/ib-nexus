@@ -4,6 +4,7 @@ import { ensureProfile } from "@/lib/profile-service";
 import { completeOnboarding } from "./actions";
 import OnboardingForm from "./OnboardingForm";
 import { redirect } from "next/navigation";
+import { fetchGlobalSubjects } from "../dashboard/subjects/actions";
 
 export const metadata = {
   title: "Set Up Your Profile — IB Nexus",
@@ -18,6 +19,7 @@ export default async function OnboardingPage() {
   }
 
   const defaults = getOnboardingDefaults(user, profile);
+  const globalSubjects = await fetchGlobalSubjects();
   const needsDisplayName = !defaults.hasDisplayName;
   const needsProgram = !defaults.hasIbProgram;
 
@@ -39,9 +41,10 @@ export default async function OnboardingPage() {
 
         <OnboardingForm
           defaults={defaults}
-          needsDisplayName={needsDisplayName}
-          needsProgram={needsProgram}
+          needsDisplayName={!profile.display_name}
+          needsProgram={!profile.ib_program}
           completeOnboarding={completeOnboarding}
+          globalSubjects={globalSubjects}
         />
       </div>
     </main>

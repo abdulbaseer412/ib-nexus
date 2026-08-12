@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import {
   ShieldAlert, Check, X, Search, Filter, AlertCircle,
-  Clock, CheckCircle2, XCircle, Trash2, ChevronRight, User, Users, PenLine
+  Clock, CheckCircle2, XCircle, Trash2, ChevronRight, User, Users, PenLine, BookOpen, Plus
 } from "lucide-react";
 import { 
   fetchPostsForModeration, 
@@ -264,8 +264,71 @@ export default function ModerationClient({ initialPending, initialPendingStudyGr
               </article>
             ))}
 
+            {/* Subject Request Cards */}
+            {!isPending && reviewType === "study-groups" && studyGroups.filter(g => g.name.startsWith("SUBJECT REQUEST:")).map(group => (
+              <article
+                key={group.id}
+                className={`card p-5 border-l-4 ${
+                  !group.is_active ? "border-l-purple-500" : "border-l-green-500"
+                }`}
+              >
+                <header className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-xs mb-2">
+                      <span className="bg-purple-500/10 text-purple-400 px-2 py-1 rounded-md font-bold uppercase tracking-wider flex items-center gap-1">
+                        <BookOpen size={12} /> Subject Request
+                      </span>
+                      <span className="text-muted flex items-center gap-1">
+                        <Clock size={12} /> {new Date(group.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-bold">{group.name.replace("SUBJECT REQUEST: ", "")}</h2>
+                  </div>
+
+                  {activeTab === "pending" && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setEditingGroup(group)}
+                        className="btn bg-white/10 text-white hover:bg-white/20 px-3 py-1.5"
+                      >
+                        <PenLine size={16} /> Edit
+                      </button>
+                      <button
+                        onClick={() => handleModerateStudyGroup(group.id, "approve")}
+                        className="btn bg-green-500/10 text-green-500 hover:bg-green-500 hover:text-white px-3 py-1.5"
+                      >
+                        <Check size={16} /> Mark Added / Approve
+                      </button>
+                      <button
+                        onClick={() => handleModerateStudyGroup(group.id, "reject")}
+                        className="btn bg-danger/10 text-danger hover:bg-danger hover:text-white px-3 py-1.5"
+                      >
+                        <X size={16} /> Reject
+                      </button>
+                    </div>
+                  )}
+
+                  {activeTab === "approved" && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleModerateStudyGroup(group.id, "reject")}
+                        className="btn bg-danger/10 text-danger hover:bg-danger hover:text-white px-3 py-1.5 shrink-0"
+                      >
+                        <Trash2 size={16} /> Delete Record
+                      </button>
+                    </div>
+                  )}
+                </header>
+                {group.description && (
+                  <div className="text-sm text-secondary bg-[var(--surface)] p-4 rounded-xl border border-[var(--divider)] whitespace-pre-wrap">
+                    {group.description}
+                  </div>
+                )}
+              </article>
+            ))}
+
             {/* Study Group Cards */}
-            {!isPending && reviewType === "study-groups" && studyGroups.map(group => (
+            {!isPending && reviewType === "study-groups" && studyGroups.filter(g => !g.name.startsWith("SUBJECT REQUEST:")).map(group => (
               <article
                 key={group.id}
                 className={`card p-5 border-l-4 ${

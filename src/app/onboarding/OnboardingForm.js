@@ -16,35 +16,7 @@ const STUDY_GOALS = [
   "IA & EE guidance", "Memorisation", "Exam technique"
 ];
 
-const DP_SUBJECTS = [
-  {
-    category: "Group 1 & 2: Languages",
-    subjects: ["English A Lit", "English A Lang & Lit", "Spanish B", "French B", "Mandarin B", "German B", "German ab initio"]
-  },
-  {
-    category: "Group 3: Individuals & Societies",
-    subjects: ["History", "Geography", "Economics", "Business Management", "Psychology", "Global Politics"]
-  },
-  {
-    category: "Group 4: Sciences",
-    subjects: ["Biology", "Chemistry", "Physics", "Computer Science", "ESS"]
-  },
-  {
-    category: "Group 5: Mathematics",
-    subjects: ["Mathematics AA", "Mathematics AI"]
-  }
-];
-
-const MYP_SUBJECTS = [
-  { category: "Language and Literature", subjects: ["English Lang & Lit", "Spanish Lang & Lit", "German Lang & Lit"] },
-  { category: "Language Acquisition", subjects: ["French", "Spanish", "Mandarin", "German"] },
-  { category: "Individuals and Societies", subjects: ["History", "Geography", "Integrated Humanities"] },
-  { category: "Sciences", subjects: ["Biology", "Chemistry", "Physics", "Integrated Sciences"] },
-  { category: "Mathematics", subjects: ["Mathematics (Standard)", "Mathematics (Extended)"] },
-  { category: "Arts", subjects: ["Visual Arts", "Music", "Drama"] },
-  { category: "Design", subjects: ["Design"] },
-  { category: "Physical and Health Education", subjects: ["PHE"] }
-];
+// Subjects are now fetched dynamically via globalSubjects
 
 /* ── Framer Motion Variants ──────────────────────────────────────────────── */
 const variants = {
@@ -68,6 +40,7 @@ export default function OnboardingForm({
   needsDisplayName,
   needsProgram,
   completeOnboarding,
+  globalSubjects = [],
 }) {
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1); // 1 = forward, -1 = backward
@@ -80,6 +53,43 @@ export default function OnboardingForm({
   const [referralSource, setReferralSource] = useState("");
   const [selectedGoals, setSelectedGoals] = useState([]);
   const [selectedSubjects, setSelectedSubjects] = useState([]);
+
+  // Compute DP and MYP subjects dynamically from globalSubjects
+  const DP_SUBJECTS = Object.entries(
+    globalSubjects
+      .filter((s) => s.program === "dp")
+      .reduce((acc, curr) => {
+        if (!acc[curr.category]) acc[curr.category] = [];
+        acc[curr.category].push(curr.name);
+        return acc;
+      }, {})
+  ).map(([category, subjects]) => ({ category, subjects })).sort((a,b) => a.category.localeCompare(b.category));
+
+  const MYP_SUBJECTS = Object.entries(
+    globalSubjects
+      .filter((s) => s.program === "myp")
+      .reduce((acc, curr) => {
+        if (!acc[curr.category]) acc[curr.category] = [];
+        acc[curr.category].push(curr.name);
+        return acc;
+      }, {})
+  ).map(([category, subjects]) => ({ category, subjects })).sort((a,b) => {
+    const order = [
+      "Language and Literature",
+      "Language Acquisition",
+      "Individuals and Societies",
+      "Sciences",
+      "Mathematics",
+      "Arts",
+      "Design",
+      "Physical and Health Education"
+    ];
+    let aIdx = order.indexOf(a.category);
+    let bIdx = order.indexOf(b.category);
+    if (aIdx === -1) aIdx = 999;
+    if (bIdx === -1) bIdx = 999;
+    return aIdx - bIdx;
+  });
 
   // Server Action
   const [state, formAction, pending] = useActionState(

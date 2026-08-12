@@ -9,8 +9,17 @@ import {
   Hash, Compass, User, Clock, ChevronDown, Activity, Sparkles, FolderOpen, LayoutGrid, Trash2, ShieldAlert,
   Flame, HelpCircle, Send, AlertCircle
 } from "lucide-react";
-import { createPostAction, fetchApprovedPosts, fetchActiveStudentsPerSubject, requestStudyGroup, fetchStudyGroupPresenceCounts } from "./actions";
-import { COMMUNITY_CATEGORIES } from "./constants";
+import { 
+  createPostAction, 
+  fetchApprovedPosts, 
+  fetchActiveStudentsPerSubject, 
+  requestStudyGroup, 
+  fetchStudyGroupPresenceCounts, 
+  createSubjectRoomAction,
+  deleteSubjectRoomAction,
+  deleteSubjectCategoryAction,
+  moderateStudyGroupAction
+} from "./actions";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
 const C = {
@@ -110,9 +119,7 @@ function CustomSelect({ value, onChange, options, placeholder }) {
   );
 }
 
-export default function CommunityClient({
-  initialPosts, rooms, activeStudents, studyGroups, studyGroupPresence, userId, userProfile, isAdmin,
-}) {
+export default function CommunityClient({ initialPosts = [], rooms = [], activeStudents = {}, studyGroups = [], studyGroupPresence = {}, userId, userProfile, isAdmin, subjects = [] }) {
   const router = useRouter();
   const [posts, setPosts] = useState(initialPosts);
   const [liveStudents, setLiveStudents] = useState(activeStudents);
@@ -123,6 +130,8 @@ export default function CommunityClient({
   const [showNewPost, setShowNewPost] = useState(false);
   const [showExploreModal, setShowExploreModal] = useState(false);
   const [showRequestStudyGroupModal, setShowRequestStudyGroupModal] = useState(false);
+  const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -200,7 +209,7 @@ export default function CommunityClient({
         <header className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between mb-10">
           <div>
             <h1 className="text-4xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-white/90 to-white/60 mb-2">
-              Community
+              Nexus Network
             </h1>
             <p className="text-sm text-muted/80 max-w-lg">
               A premium space to learn together, ask questions, and collaborate with IB students worldwide.
@@ -325,7 +334,7 @@ export default function CommunityClient({
               <CustomSelect 
                 value={activeCategory} 
                 onChange={(val) => { setActiveCategory(val); handleFilterChange(null, val); }} 
-                options={COMMUNITY_CATEGORIES} 
+                options={["All", ...subjects]} 
               />
             </div>
           </div>
@@ -456,8 +465,29 @@ export default function CommunityClient({
                 
                 {/* Subject Rooms Column */}
                 <div className="space-y-6">
-                  <div className="flex items-center gap-3 mb-6">
+                  <div className="flex items-center justify-between mb-6">
                     <h3 className="text-lg font-bold text-white/90">Subject Rooms</h3>
+                    {isAdmin && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setIsDeleteMode(!isDeleteMode)}
+                          className={`btn px-3 py-1.5 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
+                            isDeleteMode 
+                              ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500 hover:text-white'
+                              : 'bg-white/5 text-white/50 border-white/10 hover:bg-white/10 hover:text-white'
+                          }`}
+                          title="Toggle Delete Mode"
+                        >
+                          <Trash2 size={14} /> {isDeleteMode ? "Done" : "Manage"}
+                        </button>
+                        <button
+                          onClick={() => setShowAddSubjectModal(true)}
+                          className="btn bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white px-3 py-1.5 text-xs font-bold rounded-lg border border-indigo-500/30 transition-all flex items-center gap-1.5"
+                        >
+                          <Plus size={14} /> Add Subject
+                        </button>
+                      </div>
+                    )}
                   </div>
                   
                   <div className="grid sm:grid-cols-2 gap-4">
@@ -465,9 +495,31 @@ export default function CommunityClient({
                       const c = col(subject);
                       return (
                         <div key={subject} className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 hover:border-white/10 transition-colors shadow-sm">
-                          <p className="text-[10px] font-bold uppercase tracking-widest mb-3 pl-1" style={{ color: c.text }}>
-                            {subject}
-                          </p>
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] font-bold uppercase tracking-widest pl-1" style={{ color: c.text }}>
+                              {subject}
+                            </p>
+                            {isAdmin && isDeleteMode && (
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  if (confirm(`Are you sure you want to delete the entire '${subject}' category and all its rooms?`)) {
+                                    startTransition(async () => {
+                                      try {
+                                        await deleteSubjectCategoryAction(subject);
+                                      } catch (err) {
+                                        alert(err.message);
+                                      }
+                                    });
+                                  }
+                                }}
+                                className="text-white/30 hover:text-red-400 transition-colors p-1"
+                                title="Delete Subject Category"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
                           <div className="space-y-2">
                             {subjectRooms.map(room => {
                               // Parse out room levels for elegant badges
@@ -486,8 +538,27 @@ export default function CommunityClient({
                                     <span className="text-white/80 group-hover:text-white font-medium flex items-center gap-2 truncate">
                                       <span className="truncate">{room.name.replace("HL", "").replace("SL", "").trim()}</span>
                                     </span>
-                                    
                                     <div className="flex shrink-0 items-center gap-1.5">
+                                      {isAdmin && isDeleteMode && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            if (confirm(`Are you sure you want to delete the room '${room.name}'?`)) {
+                                              startTransition(async () => {
+                                                try {
+                                                  await deleteSubjectRoomAction(room.id);
+                                                } catch (err) {
+                                                  alert(err.message);
+                                                }
+                                              });
+                                            }
+                                          }}
+                                          className="text-white/20 hover:text-red-400 transition-colors mr-1 p-0.5"
+                                          title="Delete Room"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      )}
                                       {isHL && (
                                         <div className="group/badge relative flex items-center">
                                           <span className="text-[9px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded border border-rose-500/30 text-rose-400 bg-rose-500/10 cursor-help">HL</span>
@@ -631,12 +702,35 @@ export default function CommunityClient({
                                     <span className="flex items-center gap-1"><Users size={10} className="opacity-70"/> {memberCount}</span>
                                   </div>
                                 </div>
-                                <button 
-                                  onClick={() => router.push(`/dashboard/community/study-groups/${group.id}`)}
-                                  className="shrink-0 px-4 py-2 bg-white/10 hover:bg-indigo-600 border border-white/10 hover:border-indigo-500 text-xs font-bold text-white rounded-xl transition-all shadow-sm"
-                                >
-                                  Join
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  {isAdmin && isDeleteMode && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        if (confirm(`Are you sure you want to delete the study group '${group.name}'?`)) {
+                                          startTransition(async () => {
+                                            try {
+                                              await moderateStudyGroupAction(group.id, "reject");
+                                            } catch (err) {
+                                              alert(err.message);
+                                            }
+                                          });
+                                        }
+                                      }}
+                                      className="shrink-0 px-2.5 py-2 bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/50 text-white/50 hover:text-red-400 rounded-xl transition-all shadow-sm"
+                                      title="Delete Study Group"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                  <button 
+                                    onClick={() => router.push(`/dashboard/community/study-groups/${group.id}`)}
+                                    className="shrink-0 px-4 py-2 bg-white/10 hover:bg-indigo-600 border border-white/10 hover:border-indigo-500 text-xs font-bold text-white rounded-xl transition-all shadow-sm"
+                                  >
+                                    Join
+                                  </button>
+                                </div>
                               </div>
 
                               {/* Hover Details Tooltip */}
@@ -665,38 +759,187 @@ export default function CommunityClient({
 
                 </div>
               </div>
-              
-              {/* Request a room message */}
-              <div className="mt-8 pt-6 border-t border-white/5 text-center flex flex-col items-center justify-center">
-                <p className="text-white/60 text-sm font-medium mb-3">
-                  Don't see your specific subject or level?
-                </p>
-                <button onClick={() => setShowRequestStudyGroupModal(true)} className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/90 text-sm font-bold transition-all shadow-sm hover:shadow-md">
-                  <PenLine size={14} className="text-indigo-400" /> Request Study Group
-                </button>
-              </div>
             </div>
           </div>
         </div>
       )}
 
+      {/* Explore Spaces Modal */}
+      {showAddSubjectModal && isAdmin && (
+        <AddSubjectRoomModal 
+          onClose={() => setShowAddSubjectModal(false)} 
+          subjects={subjects} 
+        />
+      )}
+
       {/* New Discussion Modal */}
       {showNewPost && (
-        <NewPostModal onClose={() => setShowNewPost(false)} />
+        <NewPostModal onClose={() => setShowNewPost(false)} subjects={subjects} />
       )}
 
       {/* Request Study Group Modal */}
       {showRequestStudyGroupModal && (
-        <RequestStudyGroupModal onClose={() => setShowRequestStudyGroupModal(false)} />
+        <RequestStudyGroupModal onClose={() => setShowRequestStudyGroupModal(false)} subjects={subjects} />
       )}
+
     </main>
   );
 }
 
+/* ── Add Subject Room Modal (Admin Only) ────────────────────────────────── */
+function AddSubjectRoomModal({ onClose, subjects }) {
+  const [subjectType, setSubjectType] = useState("existing"); // "existing" or "new"
+  const [selectedSubject, setSelectedSubject] = useState(subjects[0] || "");
+  const [newSubject, setNewSubject] = useState("");
+  const [roomName, setRoomName] = useState("");
+  const [description, setDescription] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    const finalSubject = subjectType === "new" ? newSubject : selectedSubject;
+    if (!finalSubject.trim() || !roomName.trim()) {
+      alert("Subject and Room Name are required.");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        await createSubjectRoomAction({
+          name: roomName,
+          subject: finalSubject,
+          description: description
+        });
+        onClose();
+      } catch (err) {
+        alert(err.message || "Failed to create subject room.");
+      }
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-32 bg-indigo-500/20 blur-[60px] pointer-events-none" />
+        
+        <div className="flex items-center justify-between p-6 border-b border-white/10 relative z-10">
+          <h3 className="text-xl font-bold text-white flex items-center gap-2">
+            <Compass className="text-indigo-400" size={20} /> Add Subject Room
+          </h3>
+          <button type="button" onClick={onClose} className="rounded-xl p-2 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 relative z-10">
+          <div className="space-y-5">
+            
+            {/* Subject Category */}
+            <div>
+              <label className="block text-sm font-medium text-white/80 mb-2 pl-1">
+                Subject Category
+              </label>
+              <div className="bg-black/40 p-1.5 rounded-2xl border border-white/5 flex gap-2 w-full mb-3">
+                <button
+                  type="button"
+                  onClick={() => setSubjectType("existing")}
+                  className={`flex-1 flex justify-center items-center gap-2 rounded-xl py-2 text-sm font-bold transition-all duration-300 ${
+                    subjectType === "existing"
+                      ? "bg-white/15 text-white shadow-sm border border-white/10"
+                      : "text-muted hover:text-white hover:bg-white/5 border border-transparent"
+                  }`}
+                >
+                  Existing Subject
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubjectType("new")}
+                  className={`flex-1 flex justify-center items-center gap-2 rounded-xl py-2 text-sm font-bold transition-all duration-300 ${
+                    subjectType === "new"
+                      ? "bg-white/15 text-white shadow-sm border border-white/10"
+                      : "text-muted hover:text-white hover:bg-white/5 border border-transparent"
+                  }`}
+                >
+                  New Subject
+                </button>
+              </div>
+
+              {subjectType === "existing" ? (
+                <CustomSelect 
+                  value={selectedSubject} 
+                  onChange={setSelectedSubject} 
+                  options={subjects}
+                  placeholder="Select a specific category..."
+                />
+              ) : (
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Astrophysics"
+                  value={newSubject}
+                  onChange={(e) => setNewSubject(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
+                />
+              )}
+            </div>
+
+            {/* Room Name */}
+            <div>
+              <label className="block text-sm font-medium text-white/80 mb-1.5 ml-1 flex justify-between">
+                <span>Room Name</span>
+                <span className="text-white/40 text-[10px]">Add "HL", "SL", or "IA/EE" for badges</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Biology HL, or Biology IA & EE"
+                value={roomName}
+                onChange={(e) => setRoomName(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-medium text-white/80 mb-1.5 ml-1">
+                Description (Optional)
+              </label>
+              <textarea
+                placeholder="Brief description of this room..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-white/20 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all min-h-[80px] resize-none"
+              />
+            </div>
+          </div>
+
+          <div className="mt-8 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-3 rounded-xl border border-white/10 text-white font-bold hover:bg-white/5 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isPending || (subjectType === "new" ? !newSubject.trim() : !selectedSubject.trim()) || !roomName.trim()}
+              className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold shadow-[0_0_20px_rgba(79,70,229,0.3)] disabled:opacity-50 transition-all"
+            >
+              {isPending ? "Creating..." : "Create Room"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ── Request Study Group Modal ───────────────────────────────────────────── */
-function RequestStudyGroupModal({ onClose }) {
+function RequestStudyGroupModal({ onClose, subjects }) {
   const [name, setName] = useState("");
-  const [subject, setSubject] = useState(COMMUNITY_CATEGORIES[0]);
+  const [subject, setSubject] = useState(subjects[0] || "");
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("idle");
@@ -761,7 +1004,7 @@ function RequestStudyGroupModal({ onClose }) {
                 onChange={(e) => setSubject(e.target.value)}
                 className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
               >
-                {COMMUNITY_CATEGORIES.filter(c => c !== "All").map(c => (
+                {subjects.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -821,7 +1064,7 @@ function RequestStudyGroupModal({ onClose }) {
 }
 
 /* ── New Discussion Modal ────────────────────────────────────────────────── */
-function NewPostModal({ onClose }) {
+function NewPostModal({ onClose, subjects }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
@@ -866,7 +1109,7 @@ function NewPostModal({ onClose }) {
               onClick={onClose}
               className="w-full py-3.5 bg-white hover:bg-white/90 text-black text-sm font-bold rounded-xl transition-all shadow-lg"
             >
-              Back to Community
+              Back to Nexus Network
             </button>
           </div>
         </div>
@@ -920,7 +1163,7 @@ function NewPostModal({ onClose }) {
             <CustomSelect 
               value={category} 
               onChange={setCategory} 
-              options={COMMUNITY_CATEGORIES}
+              options={subjects}
               placeholder="Select a specific category..."
             />
           </div>
@@ -984,3 +1227,5 @@ function NewPostModal({ onClose }) {
     </div>
   );
 }
+
+

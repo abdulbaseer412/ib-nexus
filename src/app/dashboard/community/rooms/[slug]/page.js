@@ -15,7 +15,7 @@ export async function generateMetadata({ params }) {
   const { slug } = await params;
   const room = await fetchRoomBySlug(slug);
   return {
-    title: room ? `${room.name} — Community — IB Nexus` : "Room — IB Nexus",
+    title: room ? `${room.name} — Nexus Network — IB Nexus` : "Room — IB Nexus",
   };
 }
 
