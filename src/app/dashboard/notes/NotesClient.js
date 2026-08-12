@@ -23,6 +23,10 @@ export default function NotesClient({ initialNotes }) {
   const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Note Deletion Modal
+  const [deleteNoteId, setDeleteNoteId] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Derive recent notes (top 3 edited recently, not archived)
   const recentNotes = useMemo(() => {
     return notes
@@ -94,18 +98,18 @@ export default function NotesClient({ initialNotes }) {
       </header>
 
       {/* Continue Studying (Recent) */}
-      {recentNotes.length > 0 && categoryFilter === "All" && search === "" && subjectFilter === "All" && (
-        <section className="mt-10">
-          <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-4 flex items-center gap-2">
-            <Clock size={16} /> Continue studying
-          </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {recentNotes.map(note => (
-              <NoteCard key={note.id} note={note} onToggle={handleToggle} />
-            ))}
-          </div>
-        </section>
-      )}
+        {recentNotes.length > 0 && categoryFilter === "All" && search === "" && subjectFilter === "All" && (
+          <section className="mt-10">
+            <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-4 flex items-center gap-2">
+              <Clock size={16} /> Continue studying
+            </h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {recentNotes.map(note => (
+                <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
+              ))}
+            </div>
+          </section>
+        )}
 
       {/* Main Controls */}
       <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -177,7 +181,7 @@ export default function NotesClient({ initialNotes }) {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filteredNotes.map(note => (
-              <NoteCard key={note.id} note={note} onToggle={handleToggle} />
+              <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
             ))}
           </div>
         )}
@@ -219,11 +223,38 @@ export default function NotesClient({ initialNotes }) {
           </div>
         </form>
       </Modal>
+
+      {/* Delete Modal */}
+      <Modal open={!!deleteNoteId} onClose={() => !isDeleting && setDeleteNoteId(null)} title="Delete Note?">
+        <div className="space-y-4">
+          <p className="text-sm text-secondary">
+            Are you sure you want to permanently delete this note? This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-3 pt-4 border-t border-divider">
+            <button onClick={() => setDeleteNoteId(null)} className="btn btn-secondary">Cancel</button>
+            <form action={async () => {
+              setIsDeleting(true);
+              try {
+                await deleteNote(deleteNoteId);
+              } catch (e) {
+                // If it throws NEXT_REDIRECT, we're good
+              }
+              setNotes(prev => prev.filter(n => n.id !== deleteNoteId));
+              setDeleteNoteId(null);
+              setIsDeleting(false);
+            }}>
+              <Button type="submit" variant="error" className="bg-danger text-white hover:bg-danger/90">
+                {isDeleting ? "Deleting..." : "Yes, delete note"}
+              </Button>
+            </form>
+          </div>
+        </div>
+      </Modal>
     </main>
   );
 }
 
-function NoteCard({ note, onToggle }) {
+function NoteCard({ note, onToggle, onDeleteClick }) {
   // Extract text snippet safely from Tiptap JSON
   let previewText = "No content yet.";
   try {
@@ -306,9 +337,15 @@ function NoteCard({ note, onToggle }) {
           </button>
           <button 
             onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }}
-            className="hover:text-danger transition"
+            className="hover:text-muted hover:text-primary transition"
           >
             <Archive size={14} />
+          </button>
+          <button 
+            onClick={(e) => { e.preventDefault(); onDeleteClick(); }}
+            className="hover:text-danger transition ml-1"
+          >
+            <Trash2 size={14} />
           </button>
         </div>
       </div>
