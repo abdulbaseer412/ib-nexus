@@ -2,6 +2,7 @@ import { BookOpen, BrainCircuit, CalendarDays, Clock, FileText, LineChart, Noteb
 import { requireCompleteProfile } from "@/lib/auth";
 import { getDisplayName, getProgramLabel } from "@/lib/profile";
 import Link from "next/link";
+import { createServerClient } from "@/utils/supabase-server";
 
 export const metadata = { title: "Study Hub — IB Nexus" };
 
@@ -81,9 +82,17 @@ export default async function Dashboard() {
   const examSession = profile.exam_session || "Not set";
   const hasSubjects = subjects.length > 0;
 
-  // Zero State counts
-  const notesCount = 0;
-  const cardsCount = 0;
+  // Fetch real notes data
+  const supabase = createServerClient();
+  const { data: recentNotes, count: notesTotalCount } = await supabase
+    .from('ib_notes')
+    .select('id, title, subject, topic, updated_at', { count: 'exact' })
+    .eq('user_id', profile.id)
+    .order('updated_at', { ascending: false })
+    .limit(3);
+
+  const notesCount = notesTotalCount || 0;
+  const cardsCount = 0; // Still zero state until flashcards are implemented
   
   // Calculate days left roughly if exam session is set (e.g. "May 2026")
   let daysLeft = "—";
@@ -251,14 +260,64 @@ export default async function Dashboard() {
             </div>
           </section>
 
-          <section className="card p-5 sm:p-6">
-            <div className="flex items-center gap-2">
-              <Notebook size={17} className="text-muted" />
-              <h2 className="font-semibold">Recent activity</h2>
+          <section className="card p-5 sm:p-6 flex flex-col">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Sparkles size={17} className="text-accent" />
+                <h2 className="font-semibold text-primary">Quick Recall</h2>
+              </div>
+              <Link href="/dashboard/notes" className="text-xs font-medium text-accent hover:underline">
+                View all notes
+              </Link>
             </div>
-            <div className="mt-8 flex flex-col items-center justify-center text-center pb-4">
-              <p className="text-sm text-muted">No recent activity to show.</p>
-            </div>
+            
+            {recentNotes && recentNotes.length > 0 ? (
+              <div className="flex-1 flex flex-col gap-3">
+                {recentNotes.map((note) => (
+                  <Link 
+                    key={note.id} 
+                    href={`/dashboard/notes/${note.id}`}
+                    className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 transition-all hover:border-accent/40 hover:shadow-[0_4px_20px_rgb(0,0,0,0.05)] dark:hover:shadow-[0_4px_20px_rgba(255,255,255,0.02)]"
+                  >
+                    {/* Subtle glow effect */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-accent/0 via-accent/5 to-purple-500/5 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                    
+                    <div className="relative z-10 flex items-center justify-between">
+                      <div className="min-w-0 flex-1 pr-4">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="inline-flex h-2 w-2 rounded-full" style={{ background: col(note.subject).bar }} />
+                          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                            {note.subject}
+                          </span>
+                        </div>
+                        <h3 className="truncate font-semibold text-[15px] group-hover:text-accent transition-colors">
+                          {note.title}
+                        </h3>
+                        {note.topic && (
+                          <p className="mt-0.5 truncate text-xs text-muted">
+                            {note.topic}
+                          </p>
+                        )}
+                      </div>
+                      <div className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--background)] border border-[var(--border)] text-muted opacity-50 group-hover:opacity-100 group-hover:border-accent/30 group-hover:bg-accent/10 group-hover:text-accent transition-all">
+                        <ArrowRight size={14} />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-8 flex flex-col items-center justify-center text-center pb-4">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--surface)] mb-3">
+                  <Notebook size={20} className="text-muted" />
+                </div>
+                <p className="text-sm font-medium">No notes created yet.</p>
+                <p className="text-xs text-muted mt-1 mb-4">Start building your knowledge base today.</p>
+                <Link href="/dashboard/notes" className="btn btn-secondary py-1.5 px-4 text-xs">
+                  Create First Note
+                </Link>
+              </div>
+            )}
           </section>
         </div>
       </div>
