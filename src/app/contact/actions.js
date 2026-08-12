@@ -68,12 +68,16 @@ export async function submitContactForm(prevState, formData) {
         const resend = new Resend(process.env.RESEND_API_KEY);
         const { html, subject } = getEmailContent(category, name);
         
-        await resend.emails.send({
+        const res = await resend.emails.send({
           from: "IB Nexus Support <onboarding@resend.dev>",
           to: email,
           subject: subject,
           html: html,
         });
+        
+        if (res.error) {
+          console.error("Resend API Error:", res.error);
+        }
       } catch (emailError) {
         console.error("Failed to send acknowledgment email:", emailError);
       }
