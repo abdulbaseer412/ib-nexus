@@ -83,7 +83,7 @@ export default async function Dashboard() {
   const hasSubjects = subjects.length > 0;
 
   // Fetch real notes data
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const { data: recentNotes, count: notesTotalCount } = await supabase
     .from('ib_notes')
     .select('id, title, subject, topic, updated_at', { count: 'exact' })
