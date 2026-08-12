@@ -28,6 +28,10 @@ export default function NotesClient({ initialNotes }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
+  useEffect(() => {
+    setNotes(initialNotes || []);
+  }, [initialNotes]);
+
   // Command Palette Keyboard Shortcut
   useEffect(() => {
     const down = (e) => {
@@ -113,7 +117,7 @@ export default function NotesClient({ initialNotes }) {
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setIsCommandPaletteOpen(true)} variant="secondary" className="hidden sm:flex items-center gap-2 text-muted hover:text-primary">
-            <Search size={16} /> <span className="text-xs bg-[var(--surface-alt)] px-1.5 py-0.5 rounded border border-divider">⌘K</span>
+            <Search size={16} /> <span className="text-xs font-semibold px-1 py-0.5 rounded">Search</span>
           </Button>
           <Button onClick={() => setIsCreating(true)} className="flex items-center gap-2">
             <Plus size={16} /> New Note
@@ -402,13 +406,16 @@ function NoteCard({ note, onToggle, onDeleteClick }) {
           <Clock size={12} /> {timeAgo(note.updated_at)}
         </span>
         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition">
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
             <Star size={14} className={note.is_favorite ? "fill-current" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition">
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition" title={note.is_pinned ? "Unpin" : "Pin"}>
             <Pin size={14} className={note.is_pinned ? "fill-current" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1">
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="hover:text-primary transition" title={note.is_archived ? "Restore" : "Archive"}>
+            <Archive size={14} />
+          </button>
+          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1" title="Delete">
             <Trash2 size={14} />
           </button>
         </div>
@@ -446,8 +453,17 @@ function NoteListItem({ note, onToggle, onDeleteClick }) {
       </div>
       <div className="flex items-center gap-6 shrink-0 ml-4">
         <span className="text-xs text-muted hidden sm:block">Edited {timeAgo(note.updated_at)}</span>
-        <div className="flex gap-2">
-          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="text-muted hover:text-danger transition p-1">
+        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="text-muted hover:text-yellow-500 transition p-1" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
+            <Star size={16} className={note.is_favorite ? "fill-current" : ""} />
+          </button>
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="text-muted hover:text-accent transition p-1" title={note.is_pinned ? "Unpin" : "Pin"}>
+            <Pin size={16} className={note.is_pinned ? "fill-current" : ""} />
+          </button>
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="text-muted hover:text-primary transition p-1" title={note.is_archived ? "Restore" : "Archive"}>
+            <Archive size={16} />
+          </button>
+          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="text-muted hover:text-danger transition p-1" title="Delete">
             <Trash2 size={16} />
           </button>
         </div>
