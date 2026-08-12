@@ -389,12 +389,12 @@ function NoteCard({ note, onToggle, onDeleteClick }) {
         {previewText}
       </p>
       {/* Revision Readiness Mock Indicator */}
-      {(note.revision_readiness !== undefined) && (
+      {(note.revision_readiness !== null && note.revision_readiness !== undefined && note.revision_readiness > 0) && (
         <div className="mt-2 flex items-center gap-2">
           <div className="h-1 flex-1 bg-[var(--surface)] rounded-full overflow-hidden">
-            <div className="h-full bg-accent" style={{ width: `${note.revision_readiness || Math.floor(Math.random() * 100)}%` }}></div>
+            <div className="h-full bg-accent" style={{ width: `${note.revision_readiness}%` }}></div>
           </div>
-          <span className="text-[10px] text-muted">{note.revision_readiness || Math.floor(Math.random() * 100)}%</span>
+          <span className="text-[10px] text-muted">{note.revision_readiness}%</span>
         </div>
       )}
       <div className="mt-4 pt-3 border-t border-divider flex items-center justify-between text-xs text-muted">

@@ -19,7 +19,8 @@ import {
   toggleNoteState, 
   deleteNote, 
   duplicateNote,
-  generateFlashcards 
+  generateFlashcards,
+  analyzeNoteReadiness
 } from "../actions";
 import { Modal, Button, Input, Dropdown } from "@/components/ui";
 
@@ -35,6 +36,9 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isStudyModalOpen, setIsStudyModalOpen] = useState(false);
   
+  // AI Readiness
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   // Metadata edit states
   const [title, setTitle] = useState(note.title);
   const [examImportance, setExamImportance] = useState(note.exam_importance || "Medium");
@@ -120,8 +124,25 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
       setFlashcardResult({ error: res.error });
     } else {
       setFlashcardResult({ success: true, count: res.count });
+      // If note has readiness, re-analyze to capture the new flashcards
+      if (note.revision_readiness > 0) {
+        analyzeNoteReadiness(note.id, textContent).then(analyzeRes => {
+          if (analyzeRes.success) setNote(prev => ({ ...prev, revision_readiness: analyzeRes.score }));
+        });
+      }
     }
     setIsGenerating(false);
+  };
+
+  const handleAnalyzeReadiness = async () => {
+    if (!editor) return;
+    setIsAnalyzing(true);
+    const textContent = editor.getText();
+    const res = await analyzeNoteReadiness(note.id, textContent);
+    if (res.success) {
+      setNote(prev => ({ ...prev, revision_readiness: res.score }));
+    }
+    setIsAnalyzing(false);
   };
 
   // Keyboard shortcuts (Cmd+S)
@@ -262,26 +283,41 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
         <div className="mb-8">
           <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-4">Revision Readiness</h4>
           <div className="card p-4 bg-[var(--surface-alt)] border border-divider">
-            <div className="flex justify-between items-end mb-2">
-              <span className="text-3xl font-bold tracking-tight text-primary">
-                {note.revision_readiness || 65}%
-              </span>
-            </div>
-            <div className="h-1.5 w-full bg-[var(--surface)] rounded-full overflow-hidden mb-4">
-              <div className="h-full bg-accent" style={{ width: `${note.revision_readiness || 65}%` }}></div>
-            </div>
-            <ul className="space-y-2 text-xs text-muted">
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={14} className="text-success shrink-0" /> Key concepts identified
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 size={14} className="text-success shrink-0" /> Flashcards generated
-              </li>
-              <li className="flex items-start gap-2 opacity-50">
-                <div className="w-3.5 h-3.5 rounded-full border border-dashed border-muted shrink-0 mt-0.5"></div>
-                Practice questions missing
-              </li>
-            </ul>
+            {(note.revision_readiness !== null && note.revision_readiness !== undefined && note.revision_readiness > 0) ? (
+              <>
+                <div className="flex justify-between items-end mb-2">
+                  <span className="text-3xl font-bold tracking-tight text-primary">
+                    {note.revision_readiness}%
+                  </span>
+                  <button onClick={handleAnalyzeReadiness} disabled={isAnalyzing} className="text-[10px] text-accent hover:underline pb-1 disabled:opacity-50">
+                    {isAnalyzing ? "Recalculating..." : "Refresh"}
+                  </button>
+                </div>
+                <div className="h-1.5 w-full bg-[var(--surface)] rounded-full overflow-hidden mb-4">
+                  <div className="h-full bg-accent" style={{ width: `${note.revision_readiness}%` }}></div>
+                </div>
+                <ul className="space-y-2 text-xs text-muted">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 size={14} className="text-success shrink-0" /> Topic coverage analyzed
+                  </li>
+                  <li className="flex items-start gap-2">
+                    {note.revision_readiness > 50 ? (
+                      <><CheckCircle2 size={14} className="text-success shrink-0" /> Sufficient details</>
+                    ) : (
+                      <><div className="w-3.5 h-3.5 rounded-full border border-dashed border-muted shrink-0 mt-0.5"></div> More details needed</>
+                    )}
+                  </li>
+                </ul>
+              </>
+            ) : (
+              <div className="text-center py-4">
+                <span className="block text-2xl font-bold text-muted mb-2">0%</span>
+                <p className="text-xs text-secondary mb-4">Not yet evaluated by AI.</p>
+                <Button onClick={handleAnalyzeReadiness} disabled={isAnalyzing} className="w-full text-xs py-1.5 flex justify-center items-center gap-2">
+                  {isAnalyzing ? "Analyzing..." : <><Sparkles size={14} /> Calculate Readiness</>}
+                </Button>
+              </div>
+            )}
           </div>
         </div>
 

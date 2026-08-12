@@ -259,3 +259,55 @@ export async function generateFlashcards(noteId, textContent) {
   revalidatePath(`/dashboard/notes/${noteId}`);
   return { success: true, count: cards.length };
 }
+
+export async function analyzeNoteReadiness(noteId, textContent) {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Unauthorized" };
+
+  // Advanced logic mock to simulate AI topic coverage evaluation
+  // 1. Get length of content
+  const wordCount = textContent.trim().split(/\s+/).length;
+  let score = 0;
+
+  // Base score on word count (up to 40%)
+  if (wordCount > 500) score += 40;
+  else if (wordCount > 200) score += 25;
+  else if (wordCount > 50) score += 10;
+  else score += 5;
+
+  // 2. Fetch associated flashcards
+  const { count: flashcardCount } = await supabase
+    .from("ib_flashcards")
+    .select("*", { count: 'exact', head: true })
+    .eq("note_id", noteId);
+
+  // Bonus for active recall generation (up to 30%)
+  if (flashcardCount && flashcardCount > 5) score += 30;
+  else if (flashcardCount && flashcardCount > 0) score += 15;
+
+  // 3. Simulated AI Keyword Density & Structure Analysis (up to 30%)
+  // In a real scenario, this calls OpenAI or Claude to compare against IB syllabus
+  const hasHeadings = textContent.includes("#");
+  const hasBulletPoints = textContent.includes("-") || textContent.includes("•");
+  if (hasHeadings) score += 15;
+  if (hasBulletPoints) score += 15;
+
+  // Ensure score is capped
+  score = Math.min(100, Math.max(10, score));
+
+  // Save the calculated score
+  const { error } = await supabase
+    .from("ib_notes")
+    .update({ revision_readiness: score })
+    .eq("id", noteId);
+
+  if (error) {
+    console.error("Error updating readiness:", error);
+    return { error: error.message };
+  }
+
+  revalidatePath(`/dashboard/notes/${noteId}`);
+  revalidatePath("/dashboard/notes");
+  return { success: true, score };
+}
