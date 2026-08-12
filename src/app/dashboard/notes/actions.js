@@ -53,6 +53,8 @@ export async function createNote(formData) {
   const topic = formData.get("topic");
   const level = formData.get("level");
   const initialContent = formData.get("initial_content");
+  const parentId = formData.get("parent_id");
+  const examImportance = formData.get("exam_importance") || "Core Concept";
 
   if (!title || !subject) {
     throw new Error("Title and Subject are required");
@@ -71,6 +73,9 @@ export async function createNote(formData) {
       subject,
       topic,
       level,
+      parent_id: parentId || null,
+      exam_importance: examImportance,
+      is_folder: false,
       content: initialContent || JSON.stringify(defaultContent)
     })
     .select()
@@ -83,6 +88,34 @@ export async function createNote(formData) {
 
   revalidatePath("/dashboard/notes");
   redirect(`/dashboard/notes/${data.id}`);
+}
+
+export async function createFolder(title, subject, parentId = null) {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("ib_notes")
+    .insert({
+      user_id: user.id,
+      title,
+      subject,
+      is_folder: true,
+      parent_id: parentId || null,
+      exam_importance: "Core Concept",
+      content: null
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating folder:", error);
+    throw new Error("Failed to create folder");
+  }
+
+  revalidatePath("/dashboard/notes");
+  return { success: true, data };
 }
 
 export async function updateNoteContent(id, contentStr) {

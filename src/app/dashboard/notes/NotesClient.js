@@ -7,9 +7,9 @@ import {
   Search, Plus, PenLine, Clock, Star, Archive, 
   MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, 
   CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity,
-  Camera, X, FolderUp
+  Camera, X, FolderUp, Folder, ChevronRight
 } from "lucide-react";
-import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent } from "./actions";
+import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent, createFolder } from "./actions";
 import { createClient } from "@/utils/supabase-browser";
 import { Modal, Button, Input, Dropdown } from "@/components/ui";
 
@@ -20,11 +20,16 @@ export default function NotesClient({ initialNotes }) {
   const [notes, setNotes] = useState(initialNotes || []);
   const [search, setSearch] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("All");
+  const [priorityFilter, setPriorityFilter] = useState("All"); // All, High Yield, Core Concept, Supplementary
   const [categoryFilter, setCategoryFilter] = useState("All"); // All, Favorites, Archived
   const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
   
+  // Folder Navigation
+  const [currentFolderId, setCurrentFolderId] = useState(null);
+  
   // Modals
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [loading, setLoading] = useState(false);
   const [deleteNoteId, setDeleteNoteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -66,13 +71,34 @@ export default function NotesClient({ initialNotes }) {
       .slice(0, 3);
   }, [notes]);
 
+  // Derive breadcrumb path
+  const folderPath = useMemo(() => {
+    const path = [];
+    let current = currentFolderId;
+    while (current) {
+      const folder = notes.find(n => n.id === current);
+      if (folder) {
+        path.unshift(folder);
+        current = folder.parent_id;
+      } else {
+        break;
+      }
+    }
+    return path;
+  }, [currentFolderId, notes]);
+
   // Derive filtered notes
   const filteredNotes = useMemo(() => {
     return notes.filter(n => {
+      // Must belong to current folder (unless searching)
+      if (!search && (n.parent_id || null) !== currentFolderId) return false;
+      
       if (categoryFilter === "Favorites" && !n.is_favorite) return false;
       if (categoryFilter === "Archived" && !n.is_archived) return false;
       if (categoryFilter !== "Archived" && n.is_archived) return false;
       if (subjectFilter !== "All" && n.subject !== subjectFilter) return false;
+      if (priorityFilter !== "All" && n.exam_importance !== priorityFilter) return false;
+      
       if (search) {
         const q = search.toLowerCase();
         return (
@@ -83,19 +109,46 @@ export default function NotesClient({ initialNotes }) {
       }
       return true;
     }).sort((a, b) => {
+      // Folders first
+      if (a.is_folder && !b.is_folder) return -1;
+      if (!a.is_folder && b.is_folder) return 1;
+      
       if (a.is_pinned && !b.is_pinned) return -1;
       if (!a.is_pinned && b.is_pinned) return 1;
       return new Date(b.updated_at) - new Date(a.updated_at);
     });
-  }, [notes, search, subjectFilter, categoryFilter]);
+  }, [notes, search, subjectFilter, priorityFilter, categoryFilter, currentFolderId]);
 
   async function handleCreate(formData) {
     setLoading(true);
+    // Inject parent_id if inside a folder
+    if (currentFolderId) {
+      formData.append("parent_id", currentFolderId);
+    }
     try {
       await createNote(formData);
       setIsCreating(false);
     } catch (e) {
       console.error(e);
+      setLoading(false);
+    }
+  }
+
+  async function handleCreateFolder(e) {
+    e.preventDefault();
+    setLoading(true);
+    const formData = new FormData(e.target);
+    const title = formData.get("title");
+    const subject = formData.get("subject") || "General";
+    try {
+      const res = await createFolder(title, subject, currentFolderId);
+      if (res.success) {
+        setNotes(prev => [res.data, ...prev]);
+        setIsCreatingFolder(false);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
       setLoading(false);
     }
   }
@@ -353,6 +406,9 @@ export default function NotesClient({ initialNotes }) {
           <Button onClick={() => setIsCommandPaletteOpen(true)} variant="secondary" className="hidden sm:flex items-center gap-2 text-muted hover:text-primary">
             <Search size={16} /> <span className="text-xs font-semibold px-1 py-0.5 rounded">Search</span>
           </Button>
+          <Button onClick={() => setIsCreatingFolder(true)} variant="secondary" className="flex items-center gap-2 text-muted hover:text-primary border border-divider">
+            <FolderPlus size={16} /> New Folder
+          </Button>
           <Button onClick={() => setIsCreating(true)} className="flex items-center gap-2">
             <Plus size={16} /> New Note
           </Button>
@@ -488,27 +544,53 @@ export default function NotesClient({ initialNotes }) {
             </div>
           </div>
 
-          {/* Subject Tabs */}
-          <div className="mt-6 flex gap-2 overflow-x-auto pb-2 scrollbar-hide border-b border-divider">
-            <button
-              onClick={() => setSubjectFilter("All")}
-              className={`shrink-0 px-4 py-2 text-sm font-medium border-b-2 transition ${
-                subjectFilter === "All" ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary"
-              }`}
-            >
-              All Subjects
-            </button>
-            {SUBJECTS.map(sub => (
-              <button
-                key={sub}
-                onClick={() => setSubjectFilter(sub)}
-                className={`shrink-0 px-4 py-2 text-sm font-medium border-b-2 transition ${
-                  subjectFilter === sub ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary"
-                }`}
+          {/* Filters & Breadcrumbs */}
+          <div className="mt-6 flex flex-col gap-4 border-b border-divider pb-4 sm:flex-row sm:items-center sm:justify-between">
+            
+            {/* Breadcrumb Navigation */}
+            <div className="flex items-center gap-2 text-sm overflow-x-auto scrollbar-hide">
+              <button 
+                onClick={() => setCurrentFolderId(null)}
+                className={`flex items-center gap-1.5 font-medium transition ${!currentFolderId ? 'text-primary' : 'text-muted hover:text-primary'}`}
               >
-                {sub}
+                <Folder size={15} className={!currentFolderId ? 'text-accent' : ''} /> Root
               </button>
-            ))}
+              
+              {folderPath.map((f) => (
+                <div key={f.id} className="flex items-center gap-2">
+                  <ChevronRight size={14} className="text-muted" />
+                  <button 
+                    onClick={() => setCurrentFolderId(f.id)}
+                    className={`font-medium transition ${currentFolderId === f.id ? 'text-primary' : 'text-muted hover:text-primary'}`}
+                  >
+                    {f.title}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Dropdown Filters */}
+            <div className="flex items-center gap-3">
+              <select 
+                value={subjectFilter}
+                onChange={e => setSubjectFilter(e.target.value)}
+                className="bg-[var(--surface-alt)] border border-divider rounded-lg px-3 py-1.5 text-sm font-medium text-secondary focus:border-accent focus:outline-none transition"
+              >
+                <option value="All">All Subjects</option>
+                {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              
+              <select 
+                value={priorityFilter}
+                onChange={e => setPriorityFilter(e.target.value)}
+                className="bg-[var(--surface-alt)] border border-divider rounded-lg px-3 py-1.5 text-sm font-medium text-secondary focus:border-accent focus:outline-none transition"
+              >
+                <option value="All">All Priorities</option>
+                <option value="High Yield">High Yield 🔴</option>
+                <option value="Core Concept">Core Concept 🟡</option>
+                <option value="Supplementary">Supplementary 🔵</option>
+              </select>
+            </div>
           </div>
 
           {/* Notes Display */}
@@ -518,13 +600,13 @@ export default function NotesClient({ initialNotes }) {
             ) : viewMode === "grid" ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filteredNotes.map(note => (
-                  <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
+                  <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onFolderClick={() => setCurrentFolderId(note.id)} />
                 ))}
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 {filteredNotes.map(note => (
-                  <NoteListItem key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
+                  <NoteListItem key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onFolderClick={() => setCurrentFolderId(note.id)} />
                 ))}
               </div>
             )}
@@ -552,6 +634,29 @@ export default function NotesClient({ initialNotes }) {
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* Create Folder Modal */}
+      <Modal open={isCreatingFolder} onClose={() => !loading && setIsCreatingFolder(false)} title="New Folder">
+        <form onSubmit={handleCreateFolder} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium text-primary mb-1.5 block">Folder Name</label>
+            <Input name="title" required placeholder="e.g. Chapter 1: Cell Biology" autoFocus className="bg-[var(--surface-alt)]" />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-primary mb-1.5 block">Subject (Optional)</label>
+            <select name="subject" className="field w-full bg-[var(--surface-alt)]">
+              <option value="General">General</option>
+              {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="pt-4 flex justify-end gap-3 border-t border-divider">
+            <button type="button" onClick={() => setIsCreatingFolder(false)} className="btn btn-secondary">Cancel</button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Creating..." : "Create folder"}
+            </Button>
+          </div>
+        </form>
       </Modal>
 
       {/* Create Modal */}
@@ -666,7 +771,22 @@ export default function NotesClient({ initialNotes }) {
   );
 }
 
-function NoteCard({ note, onToggle, onDeleteClick }) {
+export function PriorityBadge({ priority, className = "" }) {
+  if (!priority || priority === "Medium") return null;
+  const config = {
+    "High Yield": { color: "text-red-500 bg-red-500/10 border-red-500/20", icon: "🔴" },
+    "Core Concept": { color: "text-yellow-600 bg-yellow-500/10 border-yellow-500/20", icon: "🟡" },
+    "Supplementary": { color: "text-blue-500 bg-blue-500/10 border-blue-500/20", icon: "🔵" }
+  }[priority] || { color: "text-muted bg-[var(--surface)] border-divider", icon: "" };
+
+  return (
+    <span className={`text-[10px] font-semibold tracking-wider uppercase border px-1.5 py-0.5 rounded-sm flex items-center gap-1 ${config.color} ${className}`}>
+      {config.icon} {priority}
+    </span>
+  );
+}
+
+function NoteCard({ note, onToggle, onDeleteClick, onFolderClick }) {
   let previewText = "No content yet.";
   try {
     if (note.content) {
@@ -690,24 +810,28 @@ function NoteCard({ note, onToggle, onDeleteClick }) {
     return `${Math.floor(diffHrs / 24)}d ago`;
   };
 
+  const isFolder = note.is_folder;
+  const CardWrapper = isFolder ? "button" : Link;
+  const wrapperProps = isFolder 
+    ? { onClick: onFolderClick, className: "text-left w-full h-full block" } 
+    : { href: `/dashboard/notes/${note.id}`, className: "block w-full h-full" };
+
   return (
-    <Link href={`/dashboard/notes/${note.id}`} className="group card flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border border-divider relative h-52">
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex gap-2 items-center flex-wrap">
-          <span className="text-[10px] font-bold tracking-wider uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full">
-            {note.subject}
-          </span>
-          {note.level && (
-            <span className="text-[10px] font-semibold tracking-wider text-muted border border-divider px-1.5 py-0.5 rounded-sm">
-              {note.level}
+    <div className={`group card flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border border-divider relative h-52 ${isFolder ? 'ring-1 ring-accent/10 shadow-sm' : ''}`}>
+      <CardWrapper {...wrapperProps}>
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex gap-2 items-center flex-wrap">
+            <span className="text-[10px] font-bold tracking-wider uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+              {isFolder ? <Folder size={10} className="fill-accent/20" /> : null}
+              {note.subject}
             </span>
-          )}
+            <PriorityBadge priority={note.exam_importance} />
+          </div>
+          <div className="flex gap-1.5 text-muted">
+            {note.is_pinned && <Pin size={14} className="text-accent fill-accent/20" />}
+            {note.is_favorite && <Star size={14} className="text-yellow-500 fill-yellow-500/20" />}
+          </div>
         </div>
-        <div className="flex gap-1.5 text-muted">
-          {note.is_pinned && <Pin size={14} className="text-accent fill-accent/20" />}
-          {note.is_favorite && <Star size={14} className="text-yellow-500 fill-yellow-500/20" />}
-        </div>
-      </div>
       <h3 className="font-semibold text-primary text-base line-clamp-1 mb-1 group-hover:text-accent transition-colors">
         {note.title}
       </h3>
@@ -726,30 +850,31 @@ function NoteCard({ note, onToggle, onDeleteClick }) {
           <span className="text-[10px] text-muted">{note.revision_readiness}%</span>
         </div>
       )}
-      <div className="mt-4 pt-3 border-t border-divider flex items-center justify-between text-xs text-muted">
-        <span className="flex items-center gap-1.5">
-          <Clock size={12} /> {timeAgo(note.updated_at)}
-        </span>
-        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
-            <Star size={14} className={note.is_favorite ? "fill-current" : ""} />
-          </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition" title={note.is_pinned ? "Unpin" : "Pin"}>
-            <Pin size={14} className={note.is_pinned ? "fill-current" : ""} />
-          </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="hover:text-primary transition" title={note.is_archived ? "Restore" : "Archive"}>
-            <Archive size={14} />
-          </button>
-          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1" title="Delete">
-            <Trash2 size={14} />
-          </button>
+        <div className="mt-4 pt-3 border-t border-divider flex items-center justify-between text-xs text-muted">
+          <span className="flex items-center gap-1.5">
+            <Clock size={12} /> {timeAgo(note.updated_at)}
+          </span>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2" onClick={e => e.stopPropagation()}>
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
+              <Star size={14} className={note.is_favorite ? "fill-current" : ""} />
+            </button>
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition" title={note.is_pinned ? "Unpin" : "Pin"}>
+              <Pin size={14} className={note.is_pinned ? "fill-current" : ""} />
+            </button>
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="hover:text-primary transition" title={note.is_archived ? "Restore" : "Archive"}>
+              <Archive size={14} />
+            </button>
+            <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1" title="Delete">
+              <Trash2 size={14} />
+            </button>
+          </div>
         </div>
-      </div>
-    </Link>
+      </CardWrapper>
+    </div>
   );
 }
 
-function NoteListItem({ note, onToggle, onDeleteClick }) {
+function NoteListItem({ note, onToggle, onDeleteClick, onFolderClick }) {
   const timeAgo = (dateStr) => {
     const diffMs = new Date() - new Date(dateStr);
     const diffMins = Math.floor(diffMs / 60000);
@@ -759,30 +884,35 @@ function NoteListItem({ note, onToggle, onDeleteClick }) {
     return `${Math.floor(diffHrs / 24)}d ago`;
   };
 
+  const isFolder = note.is_folder;
+  const ListWrapper = isFolder ? "button" : Link;
+  const wrapperProps = isFolder 
+    ? { onClick: onFolderClick, className: "text-left w-full block" } 
+    : { href: `/dashboard/notes/${note.id}`, className: "block w-full" };
+
   return (
-    <Link href={`/dashboard/notes/${note.id}`} className="group flex items-center justify-between p-3 rounded-xl hover:bg-[var(--surface-alt)] border border-transparent hover:border-divider transition-all">
-      <div className="flex items-center gap-4 flex-1 overflow-hidden">
-        <div className="shrink-0 flex gap-1">
-          <Star size={16} className={note.is_favorite ? "text-yellow-500 fill-yellow-500/20" : "text-transparent group-hover:text-muted transition"} />
-          <Pin size={16} className={note.is_pinned ? "text-accent fill-accent/20" : "text-transparent group-hover:text-muted transition"} />
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 flex-1 overflow-hidden">
-          <h3 className="font-semibold text-primary text-sm truncate">{note.title}</h3>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold tracking-wider uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full shrink-0">
-              {note.subject}
-            </span>
-            {note.topic && <span className="text-xs text-muted truncate max-w-[150px]">{note.topic}</span>}
+    <div className={`group flex items-center justify-between p-3 rounded-xl hover:bg-[var(--surface-alt)] border transition-all ${isFolder ? 'border-accent/10 bg-[var(--surface-alt)]' : 'border-transparent hover:border-divider'}`}>
+      <ListWrapper {...wrapperProps} className="flex-1 min-w-0">
+        <div className="flex items-center gap-4 w-full">
+          <div className="shrink-0 flex gap-1 items-center">
+            {isFolder ? <Folder size={16} className="text-accent fill-accent/20" /> : <FileText size={16} className="text-muted" />}
+          </div>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 flex-1 min-w-0">
+            <h3 className="font-semibold text-primary text-sm truncate">{note.title}</h3>
+            <div className="flex items-center gap-2">
+              <PriorityBadge priority={note.exam_importance} className="!text-[9px]" />
+              {note.topic && <span className="text-xs text-muted truncate max-w-[150px]">{note.topic}</span>}
+            </div>
           </div>
         </div>
-      </div>
+      </ListWrapper>
       <div className="flex items-center gap-6 shrink-0 ml-4">
         <span className="text-xs text-muted hidden sm:block">Edited {timeAgo(note.updated_at)}</span>
         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="text-muted hover:text-yellow-500 transition p-1" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className={`hover:text-yellow-500 transition p-1 ${note.is_favorite ? "text-yellow-500" : "text-muted"}`} title={note.is_favorite ? "Unfavorite" : "Favorite"}>
             <Star size={16} className={note.is_favorite ? "fill-current" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="text-muted hover:text-accent transition p-1" title={note.is_pinned ? "Unpin" : "Pin"}>
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className={`hover:text-accent transition p-1 ${note.is_pinned ? "text-accent" : "text-muted"}`} title={note.is_pinned ? "Unpin" : "Pin"}>
             <Pin size={16} className={note.is_pinned ? "fill-current" : ""} />
           </button>
           <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="text-muted hover:text-primary transition p-1" title={note.is_archived ? "Restore" : "Archive"}>
@@ -793,6 +923,6 @@ function NoteListItem({ note, onToggle, onDeleteClick }) {
           </button>
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
