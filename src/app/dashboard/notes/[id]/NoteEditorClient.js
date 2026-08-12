@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { 
   ArrowLeft, BrainCircuit, MoreHorizontal, Save, Sparkles, 
-  Trash2, Star, Pin, Archive, Settings2, BookOpen, Clock
+  Trash2, Star, Pin, Archive, Settings2, BookOpen, Clock, 
+  CalendarDays, Lightbulb, Target, ArrowRight, LayoutList, CheckCircle2
 } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -27,14 +28,16 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
   const [note, setNote] = useState(initialNote);
   
   // States
-  const [saveStatus, setSaveStatus] = useState("Saved"); // "Saving...", "Saved", "Error"
+  const [saveStatus, setSaveStatus] = useState("Saved");
   const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [flashcardResult, setFlashcardResult] = useState(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isStudyModalOpen, setIsStudyModalOpen] = useState(false);
   
   // Metadata edit states
   const [title, setTitle] = useState(note.title);
+  const [examImportance, setExamImportance] = useState(note.exam_importance || "Medium");
   
   // Derived Data
   const relatedNotes = allNotes.filter(n => 
@@ -62,7 +65,7 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
     }
   });
 
-  // Auto-save logic (debounced)
+  // Auto-save logic
   const debounceTimer = useRef(null);
   const debouncedSaveContent = useCallback((contentJSON) => {
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -92,6 +95,12 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
     }, 1000);
   };
 
+  const handleMetadataChange = async (field, value) => {
+    const formData = new FormData();
+    formData.append(field, value);
+    await updateNoteMetadata(note.id, formData);
+  };
+
   const handleToggleState = async (field) => {
     const currentValue = note[field];
     const res = await toggleNoteState(note.id, field, !currentValue);
@@ -115,6 +124,22 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
     setIsGenerating(false);
   };
 
+  // Keyboard shortcuts (Cmd+S)
+  useEffect(() => {
+    const down = (e) => {
+      if (e.key === "s" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        // Force save immediately
+        if (editor) {
+          setSaveStatus("Saving...");
+          updateNoteContent(note.id, JSON.stringify(editor.getJSON())).then(() => setSaveStatus("Saved"));
+        }
+      }
+    };
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, [editor, note.id]);
+
   if (!editor) return null;
 
   return (
@@ -122,19 +147,14 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
       {/* Editor Main Area */}
       <div className="flex-1 flex flex-col max-w-5xl mx-auto w-full border-r border-divider">
         {/* Top Header */}
-        <header className="flex items-center justify-between px-6 py-4 border-b border-divider shrink-0 sticky top-0 bg-[var(--background)]/80 backdrop-blur-md z-10">
+        <header className="flex items-center justify-between px-6 py-4 border-b border-divider shrink-0 sticky top-0 bg-[var(--background)]/80 backdrop-blur-md z-20">
           <div className="flex items-center gap-4">
             <Link href="/dashboard/notes" className="p-2 -ml-2 rounded-lg hover:bg-[var(--surface-alt)] transition text-muted hover:text-primary">
               <ArrowLeft size={18} />
             </Link>
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
-              <span className="text-accent">{note.subject}</span>
-              {note.topic && (
-                <>
-                  <span>•</span>
-                  <span>{note.topic}</span>
-                </>
-              )}
+              <span className="text-accent bg-accent/10 px-2 py-0.5 rounded-full">{note.subject}</span>
+              {note.level && <span className="bg-[var(--surface)] px-2 py-0.5 rounded-sm border border-divider">{note.level}</span>}
             </div>
           </div>
           
@@ -146,15 +166,11 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
             </span>
             <div className="h-4 w-px bg-divider mx-1"></div>
             
-            {/* Action Bar */}
             <button onClick={() => handleToggleState("is_favorite")} className={`p-2 rounded-lg transition ${note.is_favorite ? 'text-yellow-500 bg-yellow-500/10' : 'text-muted hover:bg-[var(--surface-alt)] hover:text-primary'}`}>
               <Star size={18} className={note.is_favorite ? 'fill-current' : ''} />
             </button>
-            <button onClick={() => setIsFlashcardModalOpen(true)} className="p-2 rounded-lg hover:bg-accent/10 transition text-accent hover:text-accent-bright" title="Generate Flashcards">
-              <BrainCircuit size={18} />
-            </button>
             <Dropdown label={<MoreHorizontal size={18} />}>
-              <div className="p-1 space-y-0.5">
+              <div className="p-1 space-y-0.5 min-w-[180px]">
                 <button onClick={() => handleToggleState("is_pinned")} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-[var(--surface-alt)] flex items-center justify-between">
                   {note.is_pinned ? "Unpin Note" : "Pin Note"} <Pin size={14} className="text-muted" />
                 </button>
@@ -170,22 +186,51 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
                 </button>
               </div>
             </Dropdown>
+            <Button onClick={() => setIsFlashcardModalOpen(true)} className="hidden sm:flex items-center gap-2 px-3 py-1.5 text-xs bg-accent text-white">
+              <BrainCircuit size={14} /> Turn into Flashcards
+            </Button>
           </div>
         </header>
 
         {/* Editor Body */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-3xl mx-auto px-6 py-12 md:px-12 md:py-16">
+            
+            {/* IB Metadata Bar */}
+            <div className="flex flex-wrap items-center gap-4 mb-6 text-sm text-muted">
+              {note.topic && (
+                <div className="flex items-center gap-1.5">
+                  <LayoutList size={14} />
+                  <span>{note.topic}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <Target size={14} />
+                <select 
+                  value={examImportance}
+                  onChange={(e) => {
+                    setExamImportance(e.target.value);
+                    handleMetadataChange("exam_importance", e.target.value);
+                  }}
+                  className="bg-transparent font-medium hover:text-primary outline-none cursor-pointer"
+                >
+                  <option value="Low">Low Priority</option>
+                  <option value="Medium">Medium Priority</option>
+                  <option value="High">High Exam Priority</option>
+                </select>
+              </div>
+            </div>
+
             {/* Title Input */}
             <input
               type="text"
               value={title}
               onChange={handleTitleChange}
               placeholder="Note Title"
-              className="w-full text-4xl md:text-5xl font-bold bg-transparent text-primary outline-none placeholder:text-muted mb-8 tracking-tight"
+              className="w-full text-4xl md:text-5xl font-bold bg-transparent text-primary outline-none placeholder:text-[var(--border)] mb-8 tracking-tight"
             />
             
-            {/* Formatting Toolbar (Minimal) */}
+            {/* Formatting Toolbar */}
             <div className="flex flex-wrap items-center gap-1 p-1 mb-8 bg-[var(--surface-alt)] border border-divider rounded-xl sticky top-4 z-10 shadow-sm backdrop-blur-md bg-opacity-80">
               <button onClick={() => editor.chain().focus().toggleBold().run()} className={`p-1.5 rounded-lg text-sm font-semibold w-8 h-8 flex items-center justify-center transition ${editor.isActive('bold') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>B</button>
               <button onClick={() => editor.chain().focus().toggleItalic().run()} className={`p-1.5 rounded-lg text-sm italic font-serif w-8 h-8 flex items-center justify-center transition ${editor.isActive('italic') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>I</button>
@@ -211,52 +256,78 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
       </div>
 
       {/* Right Sidebar: Connected Learning */}
-      <aside className="w-full md:w-80 bg-[var(--surface)] p-6 shrink-0 overflow-y-auto border-t md:border-t-0 md:border-l border-divider hidden lg:block">
-        <h3 className="font-semibold text-primary mb-6 flex items-center gap-2">
-          <BookOpen size={16} className="text-accent" /> Connected Learning
-        </h3>
+      <aside className="w-full md:w-[340px] bg-[var(--background)] p-6 shrink-0 overflow-y-auto border-t md:border-t-0 md:border-l border-divider hidden lg:block">
         
-        {/* Intelligence / Metadata */}
-        <div className="card p-4 bg-[var(--surface-alt)] mb-8 border border-divider">
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between items-center text-muted">
-              <span>Subject</span>
-              <span className="font-semibold text-primary">{note.subject}</span>
+        {/* Revision Readiness */}
+        <div className="mb-8">
+          <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-4">Revision Readiness</h4>
+          <div className="card p-4 bg-[var(--surface-alt)] border border-divider">
+            <div className="flex justify-between items-end mb-2">
+              <span className="text-3xl font-bold tracking-tight text-primary">
+                {note.revision_readiness || 65}%
+              </span>
             </div>
-            {note.topic && (
-              <div className="flex justify-between items-center text-muted">
-                <span>Topic</span>
-                <span className="font-semibold text-primary">{note.topic}</span>
-              </div>
-            )}
-            <div className="flex justify-between items-center text-muted">
-              <span>Length</span>
-              <span className="font-medium text-secondary">{editor.getText().split(/\s+/).length} words</span>
+            <div className="h-1.5 w-full bg-[var(--surface)] rounded-full overflow-hidden mb-4">
+              <div className="h-full bg-accent" style={{ width: `${note.revision_readiness || 65}%` }}></div>
             </div>
+            <ul className="space-y-2 text-xs text-muted">
+              <li className="flex items-start gap-2">
+                <CheckCircle2 size={14} className="text-success shrink-0" /> Key concepts identified
+              </li>
+              <li className="flex items-start gap-2">
+                <CheckCircle2 size={14} className="text-success shrink-0" /> Flashcards generated
+              </li>
+              <li className="flex items-start gap-2 opacity-50">
+                <div className="w-3.5 h-3.5 rounded-full border border-dashed border-muted shrink-0 mt-0.5"></div>
+                Practice questions missing
+              </li>
+            </ul>
           </div>
-          <Button onClick={() => setIsFlashcardModalOpen(true)} className="w-full mt-4 flex items-center justify-center gap-2 py-2 text-sm bg-accent/10 hover:bg-accent/20 text-accent border border-accent/20 transition">
-            <BrainCircuit size={14} /> Generate Flashcards
-          </Button>
+        </div>
+
+        {/* Smart AI Actions */}
+        <div className="mb-8">
+          <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <Sparkles size={14} className="text-accent" /> Smart Insights
+          </h4>
+          <div className="flex flex-col gap-2">
+            <button className="text-left p-3 rounded-xl border border-divider hover:border-accent hover:bg-accent/5 transition flex items-start gap-3 group">
+              <Lightbulb size={16} className="text-accent shrink-0 mt-0.5" />
+              <div>
+                <span className="block text-sm font-semibold text-primary group-hover:text-accent transition">Explain Simply</span>
+                <span className="block text-xs text-muted mt-0.5">Have AI break this down</span>
+              </div>
+            </button>
+            <button onClick={() => setIsStudyModalOpen(true)} className="text-left p-3 rounded-xl border border-divider hover:border-accent hover:bg-accent/5 transition flex items-start gap-3 group">
+              <CalendarDays size={16} className="text-accent shrink-0 mt-0.5" />
+              <div>
+                <span className="block text-sm font-semibold text-primary group-hover:text-accent transition">Study this note</span>
+                <span className="block text-xs text-muted mt-0.5">Add to your planner</span>
+              </div>
+            </button>
+          </div>
         </div>
 
         {/* Related Notes */}
         <div>
-          <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-4">Related Notes</h4>
+          <h4 className="text-xs font-bold text-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <BookOpen size={14} className="text-muted" /> Connected Knowledge
+          </h4>
           {relatedNotes.length > 0 ? (
-            <div className="space-y-3">
+            <div className="space-y-2">
               {relatedNotes.map(n => (
                 <Link key={n.id} href={`/dashboard/notes/${n.id}`} className="block group">
                   <div className="p-3 rounded-xl border border-transparent hover:border-divider hover:bg-[var(--surface-alt)] transition">
                     <h5 className="font-medium text-sm text-primary group-hover:text-accent transition line-clamp-1">{n.title}</h5>
                     <p className="text-xs text-muted mt-1 flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-accent/50"></span> {n.subject}
+                      <ArrowRight size={10} className="opacity-50" /> {n.subject}
                     </p>
                   </div>
                 </Link>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted">No related notes found.</p>
+            <p className="text-sm text-muted p-4 border border-dashed rounded-xl text-center">No connections found.</p>
           )}
         </div>
       </aside>
@@ -266,15 +337,13 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
         <div className="space-y-4">
           <p className="text-sm text-secondary leading-relaxed">
             Let AI extract key concepts from your note and transform them into active-recall flashcards. 
-            These will be added directly to your Flashcards dashboard.
+            These will be connected directly to this note.
           </p>
-          
           {flashcardResult && (
             <div className={`p-4 rounded-xl border text-sm ${flashcardResult.error ? 'bg-danger/10 border-danger/20 text-danger' : 'bg-success/10 border-success/20 text-success'}`}>
               {flashcardResult.error || `Successfully generated ${flashcardResult.count} flashcards!`}
             </div>
           )}
-
           <div className="flex justify-end gap-3 pt-4 border-t border-divider">
             <button onClick={() => setIsFlashcardModalOpen(false)} className="btn btn-secondary">
               {flashcardResult?.success ? 'Close' : 'Cancel'}
@@ -288,14 +357,34 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
         </div>
       </Modal>
 
+      {/* Study Planner Modal */}
+      <Modal open={isStudyModalOpen} onClose={() => setIsStudyModalOpen(false)} title="Add to Study Planner">
+        <div className="space-y-4">
+          <p className="text-sm text-secondary leading-relaxed">
+            Schedule a focused review session for <strong>{note.title}</strong> in your planner.
+          </p>
+          <div>
+            <label className="text-sm font-medium text-primary mb-1.5 block">When?</label>
+            <select className="field w-full bg-[var(--surface-alt)]">
+              <option>Today</option>
+              <option>Tomorrow</option>
+              <option>Next Week</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-3 pt-4 border-t border-divider">
+            <button onClick={() => setIsStudyModalOpen(false)} className="btn btn-secondary">Cancel</button>
+            <Button onClick={() => setIsStudyModalOpen(false)}>Schedule Session</Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Delete Confirmation Modal */}
       <Modal open={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Delete Note?">
         <div className="space-y-4">
           <p className="text-sm text-secondary">
             Are you sure you want to permanently delete <strong>{note.title}</strong>? This action cannot be undone. 
-            If you just want to hide it, you can Archive it instead.
           </p>
-          <div className="flex justify-end gap-3 pt-4">
+          <div className="flex justify-end gap-3 pt-4 border-t border-divider">
             <button onClick={() => setIsDeleteModalOpen(false)} className="btn btn-secondary">Cancel</button>
             <form action={() => deleteNote(note.id)}>
               <Button type="submit" variant="error" className="bg-danger text-white hover:bg-danger/90">

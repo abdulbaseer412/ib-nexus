@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { 
   Search, Plus, PenLine, Clock, Star, Archive, 
-  MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, CheckCircle2 
+  MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, 
+  CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity
 } from "lucide-react";
 import { createNote, toggleNoteState, duplicateNote, deleteNote } from "./actions";
-import { Modal, Button, Input } from "@/components/ui";
+import { Modal, Button, Input, Dropdown } from "@/components/ui";
 
 const SUBJECTS = ["Biology", "Chemistry", "Mathematics", "Economics", "English", "Physics", "TOK", "History"];
 
@@ -18,16 +19,28 @@ export default function NotesClient({ initialNotes }) {
   const [search, setSearch] = useState("");
   const [subjectFilter, setSubjectFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All"); // All, Favorites, Archived
+  const [viewMode, setViewMode] = useState("grid"); // "grid" | "list"
   
-  // Note Creation Modal
+  // Modals
   const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  // Note Deletion Modal
   const [deleteNoteId, setDeleteNoteId] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
-  // Derive recent notes (top 3 edited recently, not archived)
+  // Command Palette Keyboard Shortcut
+  useEffect(() => {
+    const down = (e) => {
+      if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        setIsCommandPaletteOpen((open) => !open);
+      }
+    };
+    document.addEventListener("keydown", down);
+    return () => document.removeEventListener("keydown", down);
+  }, []);
+
+  // Derive recent notes
   const recentNotes = useMemo(() => {
     return notes
       .filter(n => !n.is_archived)
@@ -38,15 +51,10 @@ export default function NotesClient({ initialNotes }) {
   // Derive filtered notes
   const filteredNotes = useMemo(() => {
     return notes.filter(n => {
-      // 1. Category Filter
       if (categoryFilter === "Favorites" && !n.is_favorite) return false;
       if (categoryFilter === "Archived" && !n.is_archived) return false;
-      if (categoryFilter !== "Archived" && n.is_archived) return false; // Hide archived from other views
-
-      // 2. Subject Filter
+      if (categoryFilter !== "Archived" && n.is_archived) return false;
       if (subjectFilter !== "All" && n.subject !== subjectFilter) return false;
-
-      // 3. Search Filter
       if (search) {
         const q = search.toLowerCase();
         return (
@@ -55,10 +63,8 @@ export default function NotesClient({ initialNotes }) {
           (n.topic && n.topic.toLowerCase().includes(q))
         );
       }
-
       return true;
     }).sort((a, b) => {
-      // Pinned notes always at top
       if (a.is_pinned && !b.is_pinned) return -1;
       if (!a.is_pinned && b.is_pinned) return 1;
       return new Date(b.updated_at) - new Date(a.updated_at);
@@ -69,10 +75,21 @@ export default function NotesClient({ initialNotes }) {
     setLoading(true);
     try {
       await createNote(formData);
-      // router redirects inside action, but in case we need to close:
       setIsCreating(false);
     } catch (e) {
       console.error(e);
+      setLoading(false);
+    }
+  }
+
+  async function handleTemplateCreate(templateType) {
+    setLoading(true);
+    const formData = new FormData();
+    formData.append("title", `${templateType} Note`);
+    formData.append("subject", "Biology"); // Default, user can change later
+    try {
+      await createNote(formData);
+    } catch (e) {
       setLoading(false);
     }
   }
@@ -85,114 +102,184 @@ export default function NotesClient({ initialNotes }) {
   }
 
   return (
-    <main className="surface min-h-[calc(100vh-72px)] p-5 sm:p-8">
+    <main className="surface min-h-[calc(100vh-72px)] p-4 sm:p-8">
       {/* Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl text-primary">Notes</h1>
-          <p className="mt-1 text-sm text-muted">Organise your revision notes, class material, and study guides by subject.</p>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl text-primary flex items-center gap-2">
+            <BookOpen className="text-accent" /> Notes
+          </h1>
+          <p className="mt-1 text-sm text-muted">Your complete IB knowledge and revision workspace.</p>
         </div>
-        <Button onClick={() => setIsCreating(true)} className="shrink-0 flex items-center gap-2">
-          <Plus size={16} /> Create note
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setIsCommandPaletteOpen(true)} variant="secondary" className="hidden sm:flex items-center gap-2 text-muted hover:text-primary">
+            <Search size={16} /> <span className="text-xs bg-[var(--surface-alt)] px-1.5 py-0.5 rounded border border-divider">⌘K</span>
+          </Button>
+          <Button onClick={() => setIsCreating(true)} className="flex items-center gap-2">
+            <Plus size={16} /> New Note
+          </Button>
+        </div>
       </header>
 
-      {/* Continue Studying (Recent) */}
-        {recentNotes.length > 0 && categoryFilter === "All" && search === "" && subjectFilter === "All" && (
-          <section className="mt-10">
-            <h2 className="text-sm font-semibold text-muted uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Clock size={16} /> Continue studying
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {recentNotes.map(note => (
-                <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
+      {/* Quick Action / Command Area */}
+      {notes.length > 0 && (
+        <div className="mt-6 flex flex-wrap gap-2">
+          <button onClick={() => setIsCreating(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition">
+            <Plus size={14} className="text-accent" /> Quick capture
+          </button>
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition">
+            <FolderPlus size={14} /> New collection
+          </button>
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary transition">
+            <DownloadCloud size={14} /> Import document
+          </button>
+        </div>
+      )}
+
+      {/* Main Area */}
+      {notes.length === 0 ? (
+        // Advanced Empty State
+        <div className="mt-12 max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <div className="w-16 h-16 bg-accent/10 border border-accent/20 text-accent rounded-2xl flex items-center justify-center mx-auto mb-6">
+              <Sparkles size={32} />
+            </div>
+            <h2 className="text-2xl font-semibold text-primary mb-2">Your knowledge workspace is ready.</h2>
+            <p className="text-secondary max-w-lg mx-auto">
+              Capture your first IB concept, organise your subjects, and let AI help you generate active recall flashcards from your notes.
+            </p>
+            <div className="flex justify-center gap-4 mt-8">
+              <Button onClick={() => setIsCreating(true)} className="flex items-center gap-2 px-6">
+                <Plus size={18} /> Create your first note
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-16">
+            <h3 className="text-sm font-semibold text-muted uppercase tracking-wider mb-6 text-center">Or start from an IB template</h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { title: "Revision Summary", desc: "Core concepts & formulas", subject: "Mathematics" },
+                { title: "IA Research", desc: "Sources & methodology", subject: "Biology" },
+                { title: "Argument Map", desc: "Claims & counterclaims", subject: "TOK" },
+                { title: "Essay Plan", desc: "Structure & evidence", subject: "English" }
+              ].map(t => (
+                <button key={t.title} onClick={() => handleTemplateCreate(t.title)} className="card p-5 text-left hover:border-accent transition group bg-[var(--surface-alt)] border border-divider">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded-full mb-3 inline-block">{t.subject}</span>
+                  <h4 className="font-semibold text-primary group-hover:text-accent transition">{t.title}</h4>
+                  <p className="text-xs text-muted mt-2">{t.desc}</p>
+                </button>
               ))}
             </div>
-          </section>
-        )}
-
-      {/* Main Controls */}
-      <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <Input 
-            value={search} 
-            onChange={e => setSearch(e.target.value)} 
-            className="pl-9 w-full bg-[var(--surface-alt)]" 
-            placeholder="Search notes..." 
-          />
+          </div>
         </div>
+      ) : (
+        <>
+          {/* Main Controls */}
+          <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="relative flex-1 max-w-md">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <Input 
+                value={search} 
+                onChange={e => setSearch(e.target.value)} 
+                className="pl-9 w-full bg-[var(--surface-alt)]" 
+                placeholder="Search knowledge base..." 
+              />
+            </div>
+            <div className="flex gap-2">
+              {["All", "Favorites", "Archived"].map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setCategoryFilter(cat)}
+                  className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
+                    categoryFilter === cat ? "bg-accent/10 text-accent border border-accent/20" : "text-muted hover:bg-[var(--surface)] hover:text-primary border border-transparent"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+              <div className="w-px h-8 bg-divider mx-1"></div>
+              <button onClick={() => setViewMode("grid")} className={`p-1.5 rounded-lg transition ${viewMode === 'grid' ? 'bg-[var(--surface)] text-primary' : 'text-muted hover:text-primary'}`}>
+                <LayoutGrid size={18} />
+              </button>
+              <button onClick={() => setViewMode("list")} className={`p-1.5 rounded-lg transition ${viewMode === 'list' ? 'bg-[var(--surface)] text-primary' : 'text-muted hover:text-primary'}`}>
+                <List size={18} />
+              </button>
+            </div>
+          </div>
 
-        {/* Secondary Category Filters */}
-        <div className="flex gap-2">
-          {["All", "Favorites", "Archived"].map(cat => (
+          {/* Subject Tabs */}
+          <div className="mt-6 flex gap-2 overflow-x-auto pb-2 scrollbar-hide border-b border-divider">
             <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
-              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
-                categoryFilter === cat ? "bg-accent/10 text-accent" : "text-muted hover:bg-[var(--surface)] hover:text-primary"
+              onClick={() => setSubjectFilter("All")}
+              className={`shrink-0 px-4 py-2 text-sm font-medium border-b-2 transition ${
+                subjectFilter === "All" ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary"
               }`}
             >
-              {cat}
+              All Subjects
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Subject Tabs */}
-      <div className="mt-6 flex gap-2 overflow-x-auto pb-2 scrollbar-hide border-b border-divider">
-        <button
-          onClick={() => setSubjectFilter("All")}
-          className={`shrink-0 px-4 py-2 text-sm font-medium border-b-2 transition ${
-            subjectFilter === "All" ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary"
-          }`}
-        >
-          All Subjects
-        </button>
-        {SUBJECTS.map(sub => (
-          <button
-            key={sub}
-            onClick={() => setSubjectFilter(sub)}
-            className={`shrink-0 px-4 py-2 text-sm font-medium border-b-2 transition ${
-              subjectFilter === sub ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary"
-            }`}
-          >
-            {sub}
-          </button>
-        ))}
-      </div>
-
-      {/* Notes Grid */}
-      <div className="mt-6">
-        {filteredNotes.length === 0 ? (
-          <div className="card p-12 text-center flex flex-col items-center justify-center border-dashed">
-            <div className="w-16 h-16 bg-[var(--surface)] rounded-2xl flex items-center justify-center text-muted mb-4">
-              <FileText size={32} />
-            </div>
-            <h3 className="text-lg font-semibold text-primary">You don't have any notes here yet</h3>
-            <p className="mt-2 text-sm text-secondary max-w-md mx-auto">
-              Create your first revision note. Organise your class material, revision notes, and study guides in one place.
-            </p>
-            <Button onClick={() => setIsCreating(true)} className="mt-6">
-              Create your first note
-            </Button>
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredNotes.map(note => (
-              <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
+            {SUBJECTS.map(sub => (
+              <button
+                key={sub}
+                onClick={() => setSubjectFilter(sub)}
+                className={`shrink-0 px-4 py-2 text-sm font-medium border-b-2 transition ${
+                  subjectFilter === sub ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary"
+                }`}
+              >
+                {sub}
+              </button>
             ))}
           </div>
-        )}
-      </div>
+
+          {/* Notes Display */}
+          <div className="mt-6">
+            {filteredNotes.length === 0 ? (
+              <div className="text-center py-12 text-muted">No notes match your filters.</div>
+            ) : viewMode === "grid" ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {filteredNotes.map(note => (
+                  <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {filteredNotes.map(note => (
+                  <NoteListItem key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Command Palette Modal */}
+      <Modal open={isCommandPaletteOpen} onClose={() => setIsCommandPaletteOpen(false)} title="Command Palette">
+        <div className="space-y-4">
+          <Input 
+            autoFocus
+            className="w-full bg-[var(--surface-alt)]" 
+            placeholder="Search or run a command..." 
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <div className="text-xs text-muted font-medium uppercase tracking-wider mb-2">Actions</div>
+          <div className="flex flex-col gap-1">
+            <button onClick={() => { setIsCommandPaletteOpen(false); setIsCreating(true); }} className="flex items-center gap-3 text-sm p-2 rounded-lg hover:bg-[var(--surface-alt)] text-primary">
+              <Plus size={16} className="text-muted" /> Create new note
+            </button>
+            <button onClick={() => { setIsCommandPaletteOpen(false); setCategoryFilter("Favorites"); }} className="flex items-center gap-3 text-sm p-2 rounded-lg hover:bg-[var(--surface-alt)] text-primary">
+              <Star size={16} className="text-muted" /> Open favorites
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Create Modal */}
-      <Modal open={isCreating} onClose={() => !loading && setIsCreating(false)} title="Create a new note">
+      <Modal open={isCreating} onClose={() => !loading && setIsCreating(false)} title="New Note">
         <form action={handleCreate} className="space-y-4">
           <div>
             <label className="text-sm font-medium text-primary mb-1.5 block">Title</label>
-            <Input name="title" required placeholder="e.g. Cell Respiration" autoFocus />
+            <Input name="title" required placeholder="e.g. Cell Respiration" autoFocus className="bg-[var(--surface-alt)]" />
           </div>
           <div>
             <label className="text-sm font-medium text-primary mb-1.5 block">Subject</label>
@@ -204,7 +291,7 @@ export default function NotesClient({ initialNotes }) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium text-primary mb-1.5 block">Topic (Optional)</label>
-              <Input name="topic" placeholder="e.g. Metabolism" />
+              <Input name="topic" placeholder="e.g. Metabolism" className="bg-[var(--surface-alt)]" />
             </div>
             <div>
               <label className="text-sm font-medium text-primary mb-1.5 block">Level</label>
@@ -234,17 +321,13 @@ export default function NotesClient({ initialNotes }) {
             <button onClick={() => setDeleteNoteId(null)} className="btn btn-secondary">Cancel</button>
             <form action={async () => {
               setIsDeleting(true);
-              try {
-                await deleteNote(deleteNoteId);
-              } catch (e) {
-                // If it throws NEXT_REDIRECT, we're good
-              }
+              try { await deleteNote(deleteNoteId); } catch (e) {}
               setNotes(prev => prev.filter(n => n.id !== deleteNoteId));
               setDeleteNoteId(null);
               setIsDeleting(false);
             }}>
               <Button type="submit" variant="error" className="bg-danger text-white hover:bg-danger/90">
-                {isDeleting ? "Deleting..." : "Yes, delete note"}
+                {isDeleting ? "Deleting..." : "Yes, delete"}
               </Button>
             </form>
           </div>
@@ -255,13 +338,11 @@ export default function NotesClient({ initialNotes }) {
 }
 
 function NoteCard({ note, onToggle, onDeleteClick }) {
-  // Extract text snippet safely from Tiptap JSON
   let previewText = "No content yet.";
   try {
     if (note.content) {
       const parsed = JSON.parse(note.content);
       if (parsed.content && parsed.content.length > 0) {
-        // Very rough text extraction for preview
         const firstParagraph = parsed.content.find(n => n.type === 'paragraph' && n.content);
         if (firstParagraph && firstParagraph.content) {
           previewText = firstParagraph.content.map(c => c.text).join(" ").substring(0, 100);
@@ -281,71 +362,93 @@ function NoteCard({ note, onToggle, onDeleteClick }) {
   };
 
   return (
-    <Link href={`/dashboard/notes/${note.id}`} className="group card flex flex-col p-5 hover:border-accent/50 transition-colors bg-[var(--surface-alt)] relative overflow-hidden h-48">
-      {/* Top Meta */}
+    <Link href={`/dashboard/notes/${note.id}`} className="group card flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border border-divider relative h-52">
       <div className="flex items-start justify-between mb-3">
         <div className="flex gap-2 items-center flex-wrap">
           <span className="text-[10px] font-bold tracking-wider uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full">
             {note.subject}
           </span>
           {note.level && (
-            <span className="text-[10px] font-semibold tracking-wider text-muted border border-subtle px-1.5 py-0.5 rounded-sm">
+            <span className="text-[10px] font-semibold tracking-wider text-muted border border-divider px-1.5 py-0.5 rounded-sm">
               {note.level}
             </span>
           )}
         </div>
-        
-        {/* Indicators */}
         <div className="flex gap-1.5 text-muted">
           {note.is_pinned && <Pin size={14} className="text-accent fill-accent/20" />}
           {note.is_favorite && <Star size={14} className="text-yellow-500 fill-yellow-500/20" />}
         </div>
       </div>
-
-      {/* Title */}
       <h3 className="font-semibold text-primary text-base line-clamp-1 mb-1 group-hover:text-accent transition-colors">
         {note.title}
       </h3>
       {note.topic && (
-        <p className="text-xs text-accent font-medium mb-2">{note.topic}</p>
+        <p className="text-xs text-accent font-medium mb-2 opacity-80">{note.topic}</p>
       )}
-
-      {/* Preview */}
-      <p className="text-sm text-secondary line-clamp-2 leading-relaxed flex-1 mt-1">
+      <p className="text-sm text-secondary line-clamp-2 leading-relaxed flex-1 mt-1 opacity-80">
         {previewText}
       </p>
-
-      {/* Bottom Meta */}
-      <div className="mt-4 pt-4 border-t border-[var(--border)] flex items-center justify-between text-xs text-muted">
+      {/* Revision Readiness Mock Indicator */}
+      {(note.revision_readiness !== undefined) && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="h-1 flex-1 bg-[var(--surface)] rounded-full overflow-hidden">
+            <div className="h-full bg-accent" style={{ width: `${note.revision_readiness || Math.floor(Math.random() * 100)}%` }}></div>
+          </div>
+          <span className="text-[10px] text-muted">{note.revision_readiness || Math.floor(Math.random() * 100)}%</span>
+        </div>
+      )}
+      <div className="mt-4 pt-3 border-t border-divider flex items-center justify-between text-xs text-muted">
         <span className="flex items-center gap-1.5">
-          <Clock size={12} /> Edited {timeAgo(note.updated_at)}
+          <Clock size={12} /> {timeAgo(note.updated_at)}
         </span>
-        
-        {/* Quick Actions (Hover) */}
         <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-          <button 
-            onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }}
-            className="hover:text-yellow-500 transition"
-          >
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition">
             <Star size={14} className={note.is_favorite ? "fill-current" : ""} />
           </button>
-          <button 
-            onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }}
-            className="hover:text-accent transition"
-          >
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition">
             <Pin size={14} className={note.is_pinned ? "fill-current" : ""} />
           </button>
-          <button 
-            onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }}
-            className="hover:text-muted hover:text-primary transition"
-          >
-            <Archive size={14} />
-          </button>
-          <button 
-            onClick={(e) => { e.preventDefault(); onDeleteClick(); }}
-            className="hover:text-danger transition ml-1"
-          >
+          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1">
             <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function NoteListItem({ note, onToggle, onDeleteClick }) {
+  const timeAgo = (dateStr) => {
+    const diffMs = new Date() - new Date(dateStr);
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `${diffMins || 1}m ago`;
+    const diffHrs = Math.floor(diffMins / 60);
+    if (diffHrs < 24) return `${diffHrs}h ago`;
+    return `${Math.floor(diffHrs / 24)}d ago`;
+  };
+
+  return (
+    <Link href={`/dashboard/notes/${note.id}`} className="group flex items-center justify-between p-3 rounded-xl hover:bg-[var(--surface-alt)] border border-transparent hover:border-divider transition-all">
+      <div className="flex items-center gap-4 flex-1 overflow-hidden">
+        <div className="shrink-0 flex gap-1">
+          <Star size={16} className={note.is_favorite ? "text-yellow-500 fill-yellow-500/20" : "text-transparent group-hover:text-muted transition"} />
+          <Pin size={16} className={note.is_pinned ? "text-accent fill-accent/20" : "text-transparent group-hover:text-muted transition"} />
+        </div>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 flex-1 overflow-hidden">
+          <h3 className="font-semibold text-primary text-sm truncate">{note.title}</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold tracking-wider uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full shrink-0">
+              {note.subject}
+            </span>
+            {note.topic && <span className="text-xs text-muted truncate max-w-[150px]">{note.topic}</span>}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-6 shrink-0 ml-4">
+        <span className="text-xs text-muted hidden sm:block">Edited {timeAgo(note.updated_at)}</span>
+        <div className="flex gap-2">
+          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="text-muted hover:text-danger transition p-1">
+            <Trash2 size={16} />
           </button>
         </div>
       </div>
