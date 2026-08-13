@@ -10,8 +10,10 @@ import {
 } from "lucide-react";
 import {
   createPostAction, fetchPostsBySubject, sendMessage,
-  updatePresence, fetchRoomMessages, fetchRoomPresence, removePresence
+  updatePresence, fetchRoomMessages, fetchRoomPresence, removePresence,
+  deleteMessageAdmin, clearAllRoomMessagesAdmin
 } from "../../actions";
+import { Avatar } from "@/components/ui";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
 const C = {
@@ -223,6 +225,7 @@ export default function RoomClient({
             userId={userId}
             userProfile={userProfile}
             c={c}
+            isAdmin={isAdmin}
           />
         )}
       </div>
@@ -506,7 +509,7 @@ function DiscussionsTab({ room, initialPosts, c, onAsk }) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 /*  LIVE CHAT TAB                                                           */
 /* ══════════════════════════════════════════════════════════════════════════ */
-function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c }) {
+function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, isAdmin }) {
   const [messages, setMessages] = useState(initialMessages);
   const [newMessage, setNewMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -548,17 +551,49 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c }
     }
   };
 
+  const handleClearChat = async () => {
+    if (!isAdmin || !confirm("Are you sure you want to completely clear the chat history for this room? This cannot be undone.")) return;
+    try {
+      await clearAllRoomMessagesAdmin(room.id);
+      setMessages([]); // locally clear immediately
+    } catch (e) {
+      console.error(e);
+      alert("Failed to clear chat");
+    }
+  };
+
+  const handleDeleteMessage = async (msgId) => {
+    if (!isAdmin || !confirm("Delete this message?")) return;
+    try {
+      await deleteMessageAdmin(msgId);
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   return (
     <div className="flex flex-col" style={{ height: "calc(100vh - 300px)", minHeight: "400px" }}>
-      {/* Online count */}
-      <div className="flex items-center gap-2 mb-4 shrink-0">
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: c.accent }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: c.accent }} />
-        </span>
-        <span className="text-xs font-semibold text-white/50">
-          {presence.length} {presence.length === 1 ? "student" : "students"} online
-        </span>
+      {/* Online count & Admin Controls */}
+      <div className="flex items-center justify-between mb-4 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: c.accent }} />
+            <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: c.accent }} />
+          </span>
+          <span className="text-xs font-semibold text-white/50">
+            {presence.length} {presence.length === 1 ? "student" : "students"} online
+          </span>
+        </div>
+        
+        {isAdmin && messages.length > 0 && (
+          <button 
+            onClick={handleClearChat}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 rounded-lg transition-colors"
+          >
+            <AlertCircle size={14} /> Clear Chat
+          </button>
+        )}
       </div>
 
       {/* Messages */}
@@ -605,12 +640,22 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c }
                     </div>
                   )}
                   
-                  <div className={`px-4 py-2.5 text-sm ${rounded} ${
+                  <div className={`group relative px-4 py-2.5 text-sm ${rounded} ${
                     isOwn 
                       ? "bg-indigo-600 text-white" 
                       : "bg-white/10 text-white/90 border border-white/5"
                   } whitespace-pre-wrap break-words`}>
                     {msg.content}
+                    
+                    {isAdmin && (
+                      <button 
+                        onClick={() => handleDeleteMessage(msg.id)}
+                        className={`absolute top-1/2 -translate-y-1/2 p-1.5 bg-red-500/90 hover:bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg ${isOwn ? "-left-10" : "-right-10"}`}
+                        title="Delete message"
+                      >
+                        <X size={14} strokeWidth={3} />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

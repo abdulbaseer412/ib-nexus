@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send, Users, LogOut, MessageCircle } from "lucide-react";
-import { sendMessage, updatePresence, removePresence, leaveStudyGroup, fetchRoomMessages, fetchRoomPresence } from "../../actions";
+import { ArrowLeft, Send, Users, LogOut, MessageCircle, AlertCircle, X } from "lucide-react";
+import { sendMessage, updatePresence, removePresence, leaveStudyGroup, fetchRoomMessages, fetchRoomPresence, deleteMessageAdmin, clearAllRoomMessagesAdmin } from "../../actions";
 import { Avatar } from "@/components/ui";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
@@ -143,6 +143,7 @@ export default function StudyGroupClient({
             userId={userId}
             userProfile={userProfile}
             c={c}
+            isAdmin={isAdmin}
           />
         </div>
 
@@ -200,7 +201,7 @@ export default function StudyGroupClient({
 /* ══════════════════════════════════════════════════════════════════════════ */
 /*  Live Chat Component                                                       */
 /* ══════════════════════════════════════════════════════════════════════════ */
-function LiveChat({ roomId, initialMessages, userId, userProfile, c }) {
+function LiveChat({ roomId, initialMessages, userId, userProfile, c, isAdmin }) {
   const [messages, setMessages] = useState(initialMessages);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -271,7 +272,28 @@ function LiveChat({ roomId, initialMessages, userId, userProfile, c }) {
     }
   };
 
-  // Group messages
+  const handleClearChat = async () => {
+    if (!isAdmin || !confirm("Are you sure you want to completely clear the chat history for this study group? This cannot be undone.")) return;
+    try {
+      await clearAllRoomMessagesAdmin(roomId);
+      setMessages([]); // locally clear immediately
+    } catch (e) {
+      console.error(e);
+      alert("Failed to clear chat");
+    }
+  };
+
+  const handleDeleteMessage = async (msgId) => {
+    if (!isAdmin || !confirm("Delete this message?")) return;
+    try {
+      await deleteMessageAdmin(msgId);
+      setMessages(prev => prev.filter(m => m.id !== msgId));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Group consecutive messages by same author (within 5 mins)
   const grouped = [];
   let currentGroup = null;
 
@@ -295,6 +317,16 @@ function LiveChat({ roomId, initialMessages, userId, userProfile, c }) {
 
   return (
     <div className="flex flex-col h-full bg-black/20">
+      {isAdmin && messages.length > 0 && (
+          <div className="absolute top-4 right-4 z-20">
+            <button 
+              onClick={handleClearChat}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 rounded-lg transition-colors shadow-lg"
+            >
+              <AlertCircle size={14} /> Clear Chat
+            </button>
+          </div>
+      )}
       <div 
         ref={containerRef}
         className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar space-y-6"
@@ -345,15 +377,25 @@ function LiveChat({ roomId, initialMessages, userId, userProfile, c }) {
                       }
 
                       return (
-                        <div 
-                          key={m.id}
-                          className={`px-4 py-2.5 text-sm ${rounded} ${
-                            isMe 
-                              ? "bg-indigo-600 text-white" 
-                              : "bg-white/10 text-white/90 border border-white/5"
-                          } whitespace-pre-wrap break-words`}
-                        >
-                          {m.content}
+                        <div key={m.id} className="relative group/msg">
+                          <div 
+                            className={`px-4 py-2.5 text-sm ${rounded} ${
+                              isMe 
+                                ? "bg-indigo-600 text-white" 
+                                : "bg-white/10 text-white/90 border border-white/5"
+                            } whitespace-pre-wrap break-words inline-block max-w-full`}
+                          >
+                            {m.content}
+                          </div>
+                          {isAdmin && (
+                            <button 
+                              onClick={() => handleDeleteMessage(m.id)}
+                              className={`absolute top-1/2 -translate-y-1/2 p-1.5 bg-red-500/90 hover:bg-red-500 text-white rounded-full opacity-0 group-hover/msg:opacity-100 transition-opacity z-10 shadow-lg ${isMe ? "-left-10" : "-right-10"}`}
+                              title="Delete message"
+                            >
+                              <X size={14} strokeWidth={3} />
+                            </button>
+                          )}
                         </div>
                       );
                     })}

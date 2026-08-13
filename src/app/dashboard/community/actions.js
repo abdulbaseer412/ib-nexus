@@ -647,6 +647,30 @@ export async function deleteOwnMessage(messageId) {
   return { success: true };
 }
 
+export async function deleteMessageAdmin(messageId) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  await supabase
+    .from("community_messages")
+    .update({ is_deleted: true })
+    .eq("id", messageId);
+
+  return { success: true };
+}
+
+export async function clearAllRoomMessagesAdmin(roomId) {
+  await requireAdmin();
+  const supabase = createAdminClient();
+
+  await supabase
+    .from("community_messages")
+    .update({ is_deleted: true })
+    .eq("room_id", roomId);
+
+  return { success: true };
+}
+
 export async function updatePresence(roomId) {
   const user = await requireAuth();
   const supabase = createAdminClient();
