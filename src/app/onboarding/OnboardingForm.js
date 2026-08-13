@@ -7,6 +7,7 @@ import { ArrowRight, ArrowLeft, Check, Sparkles, BookOpen, Target, CalendarDays,
 import ProgramSelect from "@/components/ui/ProgramSelect";
 import { inputClassName } from "@/components/auth/auth-styles";
 import { PRESET_AVATARS } from "@/lib/avatars";
+import { AvatarPicker } from "@/components/ui";
 
 const initialState = { error: "" };
 
@@ -260,25 +261,7 @@ export default function OnboardingForm({
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <label className="text-sm font-medium block">Choose your Avatar</label>
-                    <div className="relative group">
-                      <div className="flex gap-3 overflow-x-auto pb-4 custom-scrollbar snap-x snap-mandatory">
-                        {PRESET_AVATARS.map((avatar) => (
-                          <button
-                            key={avatar.id}
-                            type="button"
-                            onClick={() => setAvatarUrl(avatar.id)}
-                            className={`relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center text-3xl snap-center transition-all duration-300 ease-out bg-gradient-to-br ${avatar.color} ${avatarUrl === avatar.id ? "ring-4 ring-indigo-500 scale-110 shadow-xl" : "opacity-70 hover:opacity-100 hover:scale-105 saturate-50 hover:saturate-100"}`}
-                          >
-                            {avatar.emoji}
-                            {avatarUrl === avatar.id && (
-                              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-500 rounded-full border-2 border-black flex items-center justify-center">
-                                <Check size={12} className="text-white" />
-                              </div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} />
                   </div>
 
                   <div className="space-y-2">

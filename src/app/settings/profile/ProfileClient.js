@@ -5,6 +5,7 @@ import { Save, User, CalendarDays, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { updateSettingsAction } from "./actions";
+import { AvatarPicker } from "@/components/ui";
 
 const EXAM_SESSIONS = ["Nov 2026", "May 2027", "Nov 2027", "May 2028", "Nov 2028"];
 const STUDY_GOALS = [
@@ -13,6 +14,7 @@ const STUDY_GOALS = [
 ];
 
 export default function ProfileClient({ profile = {} }) {
+  const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url || "fox");
   const [displayName, setDisplayName] = useState(profile.display_name || "");
   const [schoolName, setSchoolName] = useState(profile.school_name || "");
   const [program, setProgram] = useState(profile.ib_program || "dp");
@@ -24,6 +26,7 @@ export default function ProfileClient({ profile = {} }) {
   const handleSave = () => {
     startTransition(async () => {
       await updateSettingsAction({
+        avatar_url: avatarUrl,
         display_name: displayName,
         school_name: schoolName,
         ib_program: program,
@@ -56,7 +59,11 @@ export default function ProfileClient({ profile = {} }) {
             <User className="text-accent" size={20} />
             <h2 className="text-lg font-semibold">Profile Settings</h2>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium block">Avatar</label>
+              <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} />
+            </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Display Name</label>
               <input type="text" value={displayName} onChange={e => setDisplayName(e.target.value)} className="input w-full bg-[var(--input)] text-[var(--foreground)]" />

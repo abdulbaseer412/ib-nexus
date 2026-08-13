@@ -15,6 +15,7 @@ export const Avatar = ({ name="", src, url, className="", size="md" }) => {
   if (preset) return <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${preset.color} ${sClass} ${className}`} title={name}>{preset.emoji}</span>;
   return <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--surface)] font-semibold border border-white/5 ${sClass} ${className}`} title={name}>{avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : name.slice(0,1).toUpperCase() || "?"}</span>;
 };
+export { AvatarPicker } from "./AvatarPicker";
 export const Alert = ({ title, children, variant="info" }) => <div role="alert" className={`card border-l-4 p-4 ${variant === "error" ? "border-l-[var(--danger)]" : variant === "success" ? "border-l-[var(--success)]" : "border-l-[var(--accent)]"}`}><p className="font-semibold">{title}</p>{children && <p className="mt-1 text-sm text-muted">{children}</p>}</div>;
 export const Checkbox = (props) => <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" {...props} />;
 export const Radio = (props) => <input type="radio" className="h-4 w-4 accent-[var(--accent)]" {...props} />;
