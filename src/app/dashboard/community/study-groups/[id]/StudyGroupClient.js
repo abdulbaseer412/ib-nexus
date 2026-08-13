@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { ArrowLeft, Send, Users, LogOut, MessageCircle } from "lucide-react";
 import { sendMessage, updatePresence, removePresence, leaveStudyGroup, fetchRoomMessages, fetchRoomPresence } from "../../actions";
+import { Avatar } from "@/components/ui";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
 const C = {
@@ -163,11 +164,7 @@ export default function StudyGroupClient({
                 presence.map(p => (
                   <div key={p.user_id} className="flex items-center gap-3 group">
                     <div className="relative">
-                      <img 
-                        src={p.user_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${p.user_id}`} 
-                        alt={p.user_name}
-                        className="w-8 h-8 rounded-full border border-white/10"
-                      />
+                      <Avatar url={p.user_avatar} name={p.user_name} size="md" />
                       <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-black rounded-full" />
                     </div>
                     <div className="min-w-0">
@@ -318,11 +315,7 @@ function LiveChat({ roomId, initialMessages, userId, userProfile, c }) {
             return (
               <div key={i} className={`flex gap-4 max-w-[85%] ${isMe ? "ml-auto flex-row-reverse" : ""}`}>
                 <div className="shrink-0 pt-1">
-                  <img 
-                    src={grp.author_avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${grp.author_id}`}
-                    alt={grp.author_name}
-                    className="w-8 h-8 rounded-full border border-white/10"
-                  />
+                  <Avatar url={grp.author_avatar} name={grp.author_name} size="md" />
                 </div>
                 
                 <div className={`flex flex-col min-w-0 ${isMe ? "items-end" : "items-start"}`}>

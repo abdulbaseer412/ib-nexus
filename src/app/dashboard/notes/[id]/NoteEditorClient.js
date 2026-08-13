@@ -48,7 +48,7 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
 
   // Metadata edit states
   const [title, setTitle] = useState(note.title);
-  const [examImportance, setExamImportance] = useState(note.exam_importance || "Core Concept");
+  const [examImportance, setExamImportance] = useState(note.exam_importance || "Mid-Level");
   
   // Derived Data
   const relatedNotes = allNotes.filter(n => 
@@ -294,9 +294,9 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
                   }}
                   className="bg-transparent font-medium hover:text-primary outline-none cursor-pointer"
                 >
-                  <option value="Supplementary">Supplementary 🔵</option>
-                  <option value="Core Concept">Core Concept 🟡</option>
-                  <option value="High Yield">High Yield 🔴</option>
+                  <option value="Least Important">Least Important 🔵</option>
+                  <option value="Mid-Level">Mid-Level 🟡</option>
+                  <option value="Most Important">Most Important 🔴</option>
                 </select>
               </div>
             </div>

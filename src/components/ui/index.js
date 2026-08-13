@@ -1,12 +1,20 @@
 "use client";
 import { createContext, useContext, useState } from "react";
+import { PRESET_AVATARS } from "@/lib/avatars";
 
 export const Button = ({ variant="primary", className="", ...props }) => <button className={`btn btn-${variant} ${className}`} {...props} />;
 export const Card = ({ className="", ...props }) => <section className={`card ${className}`} {...props} />;
 export const Input = ({ className="", ...props }) => <input className={`field ${className}`} {...props} />;
 export const Textarea = ({ className="", ...props }) => <textarea className={`field min-h-28 resize-y ${className}`} {...props} />;
 export const Badge = ({ children, className="" }) => <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${className}`}>{children}</span>;
-export const Avatar = ({ name="", src, className="" }) => <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--surface)] text-xs font-semibold ${className}`}>{src ? <img src={src} alt="" className="h-full w-full object-cover" /> : name.slice(0,1).toUpperCase()}</span>;
+export const Avatar = ({ name="", src, url, className="", size="md" }) => {
+  const avatarUrl = src || url;
+  const sizeClasses = { sm: "h-6 w-6 text-xs", md: "h-9 w-9 text-xs", lg: "h-12 w-12 text-sm", xl: "h-16 w-16 text-3xl" };
+  const sClass = sizeClasses[size] || sizeClasses.md;
+  const preset = PRESET_AVATARS.find(a => a.id === avatarUrl);
+  if (preset) return <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${preset.color} ${sClass} ${className}`} title={name}>{preset.emoji}</span>;
+  return <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--surface)] font-semibold border border-white/5 ${sClass} ${className}`} title={name}>{avatarUrl ? <img src={avatarUrl} alt="" className="h-full w-full object-cover" /> : name.slice(0,1).toUpperCase() || "?"}</span>;
+};
 export const Alert = ({ title, children, variant="info" }) => <div role="alert" className={`card border-l-4 p-4 ${variant === "error" ? "border-l-[var(--danger)]" : variant === "success" ? "border-l-[var(--success)]" : "border-l-[var(--accent)]"}`}><p className="font-semibold">{title}</p>{children && <p className="mt-1 text-sm text-muted">{children}</p>}</div>;
 export const Checkbox = (props) => <input type="checkbox" className="h-4 w-4 accent-[var(--accent)]" {...props} />;
 export const Radio = (props) => <input type="radio" className="h-4 w-4 accent-[var(--accent)]" {...props} />;

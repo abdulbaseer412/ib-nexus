@@ -47,6 +47,7 @@ export async function completeOnboarding(formData) {
   const examSession = formData.get("exam_session")?.toString() || null;
   const schoolName = formData.get("school_name")?.toString() || null;
   const referralSource = formData.get("referral_source")?.toString() || null;
+  const avatarUrl = formData.get("avatar_url")?.toString() || null;
   const subjectsStr = formData.get("subjects")?.toString() || "[]";
   const studyGoalsStr = formData.get("study_goals")?.toString() || "[]";
 
@@ -77,6 +78,7 @@ export async function completeOnboarding(formData) {
         study_goals: studyGoals,
         school_name: schoolName,
         referral_source: referralSource,
+        avatar_url: avatarUrl,
         onboarding_completed: true,
       },
       { onConflict: "id" }

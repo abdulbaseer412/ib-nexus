@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useActionState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, ArrowLeft, Check, Sparkles, BookOpen, Target, CalendarDays, GraduationCap } from "lucide-react";
+import { ArrowRight, ArrowLeft, Check, Sparkles, BookOpen, Target, CalendarDays, GraduationCap, ChevronLeft, ChevronRight } from "lucide-react";
 import ProgramSelect from "@/components/ui/ProgramSelect";
 import { inputClassName } from "@/components/auth/auth-styles";
+import { PRESET_AVATARS } from "@/lib/avatars";
 
 const initialState = { error: "" };
 
@@ -51,6 +52,7 @@ export default function OnboardingForm({
   const [examSession, setExamSession] = useState("");
   const [schoolName, setSchoolName] = useState("");
   const [referralSource, setReferralSource] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState(PRESET_AVATARS[0].id);
   const [selectedGoals, setSelectedGoals] = useState([]);
   const [selectedSubjects, setSelectedSubjects] = useState([]);
 
@@ -99,6 +101,7 @@ export default function OnboardingForm({
       formData.set("exam_session", examSession);
       formData.set("school_name", schoolName);
       formData.set("referral_source", referralSource);
+      formData.set("avatar_url", avatarUrl);
       
       const validNames = new Set(
         (program === "dp" ? DP_SUBJECTS : MYP_SUBJECTS).flatMap(g => g.subjects)
@@ -142,7 +145,7 @@ export default function OnboardingForm({
   };
 
   const nextStep = () => {
-    if (step === 1 && name.length < 2) return;
+    if (step === 1 && (name.length < 2 || !avatarUrl)) return;
     if (step === 2 && !examSession) return;
     setDirection(1);
     setStep(s => s + 1);
@@ -255,6 +258,29 @@ export default function OnboardingForm({
                 </div>
                 
                 <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium block">Choose your Avatar</label>
+                    <div className="relative group">
+                      <div className="flex gap-3 overflow-x-auto pb-4 custom-scrollbar snap-x snap-mandatory">
+                        {PRESET_AVATARS.map((avatar) => (
+                          <button
+                            key={avatar.id}
+                            type="button"
+                            onClick={() => setAvatarUrl(avatar.id)}
+                            className={`relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center text-3xl snap-center transition-all duration-300 ease-out bg-gradient-to-br ${avatar.color} ${avatarUrl === avatar.id ? "ring-4 ring-indigo-500 scale-110 shadow-xl" : "opacity-70 hover:opacity-100 hover:scale-105 saturate-50 hover:saturate-100"}`}
+                          >
+                            {avatar.emoji}
+                            {avatarUrl === avatar.id && (
+                              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-500 rounded-full border-2 border-black flex items-center justify-center">
+                                <Check size={12} className="text-white" />
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <label htmlFor="name" className="text-sm font-medium">What should we call you?</label>
                     <input

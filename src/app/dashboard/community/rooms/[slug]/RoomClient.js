@@ -572,32 +572,52 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c }
           messages.map((msg, i) => {
             const isOwn = msg.author_id === userId;
             const showAuthor = i === 0 || messages[i - 1].author_id !== msg.author_id;
+            
+            // Determine border radius based on consecutive messages
+            const isLastOfGroup = i === messages.length - 1 || messages[i + 1].author_id !== msg.author_id;
+            
+            let rounded = "rounded-2xl";
+            if (!showAuthor && !isLastOfGroup) {
+              rounded = isOwn ? "rounded-2xl rounded-r-sm" : "rounded-2xl rounded-l-sm";
+            } else if (showAuthor && !isLastOfGroup) {
+              rounded = isOwn ? "rounded-2xl rounded-tr-sm" : "rounded-2xl rounded-tl-sm";
+            } else if (!showAuthor && isLastOfGroup) {
+              rounded = isOwn ? "rounded-2xl rounded-br-sm" : "rounded-2xl rounded-bl-sm";
+            }
 
             return (
-              <div key={msg.id} className={`${showAuthor && i > 0 ? "mt-4" : ""}`}>
-                {showAuthor && (
-                  <div className="flex items-center gap-2 mb-1.5">
-                    {msg.author_avatar ? (
-                      <img src={msg.author_avatar} alt="" className="h-5 w-5 rounded-full object-cover" />
-                    ) : (
-                      <div className="h-5 w-5 rounded-full bg-white/10 flex items-center justify-center text-[9px] font-bold text-white/50">
-                        {msg.author_name?.[0]?.toUpperCase() || "?"}
-                      </div>
-                    )}
-                    <span className={`text-xs font-bold ${isOwn ? "" : "text-white/60"}`} style={isOwn ? { color: c.text } : undefined}>
-                      {isOwn ? "You" : msg.author_name}
-                    </span>
-                    <span className="text-[10px] text-white/20">{timeAgo(msg.created_at)}</span>
+              <div key={msg.id} className={`flex gap-3 max-w-[85%] ${isOwn ? "ml-auto flex-row-reverse" : ""} ${showAuthor && i > 0 ? "mt-4" : "mt-1"}`}>
+                <div className="shrink-0 flex items-end">
+                  {isLastOfGroup ? (
+                    <Avatar url={msg.author_avatar} name={msg.author_name} size="md" />
+                  ) : (
+                    <div className="w-9" />
+                  )}
+                </div>
+
+                <div className={`flex flex-col min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
+                  {showAuthor && (
+                    <div className="flex items-baseline gap-2 mb-1 px-1">
+                      <span className="text-xs font-bold text-white/70">{isOwn ? "You" : msg.author_name}</span>
+                      <span className="text-[10px] text-white/30">
+                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  )}
+                  
+                  <div className={`px-4 py-2.5 text-sm ${rounded} ${
+                    isOwn 
+                      ? "bg-indigo-600 text-white" 
+                      : "bg-white/10 text-white/90 border border-white/5"
+                  } whitespace-pre-wrap break-words`}>
+                    {msg.content}
                   </div>
-                )}
-                <p className={`text-sm leading-relaxed pl-7 ${isOwn ? "text-white/80" : "text-white/60"}`}>
-                  {msg.content}
-                </p>
+                </div>
               </div>
             );
           })
         )}
-        <div ref={bottomRef} />
+        <div ref={bottomRef} className="h-2" />
       </div>
 
       {/* Input */}
