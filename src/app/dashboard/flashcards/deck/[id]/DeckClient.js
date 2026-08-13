@@ -11,6 +11,7 @@ export default function DeckClient({ initialDeck }) {
   const [deck, setDeck] = useState(initialDeck);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [priorityDate, setPriorityDate] = useState("");
 
   const handleDeleteDeck = async () => {
     if (!confirm(`Are you sure you want to delete "${deck.title}"? All cards inside will be permanently deleted.`)) return;
@@ -44,12 +45,18 @@ export default function DeckClient({ initialDeck }) {
     e.preventDefault();
     const formData = new FormData(e.target);
     try {
-      const newCard = await createCardAction(deck.id, formData.get("front"), formData.get("back"));
+      const newCard = await createCardAction(
+        deck.id, 
+        formData.get("front"), 
+        formData.get("back"), 
+        priorityDate ? new Date(priorityDate).toISOString() : null
+      );
       setDeck({
         ...deck,
         cards: [newCard, ...deck.cards],
         total_cards: deck.total_cards + 1
       });
+      setPriorityDate("");
       setIsAddOpen(false);
     } catch (e) {
       alert("Failed to add card");
@@ -93,7 +100,7 @@ export default function DeckClient({ initialDeck }) {
               href={`/dashboard/flashcards/review?deck=${deck.id}`}
               className={`btn ${deck.due_cards > 0 ? "bg-indigo-500 hover:bg-indigo-400" : "bg-indigo-500/50 hover:bg-indigo-500"} text-white`}
             >
-              <Play size={16} className={deck.due_cards > 0 ? "fill-white" : ""} /> Review {deck.due_cards > 0 ? `(${deck.due_cards} Due)` : "Deck"}
+              <Play size={16} className={deck.due_cards > 0 ? "fill-white" : ""} /> Review {deck.due_cards > 0 ? `(${deck.due_cards} Due)` : "Nexus"}
             </Link>
           </div>
         </div>
@@ -121,19 +128,19 @@ export default function DeckClient({ initialDeck }) {
         </div>
         <div className="bg-white/5 border border-white/5 rounded-2xl p-5 flex flex-col justify-center items-start">
            <button onClick={handleDeleteDeck} disabled={isDeleting} className="text-rose-500 hover:text-rose-400 font-bold text-sm flex items-center gap-2 transition-colors">
-              <Trash2 size={16} /> Delete Deck
+              <Trash2 size={16} /> Delete Nexus
            </button>
         </div>
       </div>
 
       {/* ── CARDS LIST ────────────────────────────────────── */}
       <div className="space-y-4">
-        <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase px-1">Cards in this Deck</h3>
+        <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase px-1">Cards in this Nexus</h3>
         
         {deck.cards.length === 0 ? (
            <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center">
             <Layers className="mx-auto text-white/10 mb-4" size={48} />
-            <p className="text-white/60 mb-4 font-medium">This deck has no cards.</p>
+            <p className="text-white/60 mb-4 font-medium">This Nexus has no cards.</p>
             <button onClick={() => setIsAddOpen(true)} className="btn bg-white/10 text-white hover:bg-white/20 mx-auto">
               Add your first card
             </button>
@@ -190,6 +197,16 @@ export default function DeckClient({ initialDeck }) {
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-white/70">Back (Answer)</label>
                 <textarea name="back" required rows={4} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors resize-none" placeholder="The process where ATP is formed as a result of the transfer of electrons from NADH or FADH2 to O2 by a series of electron carriers." />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-white/70">Priority Review Date (Optional)</label>
+                <input 
+                  type="datetime-local" 
+                  value={priorityDate}
+                  onChange={(e) => setPriorityDate(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                />
+                <p className="text-xs text-white/50">Setting this will force the card to the top of your review queue on this date.</p>
               </div>
               <div className="pt-2">
                 <button type="submit" className="w-full h-12 flex items-center justify-center bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-xl transition-colors">

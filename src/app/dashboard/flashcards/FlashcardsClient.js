@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { generateFlashcardsFromNotesAction } from "./actions";
 import { Plus, BrainCircuit, Target, Flame, Activity, Brain, BookOpen, AlertCircle, Sparkles } from "lucide-react";
 import { CreateDeckModal } from "./components/CreateDeckModal";
 
@@ -9,6 +10,8 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
   const [decks, setDecks] = useState(initialDecks || []);
   const [stats, setStats] = useState(initialStats || { total: 0, due: 0, mastered: 0, retention: 0 });
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState(null);
 
   // Compute weak areas from existing decks for display
   const weakDecks = [...decks]
@@ -18,6 +21,21 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
 
   // Safely handle NaN if stats are somehow broken (e.g., retention calculation on 0 reviews)
   const safeRetention = isNaN(stats.retention) || stats.retention === null ? "—" : `${stats.retention}%`;
+
+  const handleGenerateAI = async () => {
+    setIsGenerating(true);
+    setGenerateError(null);
+    try {
+      const res = await generateFlashcardsFromNotesAction();
+      if (res.success) {
+        window.location.reload();
+      }
+    } catch (err) {
+      setGenerateError(err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   if (dbError) {
     return (
@@ -55,10 +73,35 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
             onClick={() => setIsCreateOpen(true)}
             className="btn bg-[var(--primary)] text-white hover:brightness-110"
           >
-            <Plus size={16} /> Create Deck
+            <Plus size={16} /> Create Memory Nexus
           </button>
         </div>
       </header>
+      
+      {/* ── AI KNOWLEDGE EXTRACTION ─────────────────────────────────── */}
+      <section className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-3xl p-6 mb-8 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <Brain size={120} />
+        </div>
+        <div className="relative z-10 max-w-2xl">
+          <div className="flex items-center gap-2 mb-2">
+             <Sparkles className="text-indigo-400" size={20} />
+             <h2 className="text-lg font-bold text-white tracking-tight">AI Knowledge Extraction</h2>
+          </div>
+          <p className="text-white/70 text-sm leading-relaxed mb-1">
+            Let the Nexus AI scan through all your notes and automatically extract high-yield active recall cards. 
+            AI-generated cards are marked with high priority and appear first in your review queues.
+          </p>
+          {generateError && <p className="text-rose-400 text-xs font-bold mt-2">{generateError}</p>}
+        </div>
+        <button 
+          onClick={handleGenerateAI}
+          disabled={isGenerating}
+          className="relative z-10 btn bg-indigo-500 hover:bg-indigo-400 text-white font-bold shrink-0 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+        >
+          {isGenerating ? "Extracting..." : "Scan Notes & Extract"}
+        </button>
+      </section>
 
       {/* ── SMART REVIEW CTA ──────────────────────────────── */}
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent p-8 md:p-10">
@@ -136,21 +179,21 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
       </section>
 
       <div className="grid md:grid-cols-3 gap-8">
-        {/* ── RECENT DECKS ─────────────────────────────────── */}
+        {/* ── RECENT NEXUSES ─────────────────────────────────── */}
         <div className="md:col-span-2 space-y-4">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase">All Decks</h3>
+            <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase">Your Nexuses</h3>
           </div>
           
           {decks.length === 0 ? (
             <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center">
               <Brain className="mx-auto text-white/10 mb-4" size={48} />
-              <p className="text-white/60 mb-4 font-medium">You haven't created any decks yet.</p>
+              <p className="text-white/60 mb-4 font-medium">You haven't created any Memory Nexuses yet.</p>
               <button 
                 onClick={() => setIsCreateOpen(true)}
                 className="btn bg-white/10 text-white hover:bg-white/20"
               >
-                Create your first deck
+                Create your first Nexus
               </button>
             </div>
           ) : (

@@ -153,12 +153,13 @@ export async function generateSmartReviewSession() {
   const supabase = await createServerClient();
   const now = new Date().toISOString();
 
-  // 1. Get due cards across all decks
+  // 1. Get due cards across all decks (either next_review_at is due OR priority_date is due)
   const { data: dueCards } = await supabase
     .from('ib_flashcards')
     .select('*, ib_flashcard_decks(title)')
     .eq('user_id', user.id)
-    .lte('next_review_at', now)
+    .or(`next_review_at.lte.${now},priority_date.lte.${now}`)
+    .order('priority_date', { ascending: false, nullsFirst: false })
     .order('next_review_at', { ascending: true })
     .limit(30); // Max 30 for a session
 
@@ -176,7 +177,8 @@ export async function getDeckReviewSession(deckId) {
     .select('*, ib_flashcard_decks(title)')
     .eq('user_id', user.id)
     .eq('deck_id', deckId)
-    .lte('next_review_at', now)
+    .or(`next_review_at.lte.${now},priority_date.lte.${now}`)
+    .order('priority_date', { ascending: false, nullsFirst: false })
     .order('next_review_at', { ascending: true });
 
   return cards || [];

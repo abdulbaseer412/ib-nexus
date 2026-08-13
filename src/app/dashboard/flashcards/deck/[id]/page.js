@@ -6,7 +6,8 @@ import DeckClient from "./DeckClient";
 export default async function DeckPage({ params }) {
   await requireAuth();
   
-  const deck = await fetchDeckDetailsAction(params.id);
+  const { id } = await params;
+  const deck = await fetchDeckDetailsAction(id);
   
   if (!deck) {
     notFound();

@@ -40,6 +40,10 @@ CREATE TABLE public.ib_flashcards (
   last_reviewed_at timestamptz,
   is_suspended boolean DEFAULT false,
   
+  -- AI & Priority Scheduling
+  is_ai_generated boolean DEFAULT false,
+  priority_date timestamptz,
+  
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );

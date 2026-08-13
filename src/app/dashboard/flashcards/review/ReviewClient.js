@@ -178,6 +178,13 @@ export default function ReviewClient({ initialCards, mode, deckId }) {
 
         {/* ── CONTROLS ── */}
         <div className="h-32 shrink-0 flex items-center justify-center mt-6">
+          {currentCard.is_ai_generated && (
+            <div className="flex justify-center mb-4">
+              <span className="px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold rounded-full flex items-center gap-2">
+                <Sparkles size={12} /> AI Extracted
+              </span>
+            </div>
+          )}
           {!isFlipped ? (
             <button
               onClick={handleReveal}

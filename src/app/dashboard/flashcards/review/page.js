@@ -6,8 +6,9 @@ import ReviewClient from "./ReviewClient";
 export default async function ReviewPage({ searchParams }) {
   await requireAuth();
   
-  const mode = searchParams.mode; // 'smart', 'weak', etc.
-  const deckId = searchParams.deck;
+  const resolvedSearchParams = await searchParams;
+  const mode = resolvedSearchParams.mode; // 'smart', 'weak', etc.
+  const deckId = resolvedSearchParams.deck;
 
   let sessionCards = [];
 
