@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/utils/supabase-browser";
+import { Avatar } from "@/components/ui";
 
 export default function UserMenu({ displayName, email, avatarUrl }) {
   const [open, setOpen] = useState(false);
@@ -65,21 +66,11 @@ export default function UserMenu({ displayName, email, avatarUrl }) {
         aria-label={`Account menu for ${displayName}`}
         className="flex items-center gap-2 px-3 py-1.5 rounded-full text-sm text-secondary hover:bg-hover transition-colors"
       >
-        <span
-          className="flex items-center justify-center w-7 h-7 rounded-full bg-surface-alt text-xs font-medium text-primary overflow-hidden shrink-0"
-          aria-hidden="true"
-        >
-          {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={avatarUrl}
-              alt=""
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            displayName.charAt(0).toUpperCase()
-          )}
-        </span>
+        <Avatar 
+          url={avatarUrl} 
+          name={displayName} 
+          className="w-7 h-7 text-xs" 
+        />
         <span className="hidden sm:inline max-w-[140px] truncate font-medium">
           {displayName}
         </span>
