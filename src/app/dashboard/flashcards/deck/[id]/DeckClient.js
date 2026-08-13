@@ -235,6 +235,8 @@ export default function DeckClient({ initialDeck }) {
             </form>
           </div>
         </div>
+      )}
+      
       {/* ── BULK ACTION TOOLBAR ────────────────────────────────── */}
       {selectedCardIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a2e] border border-white/10 rounded-full px-6 py-3 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300">
