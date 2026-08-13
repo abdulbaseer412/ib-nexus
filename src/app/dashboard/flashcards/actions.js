@@ -13,6 +13,10 @@ export async function fetchDeckDetailsAction(deckId) {
   return await FlashcardService.getDeckDetails(deckId);
 }
 
+export async function fetchSmartQueueCardsAction() {
+  return await FlashcardService.getSmartQueueCards();
+}
+
 export async function fetchSmartReviewSessionAction() {
   return await FlashcardService.generateSmartReviewSession();
 }

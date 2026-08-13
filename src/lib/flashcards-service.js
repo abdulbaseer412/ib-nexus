@@ -147,6 +147,49 @@ export async function getDeckDetails(deckId) {
   };
 }
 
+export async function getSmartQueueCards(limit = 15) {
+  const user = await getAuthUser();
+  const supabase = await createServerClient();
+
+  // Fetch highest priority due cards (ascending next_review_at)
+  const { data: cards, error } = await supabase
+    .from('ib_flashcards')
+    .select(`
+      id, front, back, card_type, difficulty_level, next_review_at, ease_factor, repetitions, status, is_ai_generated,
+      deck:ib_flashcard_decks(id, title, subject)
+    `)
+    .eq('user_id', user.id)
+    .lte('next_review_at', new Date().toISOString()) // Only due cards
+    .order('next_review_at', { ascending: true })
+    .limit(limit);
+
+  if (error) {
+    console.error("Error fetching smart queue:", error);
+    return [];
+  }
+
+  // If we don't have enough due cards, fetch some newer cards to fill the queue
+  if (cards.length < limit) {
+    const remaining = limit - cards.length;
+    const { data: extraCards } = await supabase
+      .from('ib_flashcards')
+      .select(`
+        id, front, back, card_type, difficulty_level, next_review_at, ease_factor, repetitions, status, is_ai_generated,
+        deck:ib_flashcard_decks(id, title, subject)
+      `)
+      .eq('user_id', user.id)
+      .gt('next_review_at', new Date().toISOString())
+      .order('next_review_at', { ascending: true })
+      .limit(remaining);
+      
+    if (extraCards) {
+      cards.push(...extraCards);
+    }
+  }
+
+  return cards || [];
+}
+
 // Generate smart review session
 export async function generateSmartReviewSession() {
   const user = await getAuthUser();

@@ -1,5 +1,5 @@
 import { requireAuth } from "@/lib/auth";
-import { fetchDecksAction, fetchFlashcardStatsAction } from "./actions";
+import { fetchDecksAction, fetchFlashcardStatsAction, fetchSmartQueueCardsAction } from "./actions";
 import FlashcardsClient from "./FlashcardsClient";
 
 export const metadata = {
@@ -13,15 +13,18 @@ export default async function FlashcardsPage() {
   // Try fetching data, catch missing table errors smoothly (since we rely on a manual SQL migration)
   let decks = [];
   let stats = { total: 0, due: 0, mastered: 0, retention: 0 };
+  let smartQueue = [];
   let dbError = null;
 
   try {
-    const [fetchedDecks, fetchedStats] = await Promise.all([
+    const [fetchedDecks, fetchedStats, fetchedQueue] = await Promise.all([
       fetchDecksAction(),
-      fetchFlashcardStatsAction()
+      fetchFlashcardStatsAction(),
+      fetchSmartQueueCardsAction()
     ]);
     decks = fetchedDecks;
     stats = fetchedStats;
+    smartQueue = fetchedQueue;
   } catch (error) {
     console.error("Flashcards page DB error (migration likely missing):", error);
     dbError = error.message || String(error);
@@ -32,6 +35,7 @@ export default async function FlashcardsPage() {
       <FlashcardsClient 
         initialDecks={decks} 
         initialStats={stats} 
+        initialSmartQueue={smartQueue}
         dbError={dbError} 
       />
     </div>

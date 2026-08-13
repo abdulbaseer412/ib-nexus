@@ -6,9 +6,11 @@ import { generateFlashcardsFromNotesAction, toggleAIPreferenceAction, bulkDelete
 import { Plus, BrainCircuit, Target, Flame, Activity, Brain, BookOpen, AlertCircle, Sparkles, Check, Settings2, Trash2, CheckSquare, Square } from "lucide-react";
 import { CreateDeckModal } from "./components/CreateDeckModal";
 
-export default function FlashcardsClient({ initialDecks, initialStats, dbError }) {
+export default function FlashcardsClient({ initialDecks, initialStats, initialSmartQueue, dbError }) {
   const [decks, setDecks] = useState(initialDecks || []);
+  const [smartQueue, setSmartQueue] = useState(initialSmartQueue || []);
   const [stats, setStats] = useState(initialStats || { total: 0, due: 0, mastered: 0, retention: 0 });
+  const [activeTab, setActiveTab] = useState("manual"); // "manual", "ai", "queue"
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState(null);
@@ -18,6 +20,11 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
   // Bulk Selection
   const [selectedDeckIds, setSelectedDeckIds] = useState([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Categorize Decks (Fallback to checking title for '[AI]' if column is missing)
+  const manualDecks = decks.filter(d => d.is_ai_generated === false || (d.is_ai_generated == null && !d.title.startsWith("[AI]")));
+  const aiDecks = decks.filter(d => d.is_ai_generated === true || (d.is_ai_generated == null && d.title.startsWith("[AI]")));
+  const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
 
   // Compute weak areas from existing decks for display
   const weakDecks = [...decks]
@@ -62,10 +69,10 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
   };
 
   const selectAll = () => {
-    if (selectedDeckIds.length === decks.length) {
+    if (selectedDeckIds.length === displayDecks.length) {
       setSelectedDeckIds([]); // Deselect all
     } else {
-      setSelectedDeckIds(decks.map(d => d.id));
+      setSelectedDeckIds(displayDecks.map(d => d.id));
     }
   };
 
@@ -248,26 +255,94 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
       </section>
 
       <div className="grid md:grid-cols-3 gap-8">
-        {/* ── RECENT NEXUSES ─────────────────────────────────── */}
+        {/* ── MAIN CONTENT AREA ─────────────────────────────────── */}
         <div className="md:col-span-2 space-y-4">
+          {/* ── TABS ─────────────────────────────────── */}
+          <div className="flex flex-wrap items-center gap-2 mb-6 bg-white/5 p-1.5 rounded-2xl w-fit border border-white/10">
+            <button 
+              onClick={() => setActiveTab("manual")}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'manual' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+            >
+              <BookOpen size={16} className={activeTab === 'manual' ? 'text-white' : 'text-indigo-400'} />
+              My Nexus Cards
+            </button>
+            <button 
+              onClick={() => setActiveTab("ai")}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'ai' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+            >
+              <Sparkles size={16} className={activeTab === 'ai' ? 'text-white' : 'text-purple-400'} />
+              AI Nexus Cards
+            </button>
+            <button 
+              onClick={() => setActiveTab("queue")}
+              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'queue' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+            >
+              <Flame size={16} className={activeTab === 'queue' ? 'text-white' : 'text-rose-400'} />
+              Smart Priority Queue
+            </button>
+          </div>
+
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase">Your Nexus Cards</h3>
+            <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase">
+              {activeTab === 'queue' ? 'Priority Action Required' : (activeTab === 'ai' ? 'AI Generated Decks' : 'Manually Created Decks')}
+            </h3>
           </div>
           
-          {decks.length === 0 ? (
-            <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center">
-              <Brain className="mx-auto text-white/10 mb-4" size={48} />
-              <p className="text-white/60 mb-4 font-medium">You haven't created any Nexus Cards yet.</p>
-              <button 
-                onClick={() => setIsCreateOpen(true)}
-                className="btn bg-white/10 text-white hover:bg-white/20"
-              >
-                Create your first Nexus Card
-              </button>
-            </div>
+          {activeTab === 'queue' ? (
+            /* SMART QUEUE UI */
+            smartQueue.length === 0 ? (
+              <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center bg-white/[0.02]">
+                <Check className="mx-auto text-emerald-400 mb-4" size={48} />
+                <p className="text-white/60 mb-4 font-medium">You're all caught up! No high-priority cards pending.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {smartQueue.map((card, idx) => (
+                  <div key={card.id} className="group relative flex items-center gap-4 hover:bg-white/[0.08] transition-all rounded-2xl p-4 border bg-white/5 border-white/5 hover:border-white/10">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-black/40 flex items-center justify-center font-black text-white/30 border border-white/10">
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
+                          {new Date(card.next_review_at) <= new Date() ? 'DUE NOW' : 'UPCOMING'}
+                        </span>
+                        <span className="text-xs font-semibold text-white/40 truncate">
+                          {card.deck?.subject} — {card.deck?.title}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-white truncate pr-8">{card.front}</p>
+                    </div>
+                    <Link 
+                      href={`/dashboard/flashcards/deck/${card.deck?.id}`}
+                      className="flex-shrink-0 btn bg-rose-500 hover:bg-rose-400 text-white font-bold h-10 px-4 rounded-xl shadow-lg shadow-rose-500/20 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0"
+                    >
+                      Review
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
-            <div className="grid sm:grid-cols-2 gap-4">
-              {decks.map(deck => {
+            /* DECKS GRID (MANUAL / AI) */
+            displayDecks.length === 0 ? (
+              <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center bg-white/[0.02]">
+                <Brain className="mx-auto text-white/10 mb-4" size={48} />
+                <p className="text-white/60 mb-4 font-medium">
+                  {activeTab === 'ai' ? "No AI-generated Nexus Cards yet." : "You haven't created any manual Nexus Cards yet."}
+                </p>
+                {activeTab === 'manual' && (
+                  <button 
+                    onClick={() => setIsCreateOpen(true)}
+                    className="btn bg-white/10 text-white hover:bg-white/20"
+                  >
+                    Create your first Nexus Card
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-4">
+                {displayDecks.map(deck => {
                 const isSelected = selectedDeckIds.includes(deck.id);
                 return (
                   <Link 
