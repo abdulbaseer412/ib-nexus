@@ -15,6 +15,7 @@ const STUDY_GOALS = [
 
 export default function ProfileClient({ profile = {} }) {
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url || "fox");
+  const [savedAvatarUrl, setSavedAvatarUrl] = useState(profile.avatar_url || "fox");
   const [displayName, setDisplayName] = useState(profile.display_name || "");
   const [schoolName, setSchoolName] = useState(profile.school_name || "");
   const [program, setProgram] = useState(profile.ib_program || "dp");
@@ -33,6 +34,7 @@ export default function ProfileClient({ profile = {} }) {
         exam_session: examSession,
         study_goals: selectedGoals,
       });
+      setSavedAvatarUrl(avatarUrl);
       router.refresh();
       alert("Settings saved successfully!");
     });
@@ -65,10 +67,11 @@ export default function ProfileClient({ profile = {} }) {
               <AvatarPicker 
                 value={avatarUrl} 
                 onChange={setAvatarUrl} 
-                onConfirm={async () => {
+                onConfirm={avatarUrl !== savedAvatarUrl ? async () => {
                   await updateSettingsAction({ avatar_url: avatarUrl });
+                  setSavedAvatarUrl(avatarUrl);
                   router.refresh();
-                }}
+                } : undefined}
               />
             </div>
             <div className="space-y-2">
