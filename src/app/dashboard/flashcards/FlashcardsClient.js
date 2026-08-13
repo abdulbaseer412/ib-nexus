@@ -259,27 +259,49 @@ export default function FlashcardsClient({ initialDecks, initialStats, initialSm
         <div className="md:col-span-2 space-y-4">
           {/* ── TABS ─────────────────────────────────── */}
           <div className="flex flex-wrap items-center gap-2 mb-6 bg-white/5 p-1.5 rounded-2xl w-fit border border-white/10">
-            <button 
-              onClick={() => setActiveTab("manual")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'manual' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
-            >
-              <BookOpen size={16} className={activeTab === 'manual' ? 'text-white' : 'text-indigo-400'} />
-              My Nexus Cards
-            </button>
-            <button 
-              onClick={() => setActiveTab("ai")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'ai' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
-            >
-              <Sparkles size={16} className={activeTab === 'ai' ? 'text-white' : 'text-purple-400'} />
-              AI Nexus Cards
-            </button>
-            <button 
-              onClick={() => setActiveTab("queue")}
-              className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'queue' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
-            >
-              <Flame size={16} className={activeTab === 'queue' ? 'text-white' : 'text-rose-400'} />
-              Smart Priority Queue
-            </button>
+            
+            {/* MANUAL CARDS TAB */}
+            <div className="group relative">
+              <button 
+                onClick={() => setActiveTab("manual")}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'manual' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+              >
+                <BookOpen size={16} className={activeTab === 'manual' ? 'text-white' : 'text-indigo-400'} />
+                My Nexus Cards
+              </button>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 p-3 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none scale-95 group-hover:scale-100 origin-top">
+                <p className="text-xs text-white/70 leading-relaxed font-medium">Flashcard decks that you have created manually.</p>
+              </div>
+            </div>
+
+            {/* AI CARDS TAB */}
+            <div className="group relative">
+              <button 
+                onClick={() => setActiveTab("ai")}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'ai' ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+              >
+                <Sparkles size={16} className={activeTab === 'ai' ? 'text-white' : 'text-purple-400'} />
+                AI Nexus Cards
+              </button>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-3 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none scale-95 group-hover:scale-100 origin-top">
+                <p className="text-xs text-white/70 leading-relaxed font-medium">Decks generated entirely by AI based on your notes and subjects.</p>
+              </div>
+            </div>
+
+            {/* SMART QUEUE TAB */}
+            <div className="group relative">
+              <button 
+                onClick={() => setActiveTab("queue")}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'queue' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25' : 'text-white/50 hover:text-white/80 hover:bg-white/5'}`}
+              >
+                <Flame size={16} className={activeTab === 'queue' ? 'text-white' : 'text-rose-400'} />
+                Smart Priority Queue
+              </button>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 p-3 bg-[#1a1a2e] border border-rose-500/20 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none scale-95 group-hover:scale-100 origin-top">
+                <p className="text-xs text-rose-200/70 leading-relaxed font-medium">An intelligent feed aggregating the top highest-priority cards that need review across all your decks.</p>
+              </div>
+            </div>
+
           </div>
 
           <div className="flex items-center justify-between px-1">
