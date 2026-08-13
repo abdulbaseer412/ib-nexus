@@ -82,16 +82,21 @@ export default async function Dashboard() {
   const examSession = profile.exam_session || "Not set";
   const hasSubjects = subjects.length > 0;
 
-  // Fetch real notes data
   const supabase = await createServerClient();
-  const { data: recentNotes, count: notesTotalCount } = await supabase
+  const { count: notesTotalCount } = await supabase
     .from('ib_notes')
-    .select('id, title, subject, topic, updated_at', { count: 'exact' })
-    .eq('user_id', profile.id)
-    .order('updated_at', { ascending: false })
-    .limit(3);
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', profile.id);
 
   const notesCount = notesTotalCount || 0;
+
+  let quickRecallCards = [];
+  try {
+    const { getSmartQueueCards } = await import("@/lib/flashcards-service");
+    quickRecallCards = await getSmartQueueCards(3);
+  } catch (error) {
+    console.error("Failed to fetch quick recall cards:", error);
+  }
   const cardsCount = 0; // Still zero state until flashcards are implemented
   
   // Calculate days left roughly if exam session is set (e.g. "May 2026")
@@ -266,17 +271,17 @@ export default async function Dashboard() {
                 <Sparkles size={17} className="text-accent" />
                 <h2 className="font-semibold text-primary">Quick Recall</h2>
               </div>
-              <Link href="/dashboard/notes" className="text-xs font-medium text-accent hover:underline">
-                View all notes
+              <Link href="/dashboard/flashcards" className="text-xs font-medium text-accent hover:underline">
+                View all cards
               </Link>
             </div>
             
-            {recentNotes && recentNotes.length > 0 ? (
+            {quickRecallCards && quickRecallCards.length > 0 ? (
               <div className="flex-1 flex flex-col gap-3">
-                {recentNotes.map((note) => (
+                {quickRecallCards.map((card) => (
                   <Link 
-                    key={note.id} 
-                    href={`/dashboard/notes/${note.id}`}
+                    key={card.id} 
+                    href={`/dashboard/flashcards/deck/${card.deck?.id}`}
                     className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4 transition-all hover:border-accent/40 hover:shadow-[0_4px_20px_rgb(0,0,0,0.05)] dark:hover:shadow-[0_4px_20px_rgba(255,255,255,0.02)]"
                   >
                     {/* Subtle glow effect */}
@@ -285,19 +290,20 @@ export default async function Dashboard() {
                     <div className="relative z-10 flex items-center justify-between">
                       <div className="min-w-0 flex-1 pr-4">
                         <div className="flex items-center gap-2 mb-1.5">
-                          <span className="inline-flex h-2 w-2 rounded-full" style={{ background: col(note.subject).bar }} />
+                          <span className="inline-flex h-2 w-2 rounded-full" style={{ background: col(card.deck?.subject).bar }} />
                           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                            {note.subject}
+                            {card.deck?.subject || "General"}
+                          </span>
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
+                            {new Date(card.next_review_at) <= new Date() ? 'DUE' : 'SOON'}
                           </span>
                         </div>
                         <h3 className="truncate font-semibold text-[15px] group-hover:text-accent transition-colors">
-                          {note.title}
+                          {card.front}
                         </h3>
-                        {note.topic && (
-                          <p className="mt-0.5 truncate text-xs text-muted">
-                            {note.topic}
-                          </p>
-                        )}
+                        <p className="mt-0.5 truncate text-xs text-muted">
+                          {card.deck?.title}
+                        </p>
                       </div>
                       <div className="shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--background)] border border-[var(--border)] text-muted opacity-50 group-hover:opacity-100 group-hover:border-accent/30 group-hover:bg-accent/10 group-hover:text-accent transition-all">
                         <ArrowRight size={14} />
@@ -309,12 +315,12 @@ export default async function Dashboard() {
             ) : (
               <div className="mt-8 flex flex-col items-center justify-center text-center pb-4">
                 <div className="grid h-12 w-12 place-items-center rounded-2xl bg-[var(--surface)] mb-3">
-                  <Notebook size={20} className="text-muted" />
+                  <BrainCircuit size={20} className="text-muted" />
                 </div>
-                <p className="text-sm font-medium">No notes created yet.</p>
-                <p className="text-xs text-muted mt-1 mb-4">Start building your knowledge base today.</p>
-                <Link href="/dashboard/notes" className="btn btn-secondary py-1.5 px-4 text-xs">
-                  Create First Note
+                <p className="text-sm font-medium">No cards due yet.</p>
+                <p className="text-xs text-muted mt-1 mb-4">Start generating Nexus Cards to build your queue.</p>
+                <Link href="/dashboard/flashcards" className="btn btn-secondary py-1.5 px-4 text-xs">
+                  Create Flashcards
                 </Link>
               </div>
             )}
