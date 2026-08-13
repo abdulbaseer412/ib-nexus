@@ -115,7 +115,23 @@ export async function createFolder(title, subject, parentId = null, examImportan
   }
 
   revalidatePath("/dashboard/notes");
-  return { success: true, data };
+  return { success: true, folder: data };
+}
+
+export async function bulkDeleteNotesAction(ids) {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("ib_notes")
+    .delete()
+    .in("id", ids);
+
+  if (error) {
+    console.error("Error bulk deleting notes/folders:", error);
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/dashboard/notes");
+  return { success: true };
 }
 
 export async function updateNoteContent(id, contentStr) {

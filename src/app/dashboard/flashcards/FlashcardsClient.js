@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { generateFlashcardsFromNotesAction, toggleAIPreferenceAction } from "./actions";
-import { Plus, BrainCircuit, Target, Flame, Activity, Brain, BookOpen, AlertCircle, Sparkles, Check, Settings2 } from "lucide-react";
+import { generateFlashcardsFromNotesAction, toggleAIPreferenceAction, bulkDeleteDecksAction } from "./actions";
+import { Plus, BrainCircuit, Target, Flame, Activity, Brain, BookOpen, AlertCircle, Sparkles, Check, Settings2, Trash2, CheckSquare, Square } from "lucide-react";
 import { CreateDeckModal } from "./components/CreateDeckModal";
 
 export default function FlashcardsClient({ initialDecks, initialStats, dbError }) {
@@ -14,6 +14,10 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
   const [generateError, setGenerateError] = useState(null);
   const [aiEnabled, setAiEnabled] = useState(initialStats?.aiEnabled || false);
   const [isTogglingAI, setIsTogglingAI] = useState(false);
+  
+  // Bulk Selection
+  const [selectedDeckIds, setSelectedDeckIds] = useState([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   // Compute weak areas from existing decks for display
   const weakDecks = [...decks]
@@ -49,6 +53,34 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
       console.error(err);
     } finally {
       setIsTogglingAI(false);
+    }
+  };
+
+  // --- Bulk Actions ---
+  const toggleSelection = (id) => {
+    setSelectedDeckIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const selectAll = () => {
+    if (selectedDeckIds.length === decks.length) {
+      setSelectedDeckIds([]); // Deselect all
+    } else {
+      setSelectedDeckIds(decks.map(d => d.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to permanently delete ${selectedDeckIds.length} Nexus Cards and all their contents?`)) return;
+    setIsBulkDeleting(true);
+    try {
+      await bulkDeleteDecksAction(selectedDeckIds);
+      setDecks(prev => prev.filter(d => !selectedDeckIds.includes(d.id)));
+      setSelectedDeckIds([]);
+    } catch(err) {
+      console.error(err);
+      alert("Failed to delete selected Nexus Cards.");
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -235,13 +267,23 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 gap-4">
-              {decks.map(deck => (
-                <Link 
-                  key={deck.id} 
-                  href={`/dashboard/flashcards/deck/${deck.id}`}
-                  className="group relative flex flex-col bg-white/5 hover:bg-white/[0.08] border border-white/5 hover:border-white/10 transition-all rounded-2xl p-5"
-                >
-                  <div className="flex justify-between items-start mb-4">
+              {decks.map(deck => {
+                const isSelected = selectedDeckIds.includes(deck.id);
+                return (
+                  <Link 
+                    key={deck.id} 
+                    href={`/dashboard/flashcards/deck/${deck.id}`}
+                    className={`group relative flex flex-col hover:bg-white/[0.08] transition-all rounded-2xl p-5 border ${isSelected ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50' : 'bg-white/5 border-white/5 hover:border-white/10'}`}
+                  >
+                    {/* Checkbox */}
+                    <button 
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSelection(deck.id); }}
+                      className={`absolute top-4 right-4 z-10 p-1.5 rounded-lg transition-all ${isSelected ? 'text-indigo-400 opacity-100 bg-indigo-500/10' : 'text-white/20 opacity-0 group-hover:opacity-100 hover:text-white/60 bg-black/20 hover:bg-black/40'}`}
+                    >
+                      {isSelected ? <CheckSquare size={18} className="fill-indigo-500/20" /> : <Square size={18} />}
+                    </button>
+
+                    <div className="flex justify-between items-start mb-4 pr-8">
                     <div>
                       {deck.subject && (
                         <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-400 mb-1 block">
@@ -262,7 +304,7 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
                     <span>{deck.topic || "General"}</span>
                   </div>
                 </Link>
-              ))}
+              )})}
             </div>
           )}
         </div>
@@ -297,12 +339,32 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
 
       {isCreateOpen && (
         <CreateDeckModal 
+          isOpen={isCreateOpen} 
           onClose={() => setIsCreateOpen(false)} 
           onSuccess={(newDeck) => {
             setDecks([newDeck, ...decks]);
             setIsCreateOpen(false);
           }}
         />
+      )}
+
+      {/* ── BULK ACTION TOOLBAR ────────────────────────────────── */}
+      {selectedDeckIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a2e] border border-white/10 rounded-full px-6 py-3 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <span className="text-white font-bold whitespace-nowrap">{selectedDeckIds.length} Selected</span>
+          <div className="w-px h-6 bg-white/10" />
+          <button onClick={selectAll} className="text-sm font-semibold text-white/70 hover:text-white transition-colors">
+            {selectedDeckIds.length === decks.length ? "Deselect All" : "Select All"}
+          </button>
+          <div className="w-px h-6 bg-white/10" />
+          <button 
+            onClick={handleBulkDelete} 
+            disabled={isBulkDeleting}
+            className="flex items-center gap-2 text-sm font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+          >
+            <Trash2 size={16} /> {isBulkDeleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
       )}
     </div>
   );

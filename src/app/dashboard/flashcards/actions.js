@@ -210,3 +210,27 @@ export async function toggleAIPreferenceAction(enabled) {
   revalidatePath("/dashboard/flashcards");
   return data;
 }
+
+export async function bulkDeleteDecksAction(deckIds) {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("ib_flashcard_decks")
+    .delete()
+    .in("id", deckIds);
+
+  if (error) throw new Error("Failed to delete selected decks");
+  revalidatePath("/dashboard/flashcards");
+  return { success: true };
+}
+
+export async function bulkDeleteCardsAction(cardIds, deckId) {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("ib_flashcards")
+    .delete()
+    .in("id", cardIds);
+
+  if (error) throw new Error("Failed to delete selected cards");
+  revalidatePath(`/dashboard/flashcards/deck/${deckId}`);
+  return { success: true };
+}

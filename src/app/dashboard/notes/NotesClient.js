@@ -7,9 +7,9 @@ import {
   Search, Plus, PenLine, Clock, Star, Archive, 
   MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, 
   CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity,
-  Camera, X, FolderUp, Folder, ChevronRight
+  Camera, X, FolderUp, Folder, ChevronRight, CheckSquare, Square
 } from "lucide-react";
-import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent, createFolder, updateNoteMetadata } from "./actions";
+import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent, createFolder, updateNoteMetadata, bulkDeleteNotesAction } from "./actions";
 import { createClient } from "@/utils/supabase-browser";
 import { Modal, Button, Input, Dropdown } from "@/components/ui";
 
@@ -35,6 +35,10 @@ export default function NotesClient({ initialNotes }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [editNode, setEditNode] = useState(null); // { id, title, subject, exam_importance, topic, level, is_folder }
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  
+  // Bulk Selection
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   
   // Camera Capture
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -154,6 +158,34 @@ export default function NotesClient({ initialNotes }) {
       setLoading(false);
     }
   }
+
+  // --- Bulk Actions ---
+  const toggleSelection = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const selectAll = () => {
+    if (selectedIds.length === filteredNotes.length) {
+      setSelectedIds([]); // Deselect all
+    } else {
+      setSelectedIds(filteredNotes.map(n => n.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to permanently delete ${selectedIds.length} items?`)) return;
+    setIsBulkDeleting(true);
+    try {
+      await bulkDeleteNotesAction(selectedIds);
+      setNotes(prev => prev.filter(n => !selectedIds.includes(n.id)));
+      setSelectedIds([]);
+    } catch(err) {
+      console.error(err);
+      alert("Failed to delete selected items.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
 
   async function handleTemplateCreate(templateType) {
     setLoading(true);
@@ -420,6 +452,25 @@ export default function NotesClient({ initialNotes }) {
 
   return (
     <main className="surface min-h-[calc(100vh-72px)] p-4 sm:p-8">
+      {/* ── BULK ACTION TOOLBAR ────────────────────────────────── */}
+      {selectedIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a2e] border border-white/10 rounded-full px-6 py-3 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <span className="text-white font-bold whitespace-nowrap">{selectedIds.length} Selected</span>
+          <div className="w-px h-6 bg-white/10" />
+          <button onClick={selectAll} className="text-sm font-semibold text-white/70 hover:text-white transition-colors">
+            {selectedIds.length === filteredNotes.length ? "Deselect All" : "Select All"}
+          </button>
+          <div className="w-px h-6 bg-white/10" />
+          <button 
+            onClick={handleBulkDelete} 
+            disabled={isBulkDeleting}
+            className="flex items-center gap-2 text-sm font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+          >
+            <Trash2 size={16} /> {isBulkDeleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -626,13 +677,31 @@ export default function NotesClient({ initialNotes }) {
             ) : viewMode === "grid" ? (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {filteredNotes.map(note => (
-                  <NoteCard key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onEditClick={() => setEditNode(note)} onFolderClick={() => setCurrentFolderId(note.id)} />
+                  <NoteCard 
+                    key={note.id} 
+                    note={note} 
+                    isSelected={selectedIds.includes(note.id)}
+                    onToggleSelect={() => toggleSelection(note.id)}
+                    onToggle={handleToggle} 
+                    onDeleteClick={() => setDeleteNoteId(note.id)} 
+                    onEditClick={() => setEditNode(note)} 
+                    onFolderClick={() => setCurrentFolderId(note.id)} 
+                  />
                 ))}
               </div>
             ) : (
               <div className="flex flex-col gap-2">
                 {filteredNotes.map(note => (
-                  <NoteListItem key={note.id} note={note} onToggle={handleToggle} onDeleteClick={() => setDeleteNoteId(note.id)} onEditClick={() => setEditNode(note)} onFolderClick={() => setCurrentFolderId(note.id)} />
+                  <NoteListItem 
+                    key={note.id} 
+                    note={note} 
+                    isSelected={selectedIds.includes(note.id)}
+                    onToggleSelect={() => toggleSelection(note.id)}
+                    onToggle={handleToggle} 
+                    onDeleteClick={() => setDeleteNoteId(note.id)} 
+                    onEditClick={() => setEditNode(note)} 
+                    onFolderClick={() => setCurrentFolderId(note.id)} 
+                  />
                 ))}
               </div>
             )}
@@ -879,7 +948,8 @@ export function PriorityBadge({ priority, className = "" }) {
   );
 }
 
-function NoteCard({ note, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
+function NoteCard({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
+  // ... previewText logic
   let previewText = "No content yet.";
   try {
     if (note.content) {
@@ -910,7 +980,16 @@ function NoteCard({ note, onToggle, onDeleteClick, onEditClick, onFolderClick })
     : { href: `/dashboard/notes/${note.id}`, className: "block w-full h-full" };
 
   return (
-    <div className={`group card flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border border-divider relative h-52 ${isFolder ? 'ring-1 ring-accent/10 shadow-sm' : ''}`}>
+    <div className={`group card flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border relative h-52 ${isFolder ? 'ring-1 ring-accent/10 shadow-sm' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-divider'}`}>
+      
+      {/* Selection Checkbox */}
+      <button 
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleSelect(); }}
+        className={`absolute top-4 right-4 z-10 p-1.5 rounded-lg transition-all ${isSelected ? 'text-indigo-400 opacity-100 bg-indigo-500/10' : 'text-white/20 opacity-0 group-hover:opacity-100 hover:text-white/60 bg-black/20 hover:bg-black/40'}`}
+      >
+        {isSelected ? <CheckSquare size={18} className="fill-indigo-500/20" /> : <Square size={18} />}
+      </button>
+
       <CardWrapper {...wrapperProps}>
         <div className="flex items-start justify-between mb-3">
           <div className="flex gap-2 items-center flex-wrap">
@@ -970,7 +1049,7 @@ function NoteCard({ note, onToggle, onDeleteClick, onEditClick, onFolderClick })
   );
 }
 
-function NoteListItem({ note, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
+function NoteListItem({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
   const timeAgo = (dateStr) => {
     const diffMs = new Date() - new Date(dateStr);
     const diffMins = Math.floor(diffMs / 60000);
@@ -987,7 +1066,16 @@ function NoteListItem({ note, onToggle, onDeleteClick, onEditClick, onFolderClic
     : { href: `/dashboard/notes/${note.id}`, className: "block w-full" };
 
   return (
-    <div className={`group flex items-center justify-between p-3 rounded-xl hover:bg-[var(--surface-alt)] border transition-all ${isFolder ? 'border-accent/10 bg-[var(--surface-alt)]' : 'border-transparent hover:border-divider'}`}>
+    <div className={`group flex items-center justify-between p-3 rounded-xl border transition-all ${isFolder ? 'bg-[var(--surface-alt)]' : 'hover:border-divider'} ${isSelected ? 'border-indigo-500 bg-indigo-500/5' : 'border-transparent hover:bg-[var(--surface-alt)]'}`}>
+      <div className="flex items-center shrink-0 pr-3">
+        <button 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleSelect(); }}
+          className={`p-1 rounded transition-colors ${isSelected ? 'text-indigo-400' : 'text-white/20 opacity-0 group-hover:opacity-100 hover:text-white/60'}`}
+        >
+          {isSelected ? <CheckSquare size={18} className="fill-indigo-500/20" /> : <Square size={18} />}
+        </button>
+      </div>
+      
       <ListWrapper {...wrapperProps} className="flex-1 min-w-0">
         <div className="flex items-center gap-4 w-full">
           <div className="shrink-0 flex gap-1 items-center">

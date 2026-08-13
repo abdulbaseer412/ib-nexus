@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Play, Plus, Edit2, Trash2, Layers, Calendar, Activity, X, FileText, Sparkles } from "lucide-react";
-import { deleteDeckAction, deleteCardAction, createCardAction, updateCardStatusAction } from "../../actions";
+import { ArrowLeft, Play, Plus, Edit2, Trash2, Layers, Calendar, Activity, X, FileText, Sparkles, CheckSquare, Square } from "lucide-react";
+import { deleteDeckAction, deleteCardAction, createCardAction, updateCardStatusAction, bulkDeleteCardsAction } from "../../actions";
 import { useRouter } from "next/navigation";
 
 export default function DeckClient({ initialDeck }) {
@@ -12,6 +12,10 @@ export default function DeckClient({ initialDeck }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [priorityDate, setPriorityDate] = useState("");
+  
+  // Bulk Selection
+  const [selectedCardIds, setSelectedCardIds] = useState([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const handleDeleteDeck = async () => {
     if (!confirm(`Are you sure you want to delete "${deck.title}"? All cards inside will be permanently deleted.`)) return;
@@ -37,6 +41,38 @@ export default function DeckClient({ initialDeck }) {
       });
     } catch(e) {
       alert("Failed to delete card");
+    }
+  };
+
+  // --- Bulk Actions ---
+  const toggleSelection = (id) => {
+    setSelectedCardIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const selectAll = () => {
+    if (selectedCardIds.length === deck.cards.length) {
+      setSelectedCardIds([]); // Deselect all
+    } else {
+      setSelectedCardIds(deck.cards.map(c => c.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to permanently delete ${selectedCardIds.length} flashcards?`)) return;
+    setIsBulkDeleting(true);
+    try {
+      await bulkDeleteCardsAction(selectedCardIds, deck.id);
+      setDeck({
+        ...deck,
+        cards: deck.cards.filter(c => !selectedCardIds.includes(c.id)),
+        total_cards: deck.total_cards - selectedCardIds.length
+      });
+      setSelectedCardIds([]);
+    } catch(err) {
+      console.error(err);
+      alert("Failed to delete selected cards.");
+    } finally {
+      setIsBulkDeleting(false);
     }
   };
 
@@ -148,7 +184,14 @@ export default function DeckClient({ initialDeck }) {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {deck.cards.map(card => (
-              <CardItem key={card.id} card={card} deckId={deck.id} handleDeleteCard={handleDeleteCard} />
+              <CardItem 
+                key={card.id} 
+                card={card} 
+                deckId={deck.id} 
+                handleDeleteCard={handleDeleteCard} 
+                isSelected={selectedCardIds.includes(card.id)}
+                onToggleSelect={() => toggleSelection(card.id)}
+              />
             ))}
           </div>
         )}
@@ -192,15 +235,33 @@ export default function DeckClient({ initialDeck }) {
             </form>
           </div>
         </div>
+      {/* ── BULK ACTION TOOLBAR ────────────────────────────────── */}
+      {selectedCardIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a2e] border border-white/10 rounded-full px-6 py-3 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <span className="text-white font-bold whitespace-nowrap">{selectedCardIds.length} Selected</span>
+          <div className="w-px h-6 bg-white/10" />
+          <button onClick={selectAll} className="text-sm font-semibold text-white/70 hover:text-white transition-colors">
+            {selectedCardIds.length === deck.cards.length ? "Deselect All" : "Select All"}
+          </button>
+          <div className="w-px h-6 bg-white/10" />
+          <button 
+            onClick={handleBulkDelete} 
+            disabled={isBulkDeleting}
+            className="flex items-center gap-2 text-sm font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+          >
+            <Trash2 size={16} /> {isBulkDeleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-function CardItem({ card: initialCard, handleDeleteCard }) {
+function CardItem({ card: initialCard, handleDeleteCard, isSelected, onToggleSelect }) {
   const [card, setCard] = useState(initialCard);
   const isDue = new Date(card.next_review_at) <= new Date();
 
+  // ... (keeping previous handleCardClick logic) ...
   const handleCardClick = async (e) => {
     // Determine click count
     if (e.detail === 2) {
@@ -240,11 +301,20 @@ function CardItem({ card: initialCard, handleDeleteCard }) {
   }
 
   return (
-    <div className="group relative h-72 w-full [perspective:1000px] cursor-pointer" onClick={handleCardClick} title="Double-click to mark as Read. Triple-click to mark as Mastered.">
-      <div className="relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
+    <div className={`group relative h-72 w-full [perspective:1000px] cursor-pointer rounded-3xl ${isSelected ? 'ring-2 ring-indigo-500/50' : ''}`} title="Double-click to mark as Read. Triple-click to mark as Mastered.">
+      
+      {/* Selection Checkbox (Placed outside the flip container so it stays still) */}
+      <button 
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleSelect(); }}
+        className={`absolute top-4 right-14 z-20 p-1.5 rounded-lg transition-all ${isSelected ? 'text-indigo-400 opacity-100 bg-indigo-500/10' : 'text-white/20 opacity-0 group-hover:opacity-100 hover:text-white/60 bg-black/20 hover:bg-black/40'}`}
+      >
+        {isSelected ? <CheckSquare size={18} className="fill-indigo-500/20" /> : <Square size={18} />}
+      </button>
+
+      <div className="relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]" onClick={handleCardClick}>
         
         {/* ── FRONT ── */}
-        <div className={`absolute inset-0 w-full h-full ${frontTheme} border rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] shadow-xl overflow-hidden transition-colors duration-500`}>
+        <div className={`absolute inset-0 w-full h-full ${frontTheme} border rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] shadow-xl overflow-hidden transition-colors duration-500 ${isSelected ? 'bg-indigo-500/5 border-indigo-500/30' : ''}`}>
            {badgeLabel}
            {card.is_ai_generated && (
              <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full flex items-center gap-1"><Sparkles size={10}/> AI</span>
