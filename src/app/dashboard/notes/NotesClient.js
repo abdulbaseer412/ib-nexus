@@ -572,23 +572,7 @@ export default function NotesClient({ initialNotes }) {
             </div>
           </div>
 
-          <div className="mt-16">
-            <h3 className="text-sm font-semibold text-muted uppercase tracking-wider mb-6 text-center">Or start from an IB template</h3>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                { title: "Revision Summary", desc: "Core concepts & formulas", subject: "Mathematics" },
-                { title: "IA Research", desc: "Sources & methodology", subject: "Biology" },
-                { title: "Argument Map", desc: "Claims & counterclaims", subject: "TOK" },
-                { title: "Essay Plan", desc: "Structure & evidence", subject: "English" }
-              ].map(t => (
-                <button key={t.title} onClick={() => handleTemplateCreate(t.title)} className="card p-5 text-left hover:border-accent transition group bg-[var(--surface-alt)] border border-divider">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-accent bg-accent/10 px-2 py-0.5 rounded-full mb-3 inline-block">{t.subject}</span>
-                  <h4 className="font-semibold text-primary group-hover:text-accent transition">{t.title}</h4>
-                  <p className="text-xs text-muted mt-2">{t.desc}</p>
-                </button>
-              ))}
-            </div>
-          </div>
+
         </div>
       ) : (
         <>
