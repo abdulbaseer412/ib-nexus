@@ -152,45 +152,7 @@ export default function DeckClient({ initialDeck }) {
             ))}
           </div>
         )}
-                  {/* Outer container for 3D flip */}
-                  <div className="relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
-                    
-                    {/* ── FRONT OF CARD ── */}
-                    <div className="absolute inset-0 w-full h-full bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] shadow-xl overflow-hidden">
-                       <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest text-white/30">Front</span>
-                       {card.is_ai_generated && (
-                         <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full flex items-center gap-1"><Sparkles size={10}/> AI</span>
-                       )}
-                       {isDue && !card.is_ai_generated && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-rose-500" title="Due for review" />}
-                       
-                       <p className="text-white font-medium text-lg md:text-xl line-clamp-5">{card.front}</p>
-                       
-                       {card.note_id && (
-                         <Link href={`/dashboard/notes/${card.note_id}`} className="absolute bottom-4 left-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white/40 hover:text-indigo-400 transition-colors">
-                           <FileText size={12} /> Source Note
-                         </Link>
-                       )}
-                    </div>
-                    
-                    {/* ── BACK OF CARD ── */}
-                    <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] [transform:rotateY(180deg)] shadow-xl overflow-hidden">
-                       <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest text-indigo-300/50">Back (Answer)</span>
-                       
-                       <div className="absolute top-4 right-4 flex items-center gap-2">
-                         <button onClick={() => handleDeleteCard(card.id)} className="p-1.5 text-white/30 hover:text-rose-400 bg-black/20 hover:bg-rose-500/10 rounded-lg transition-colors z-10" title="Delete Card">
-                           <Trash2 size={14} />
-                         </button>
-                       </div>
-                       
-                       <p className="text-white/90 text-sm md:text-base whitespace-pre-wrap line-clamp-6">{card.back}</p>
-                    </div>
-                    
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+
       </div>
 
       {/* ── ADD CARD MODAL ────────────────────────────────── */}
