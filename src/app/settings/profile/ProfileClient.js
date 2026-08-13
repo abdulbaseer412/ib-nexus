@@ -62,7 +62,14 @@ export default function ProfileClient({ profile = {} }) {
           <div className="space-y-6">
             <div className="space-y-2">
               <label className="text-sm font-medium block">Avatar</label>
-              <AvatarPicker value={avatarUrl} onChange={setAvatarUrl} />
+              <AvatarPicker 
+                value={avatarUrl} 
+                onChange={setAvatarUrl} 
+                onConfirm={async () => {
+                  await updateSettingsAction({ avatar_url: avatarUrl });
+                  router.refresh();
+                }}
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Display Name</label>
