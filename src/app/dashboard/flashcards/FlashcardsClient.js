@@ -122,14 +122,7 @@ export default function FlashcardsClient({ initialDecks, initialStats, initialSm
           <h1 className="text-4xl md:text-5xl font-black text-white tracking-tight mb-2">Flashcards</h1>
           <p className="text-white/50 font-medium">Build durable recall across your IB subjects.</p>
         </div>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => setIsCreateOpen(true)}
-            className="btn bg-[var(--primary)] text-white hover:brightness-110"
-          >
-            <Plus size={16} /> Create Nexus Card
-          </button>
-        </div>
+
       </header>
       
       {/* ── AI KNOWLEDGE EXTRACTION ─────────────────────────────────── */}
