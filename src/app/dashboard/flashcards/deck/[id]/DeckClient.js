@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Play, Plus, Edit2, Trash2, Layers, Calendar, Activity, X, FileText } from "lucide-react";
+import { ArrowLeft, Play, Plus, Edit2, Trash2, Layers, Calendar, Activity, X, FileText, Sparkles } from "lucide-react";
 import { deleteDeckAction, deleteCardAction, createCardAction } from "../../actions";
 import { useRouter } from "next/navigation";
 
@@ -146,31 +146,44 @@ export default function DeckClient({ initialDeck }) {
             </button>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {deck.cards.map(card => {
               const isDue = new Date(card.next_review_at) <= new Date();
               return (
-                <div key={card.id} className="group flex flex-col md:flex-row bg-white/5 border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-colors">
-                  <div className="flex-1 p-5 border-b md:border-b-0 md:border-r border-white/5">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/30 block mb-2">Front</span>
-                    <p className="text-white font-medium whitespace-pre-wrap">{card.front}</p>
+                <div key={card.id} className="group relative h-72 w-full [perspective:1000px]">
+                  {/* Outer container for 3D flip */}
+                  <div className="relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
                     
-                    {card.note_id && (
-                      <Link href={`/dashboard/notes/${card.note_id}`} className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded hover:bg-indigo-500/20 transition-colors">
-                        <FileText size={12} /> Source Note
-                      </Link>
-                    )}
-                  </div>
-                  <div className="flex-1 p-5 relative">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/30 block mb-2">Back</span>
-                    <p className="text-white/80 whitespace-pre-wrap">{card.back}</p>
-                    
-                    <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {isDue && <span className="w-2 h-2 rounded-full bg-rose-500" title="Due for review" />}
-                      <button onClick={() => handleDeleteCard(card.id)} className="p-1.5 text-white/30 hover:text-rose-400 bg-black/20 hover:bg-rose-500/10 rounded-lg transition-colors">
-                        <Trash2 size={14} />
-                      </button>
+                    {/* ── FRONT OF CARD ── */}
+                    <div className="absolute inset-0 w-full h-full bg-white/5 border border-white/10 rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] shadow-xl overflow-hidden">
+                       <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest text-white/30">Front</span>
+                       {card.is_ai_generated && (
+                         <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full flex items-center gap-1"><Sparkles size={10}/> AI</span>
+                       )}
+                       {isDue && !card.is_ai_generated && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-rose-500" title="Due for review" />}
+                       
+                       <p className="text-white font-medium text-lg md:text-xl line-clamp-5">{card.front}</p>
+                       
+                       {card.note_id && (
+                         <Link href={`/dashboard/notes/${card.note_id}`} className="absolute bottom-4 left-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white/40 hover:text-indigo-400 transition-colors">
+                           <FileText size={12} /> Source Note
+                         </Link>
+                       )}
                     </div>
+                    
+                    {/* ── BACK OF CARD ── */}
+                    <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] [transform:rotateY(180deg)] shadow-xl overflow-hidden">
+                       <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest text-indigo-300/50">Back (Answer)</span>
+                       
+                       <div className="absolute top-4 right-4 flex items-center gap-2">
+                         <button onClick={() => handleDeleteCard(card.id)} className="p-1.5 text-white/30 hover:text-rose-400 bg-black/20 hover:bg-rose-500/10 rounded-lg transition-colors z-10" title="Delete Card">
+                           <Trash2 size={14} />
+                         </button>
+                       </div>
+                       
+                       <p className="text-white/90 text-sm md:text-base whitespace-pre-wrap line-clamp-6">{card.back}</p>
+                    </div>
+                    
                   </div>
                 </div>
               );
