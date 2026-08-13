@@ -27,7 +27,7 @@ export function CreateDeckModal({ onClose, onSuccess }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-md bg-[var(--background)] border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between p-6 border-b border-white/5">
-          <h2 className="text-xl font-bold text-white tracking-tight">Create Memory Nexus</h2>
+          <h2 className="text-xl font-bold text-white tracking-tight">Create Nexus Card</h2>
           <button 
             onClick={onClose}
             className="p-2 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors"
@@ -44,7 +44,7 @@ export function CreateDeckModal({ onClose, onSuccess }) {
           )}
           
           <div className="space-y-1.5">
-            <label className="text-sm font-semibold text-white/70">Nexus Title</label>
+            <label className="text-sm font-semibold text-white/70">Nexus Card Title</label>
             <input 
               name="title" 
               required 
@@ -85,7 +85,7 @@ export function CreateDeckModal({ onClose, onSuccess }) {
             <textarea 
               name="description" 
               rows={2}
-              placeholder="What is this Nexus about?"
+              placeholder="What is this Nexus Card about?"
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors resize-none custom-scrollbar"
             />
           </div>
@@ -96,7 +96,7 @@ export function CreateDeckModal({ onClose, onSuccess }) {
               disabled={isSubmitting}
               className="w-full h-12 flex items-center justify-center bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-xl transition-colors disabled:opacity-50"
             >
-              {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : "Create Nexus"}
+              {isSubmitting ? <Loader2 className="animate-spin" size={20} /> : "Create Nexus Card"}
             </button>
           </div>
         </form>

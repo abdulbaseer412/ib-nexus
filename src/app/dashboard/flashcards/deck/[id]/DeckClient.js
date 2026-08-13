@@ -100,7 +100,7 @@ export default function DeckClient({ initialDeck }) {
               href={`/dashboard/flashcards/review?deck=${deck.id}`}
               className={`btn ${deck.due_cards > 0 ? "bg-indigo-500 hover:bg-indigo-400" : "bg-indigo-500/50 hover:bg-indigo-500"} text-white`}
             >
-              <Play size={16} className={deck.due_cards > 0 ? "fill-white" : ""} /> Review {deck.due_cards > 0 ? `(${deck.due_cards} Due)` : "Nexus"}
+              <Play size={16} className={deck.due_cards > 0 ? "fill-white" : ""} /> Review {deck.due_cards > 0 ? `(${deck.due_cards} Due)` : "Nexus Card"}
             </Link>
           </div>
         </div>
@@ -128,19 +128,19 @@ export default function DeckClient({ initialDeck }) {
         </div>
         <div className="bg-white/5 border border-white/5 rounded-2xl p-5 flex flex-col justify-center items-start">
            <button onClick={handleDeleteDeck} disabled={isDeleting} className="text-rose-500 hover:text-rose-400 font-bold text-sm flex items-center gap-2 transition-colors">
-              <Trash2 size={16} /> Delete Nexus
+              <Trash2 size={16} /> Delete Nexus Card
            </button>
         </div>
       </div>
 
       {/* ── CARDS LIST ────────────────────────────────────── */}
       <div className="space-y-4">
-        <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase px-1">Cards in this Nexus</h3>
+        <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase px-1">Cards in this Nexus Card</h3>
         
         {deck.cards.length === 0 ? (
            <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center">
             <Layers className="mx-auto text-white/10 mb-4" size={48} />
-            <p className="text-white/60 mb-4 font-medium">This Nexus has no cards.</p>
+            <p className="text-white/60 mb-4 font-medium">This Nexus Card has no cards.</p>
             <button onClick={() => setIsAddOpen(true)} className="btn bg-white/10 text-white hover:bg-white/20 mx-auto">
               Add your first card
             </button>

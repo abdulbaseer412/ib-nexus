@@ -120,7 +120,7 @@ export async function generateFlashcardsFromNotesAction() {
     throw new Error("No notes found to analyze. Please write some notes first.");
   }
 
-  // 2. Create an AI Nexus Deck
+  // 2. Create an AI Nexus Card Deck
   const { data: deck, error: deckErr } = await supabase.from("ib_flashcard_decks").insert({
     user_id: user.id,
     title: "AI Extracted Knowledge",
@@ -128,7 +128,7 @@ export async function generateFlashcardsFromNotesAction() {
     subject: "Multi-Subject",
   }).select().single();
 
-  if (deckErr) throw new Error("Failed to create AI Nexus");
+  if (deckErr) throw new Error("Failed to create AI Nexus Card");
 
   // 3. Extract heuristic flashcards
   const generatedCards = [];

@@ -73,7 +73,7 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
             onClick={() => setIsCreateOpen(true)}
             className="btn bg-[var(--primary)] text-white hover:brightness-110"
           >
-            <Plus size={16} /> Create Memory Nexus
+            <Plus size={16} /> Create Nexus Card
           </button>
         </div>
       </header>
@@ -182,18 +182,18 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
         {/* ── RECENT NEXUSES ─────────────────────────────────── */}
         <div className="md:col-span-2 space-y-4">
           <div className="flex items-center justify-between px-1">
-            <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase">Your Nexuses</h3>
+            <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase">Your Nexus Cards</h3>
           </div>
           
           {decks.length === 0 ? (
             <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center">
               <Brain className="mx-auto text-white/10 mb-4" size={48} />
-              <p className="text-white/60 mb-4 font-medium">You haven't created any Memory Nexuses yet.</p>
+              <p className="text-white/60 mb-4 font-medium">You haven't created any Nexus Cards yet.</p>
               <button 
                 onClick={() => setIsCreateOpen(true)}
                 className="btn bg-white/10 text-white hover:bg-white/20"
               >
-                Create your first Nexus
+                Create your first Nexus Card
               </button>
             </div>
           ) : (
