@@ -61,13 +61,13 @@ export function CreateDeckModal({ onClose, onSuccess }) {
                 name="subject"
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
               >
-                <option value="">None</option>
-                <option value="Biology">Biology</option>
-                <option value="Chemistry">Chemistry</option>
-                <option value="Physics">Physics</option>
-                <option value="Mathematics">Mathematics</option>
-                <option value="Economics">Economics</option>
-                <option value="History">History</option>
+                <option className="bg-gray-900" value="">None</option>
+                <option className="bg-gray-900" value="Biology">Biology</option>
+                <option className="bg-gray-900" value="Chemistry">Chemistry</option>
+                <option className="bg-gray-900" value="Physics">Physics</option>
+                <option className="bg-gray-900" value="Mathematics">Mathematics</option>
+                <option className="bg-gray-900" value="Economics">Economics</option>
+                <option className="bg-gray-900" value="History">History</option>
               </select>
             </div>
             <div className="space-y-1.5">

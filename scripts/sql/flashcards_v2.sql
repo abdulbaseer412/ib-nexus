@@ -1,7 +1,11 @@
 -- Flashcards V2 Database Migration
 
+DROP TABLE IF EXISTS public.ib_flashcard_decks CASCADE;
+DROP TABLE IF EXISTS public.ib_flashcards CASCADE;
+DROP TABLE IF EXISTS public.ib_flashcard_reviews CASCADE;
+
 -- 1. Create Decks Table
-CREATE TABLE IF NOT EXISTS public.ib_flashcard_decks (
+CREATE TABLE public.ib_flashcard_decks (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   title text NOT NULL,
