@@ -132,26 +132,6 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
     }
   };
 
-  const handleGenerateFlashcards = async () => {
-    if (!editor) return;
-    setIsGenerating(true);
-    setFlashcardResult(null);
-    const textContent = editor.getText();
-    
-    const res = await generateFlashcards(note.id, textContent);
-    if (res.error) {
-      setFlashcardResult({ error: res.error });
-    } else {
-      setFlashcardResult({ success: true, count: res.count });
-      // If note has readiness, re-analyze to capture the new flashcards
-      if (note.revision_readiness > 0) {
-        analyzeNoteReadiness(note.id, textContent).then(analyzeRes => {
-          if (analyzeRes.success) setNote(prev => ({ ...prev, revision_readiness: analyzeRes.score }));
-        });
-      }
-    }
-    setIsGenerating(false);
-  };
 
   const handleAnalyzeReadiness = async () => {
     if (!editor) return;
