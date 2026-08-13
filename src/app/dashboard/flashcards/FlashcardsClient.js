@@ -381,7 +381,7 @@ export default function FlashcardsClient({ initialDecks, initialStats, initialSm
                 </Link>
               )})}
             </div>
-          )}
+          ))}
         </div>
 
         {/* ── WEAK AREAS ───────────────────────────────────── */}
