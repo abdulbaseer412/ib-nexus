@@ -247,56 +247,6 @@ export async function duplicateNote(id) {
   redirect(`/dashboard/notes/${newNote.id}`);
 }
 
-export async function generateFlashcards(noteId, textContent) {
-  // Extract simple flashcards as a fallback/mock logic.
-  // In production, this would call an AI service.
-  const supabase = await createServerClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) return { error: "Unauthorized" };
-
-  // Fetch note metadata
-  const { data: note } = await supabase
-    .from("ib_notes")
-    .select("subject, title")
-    .eq("id", noteId)
-    .single();
-
-  // Basic NLP mock: split by sentences and generate simple Q/A pairs.
-  const sentences = textContent.match(/[^.!?]+[.!?]+/g) || [];
-  const cards = [];
-  
-  for (let i = 0; i < sentences.length; i++) {
-    const sentence = sentences[i].trim();
-    if (sentence.length > 30) { // arbitrary threshold for meaningful sentences
-      cards.push({
-        user_id: user.id,
-        note_id: noteId,
-        subject: note?.subject || "General",
-        front: `What is the significance of: "${sentence.substring(0, Math.min(40, sentence.length))}..."?`,
-        back: sentence
-      });
-      if (cards.length >= 5) break; // Limit to 5 mock cards
-    }
-  }
-
-  if (cards.length === 0) {
-    return { error: "Not enough content to generate flashcards. Try writing more!" };
-  }
-
-  const { data, error } = await supabase
-    .from("ib_flashcards")
-    .insert(cards)
-    .select();
-
-  if (error) {
-    console.error("Error generating flashcards:", error);
-    return { error: error.message };
-  }
-
-  revalidatePath(`/dashboard/notes/${noteId}`);
-  return { success: true, count: cards.length };
-}
 
 export async function analyzeNoteReadiness(noteId, textContent) {
   const supabase = await createServerClient();

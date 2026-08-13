@@ -445,26 +445,22 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
       </aside>
 
       {/* Flashcards Modal */}
-      <Modal open={isFlashcardModalOpen} onClose={() => !isGenerating && setIsFlashcardModalOpen(false)} title="Generate Flashcards">
+      <Modal open={isFlashcardModalOpen} onClose={() => setIsFlashcardModalOpen(false)} title="Generate Flashcards">
         <div className="space-y-4">
-          <p className="text-sm text-secondary leading-relaxed">
-            Let AI extract key concepts from your note and transform them into active-recall flashcards. 
-            These will be connected directly to this note.
-          </p>
-          {flashcardResult && (
-            <div className={`p-4 rounded-xl border text-sm ${flashcardResult.error ? 'bg-danger/10 border-danger/20 text-danger' : 'bg-success/10 border-success/20 text-success'}`}>
-              {flashcardResult.error || `Successfully generated ${flashcardResult.count} flashcards!`}
-            </div>
-          )}
-          <div className="flex justify-end gap-3 pt-4 border-t border-divider">
-            <button onClick={() => setIsFlashcardModalOpen(false)} className="btn btn-secondary">
-              {flashcardResult?.success ? 'Close' : 'Cancel'}
+          <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex gap-3">
+             <Sparkles className="text-indigo-400 shrink-0 mt-0.5" size={20} />
+             <div>
+                <h4 className="text-sm font-bold text-indigo-400 mb-1">AI Generation (Coming Soon)</h4>
+                <p className="text-xs text-indigo-400/70 leading-relaxed">
+                  The AI Flashcard generator is currently being integrated with the new advanced Spaced Repetition engine. 
+                  Soon, you will be able to extract high-yield active recall questions directly from your notes.
+                </p>
+             </div>
+          </div>
+          <div className="flex justify-end pt-4 border-t border-divider">
+            <button onClick={() => setIsFlashcardModalOpen(false)} className="btn bg-white/10 hover:bg-white/20 text-white">
+              Close
             </button>
-            {!flashcardResult?.success && (
-              <Button onClick={handleGenerateFlashcards} disabled={isGenerating || !editor.getText().trim()} className="flex items-center gap-2">
-                {isGenerating ? "Generating..." : <><Sparkles size={16} /> Generate Now</>}
-              </Button>
-            )}
           </div>
         </div>
       </Modal>

@@ -1,0 +1,205 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { ArrowLeft, Play, Plus, Edit2, Trash2, Layers, Calendar, Activity, X, FileText } from "lucide-react";
+import { deleteDeckAction, deleteCardAction, createCardAction } from "../../actions";
+import { useRouter } from "next/navigation";
+
+export default function DeckClient({ initialDeck }) {
+  const router = useRouter();
+  const [deck, setDeck] = useState(initialDeck);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+
+  const handleDeleteDeck = async () => {
+    if (!confirm(`Are you sure you want to delete "${deck.title}"? All cards inside will be permanently deleted.`)) return;
+    setIsDeleting(true);
+    try {
+      await deleteDeckAction(deck.id);
+      router.push("/dashboard/flashcards");
+    } catch (e) {
+      alert("Failed to delete deck");
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteCard = async (cardId) => {
+    if (!confirm("Delete this flashcard?")) return;
+    try {
+      await deleteCardAction(cardId);
+      setDeck({
+        ...deck,
+        cards: deck.cards.filter(c => c.id !== cardId),
+        total_cards: deck.total_cards - 1,
+        // (re-calculating due/mastery perfectly would require full re-iteration, but a quick filter works for UI optimism)
+      });
+    } catch(e) {
+      alert("Failed to delete card");
+    }
+  };
+
+  // Add Card Modal logic
+  const handleAddCard = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    try {
+      const newCard = await createCardAction(deck.id, formData.get("front"), formData.get("back"));
+      setDeck({
+        ...deck,
+        cards: [newCard, ...deck.cards],
+        total_cards: deck.total_cards + 1
+      });
+      setIsAddOpen(false);
+    } catch (e) {
+      alert("Failed to add card");
+    }
+  };
+
+  return (
+    <div className="max-w-7xl mx-auto p-4 md:p-8 space-y-8 pb-32">
+      {/* ── HEADER ────────────────────────────────────────── */}
+      <header className="space-y-6">
+        <Link href="/dashboard/flashcards" className="inline-flex items-center text-sm font-bold text-white/50 hover:text-white transition-colors">
+          <ArrowLeft size={16} className="mr-2" /> Back to Flashcards
+        </Link>
+        
+        <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              {deck.subject && (
+                <span className="bg-indigo-500/10 text-indigo-400 text-xs font-bold px-2.5 py-1 rounded-full border border-indigo-500/20 uppercase tracking-wider">
+                  {deck.subject}
+                </span>
+              )}
+              {deck.topic && (
+                <span className="text-white/40 text-sm font-semibold">{deck.topic}</span>
+              )}
+            </div>
+            <h1 className="text-3xl md:text-5xl font-black text-white tracking-tight mb-4">{deck.title}</h1>
+            {deck.description && (
+              <p className="text-white/60 font-medium max-w-2xl">{deck.description}</p>
+            )}
+          </div>
+          
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button 
+              onClick={() => setIsAddOpen(true)}
+              className="btn bg-white/10 text-white hover:bg-white/20"
+            >
+              <Plus size={16} /> Add Card
+            </button>
+            <Link 
+              href={`/dashboard/flashcards/review?deck=${deck.id}`}
+              className={`btn ${deck.due_cards > 0 ? "bg-indigo-500 hover:bg-indigo-400" : "bg-indigo-500/50 hover:bg-indigo-500"} text-white`}
+            >
+              <Play size={16} className={deck.due_cards > 0 ? "fill-white" : ""} /> Review {deck.due_cards > 0 ? `(${deck.due_cards} Due)` : "Deck"}
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      {/* ── STATS ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white/5 border border-white/5 rounded-2xl p-5">
+          <div className="flex items-center gap-3 text-white/50 mb-2">
+            <Layers size={18} /> <span className="text-sm font-semibold">Total Cards</span>
+          </div>
+          <div className="text-2xl font-black text-white">{deck.total_cards}</div>
+        </div>
+        <div className="bg-white/5 border border-white/5 rounded-2xl p-5">
+          <div className="flex items-center gap-3 text-white/50 mb-2">
+            <Calendar size={18} className="text-rose-400" /> <span className="text-sm font-semibold">Due Today</span>
+          </div>
+          <div className="text-2xl font-black text-white">{deck.due_cards}</div>
+        </div>
+        <div className="bg-white/5 border border-white/5 rounded-2xl p-5">
+          <div className="flex items-center gap-3 text-white/50 mb-2">
+            <Activity size={18} className="text-emerald-400" /> <span className="text-sm font-semibold">Mastery</span>
+          </div>
+          <div className="text-2xl font-black text-white">{isNaN(deck.mastery_percentage) ? 0 : deck.mastery_percentage}%</div>
+        </div>
+        <div className="bg-white/5 border border-white/5 rounded-2xl p-5 flex flex-col justify-center items-start">
+           <button onClick={handleDeleteDeck} disabled={isDeleting} className="text-rose-500 hover:text-rose-400 font-bold text-sm flex items-center gap-2 transition-colors">
+              <Trash2 size={16} /> Delete Deck
+           </button>
+        </div>
+      </div>
+
+      {/* ── CARDS LIST ────────────────────────────────────── */}
+      <div className="space-y-4">
+        <h3 className="text-sm font-bold text-white/50 tracking-widest uppercase px-1">Cards in this Deck</h3>
+        
+        {deck.cards.length === 0 ? (
+           <div className="border border-dashed border-white/10 rounded-3xl p-12 text-center">
+            <Layers className="mx-auto text-white/10 mb-4" size={48} />
+            <p className="text-white/60 mb-4 font-medium">This deck has no cards.</p>
+            <button onClick={() => setIsAddOpen(true)} className="btn bg-white/10 text-white hover:bg-white/20 mx-auto">
+              Add your first card
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-4">
+            {deck.cards.map(card => {
+              const isDue = new Date(card.next_review_at) <= new Date();
+              return (
+                <div key={card.id} className="group flex flex-col md:flex-row bg-white/5 border border-white/5 rounded-2xl overflow-hidden hover:border-white/10 transition-colors">
+                  <div className="flex-1 p-5 border-b md:border-b-0 md:border-r border-white/5">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/30 block mb-2">Front</span>
+                    <p className="text-white font-medium whitespace-pre-wrap">{card.front}</p>
+                    
+                    {card.note_id && (
+                      <Link href={`/dashboard/notes/${card.note_id}`} className="inline-flex items-center gap-1.5 mt-3 text-xs font-semibold text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded hover:bg-indigo-500/20 transition-colors">
+                        <FileText size={12} /> Source Note
+                      </Link>
+                    )}
+                  </div>
+                  <div className="flex-1 p-5 relative">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/30 block mb-2">Back</span>
+                    <p className="text-white/80 whitespace-pre-wrap">{card.back}</p>
+                    
+                    <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      {isDue && <span className="w-2 h-2 rounded-full bg-rose-500" title="Due for review" />}
+                      <button onClick={() => handleDeleteCard(card.id)} className="p-1.5 text-white/30 hover:text-rose-400 bg-black/20 hover:bg-rose-500/10 rounded-lg transition-colors">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── ADD CARD MODAL ────────────────────────────────── */}
+      {isAddOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-lg bg-[var(--background)] border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-6 border-b border-white/5">
+              <h2 className="text-xl font-bold text-white tracking-tight">Add New Flashcard</h2>
+              <button onClick={() => setIsAddOpen(false)} className="p-2 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleAddCard} className="p-6 space-y-5">
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-white/70">Front (Question)</label>
+                <textarea name="front" required autoFocus rows={3} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors resize-none" placeholder="What is oxidative phosphorylation?" />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-white/70">Back (Answer)</label>
+                <textarea name="back" required rows={4} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors resize-none" placeholder="The process where ATP is formed as a result of the transfer of electrons from NADH or FADH2 to O2 by a series of electron carriers." />
+              </div>
+              <div className="pt-2">
+                <button type="submit" className="w-full h-12 flex items-center justify-center bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-xl transition-colors">
+                  Add Card
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
