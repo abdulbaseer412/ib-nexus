@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { generateFlashcardsFromNotesAction } from "./actions";
-import { Plus, BrainCircuit, Target, Flame, Activity, Brain, BookOpen, AlertCircle, Sparkles } from "lucide-react";
+import { generateFlashcardsFromNotesAction, toggleAIPreferenceAction } from "./actions";
+import { Plus, BrainCircuit, Target, Flame, Activity, Brain, BookOpen, AlertCircle, Sparkles, Check, Settings2 } from "lucide-react";
 import { CreateDeckModal } from "./components/CreateDeckModal";
 
 export default function FlashcardsClient({ initialDecks, initialStats, dbError }) {
@@ -12,6 +12,8 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState(null);
+  const [aiEnabled, setAiEnabled] = useState(initialStats?.aiEnabled || false);
+  const [isTogglingAI, setIsTogglingAI] = useState(false);
 
   // Compute weak areas from existing decks for display
   const weakDecks = [...decks]
@@ -34,6 +36,19 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
       setGenerateError(err.message);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleToggleAI = async () => {
+    try {
+      setIsTogglingAI(true);
+      const newState = !aiEnabled;
+      await toggleAIPreferenceAction(newState);
+      setAiEnabled(newState);
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setIsTogglingAI(false);
     }
   };
 
@@ -79,28 +94,50 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
       </header>
       
       {/* ── AI KNOWLEDGE EXTRACTION ─────────────────────────────────── */}
-      <section className="bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-3xl p-6 mb-8 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <section className={`border rounded-3xl p-6 mb-8 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6 transition-all duration-500 ${aiEnabled ? 'bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border-indigo-500/20' : 'bg-white/5 border-white/10'}`}>
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
           <Brain size={120} />
         </div>
+        
         <div className="relative z-10 max-w-2xl">
           <div className="flex items-center gap-2 mb-2">
-             <Sparkles className="text-indigo-400" size={20} />
+             <Sparkles className={aiEnabled ? "text-indigo-400" : "text-white/40"} size={20} />
              <h2 className="text-lg font-bold text-white tracking-tight">AI Knowledge Extraction</h2>
           </div>
-          <p className="text-white/70 text-sm leading-relaxed mb-1">
-            Let the Nexus AI scan through all your notes and automatically extract high-yield active recall cards. 
-            AI-generated cards are marked with high priority and appear first in your review queues.
-          </p>
+          
+          {aiEnabled ? (
+            <p className="text-white/70 text-sm leading-relaxed mb-1">
+              Nexus AI is actively monitoring your notes. Click the button below to extract high-yield active recall cards. 
+              AI-generated cards are marked with high priority and appear first in your review queues.
+            </p>
+          ) : (
+            <p className="text-white/50 text-sm leading-relaxed mb-1">
+              Unlock seamless AI integration. Allow the Nexus AI to read your notes and generate beautifully formatted flashcards automatically. Turn this on to supercharge your active recall workflow.
+            </p>
+          )}
+          
           {generateError && <p className="text-rose-400 text-xs font-bold mt-2">{generateError}</p>}
         </div>
-        <button 
-          onClick={handleGenerateAI}
-          disabled={isGenerating}
-          className="relative z-10 btn bg-indigo-500 hover:bg-indigo-400 text-white font-bold shrink-0 shadow-lg shadow-indigo-500/20 disabled:opacity-50"
-        >
-          {isGenerating ? "Extracting..." : "Scan Notes & Extract"}
-        </button>
+        
+        <div className="relative z-10 flex flex-col sm:flex-row items-center gap-4 shrink-0">
+          <button 
+            onClick={handleToggleAI}
+            disabled={isTogglingAI}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${aiEnabled ? 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30' : 'bg-white/10 text-white/70 hover:bg-white/20 border border-white/10'}`}
+          >
+            {aiEnabled ? <><Check size={16}/> AI Allowed</> : <><Settings2 size={16}/> Allow AI</>}
+          </button>
+          
+          {aiEnabled && (
+            <button 
+              onClick={handleGenerateAI}
+              disabled={isGenerating}
+              className="btn bg-indigo-500 hover:bg-indigo-400 text-white font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 animate-in fade-in zoom-in duration-300"
+            >
+              {isGenerating ? "Scanning..." : "Scan Notes & Extract"}
+            </button>
+          )}
+        </div>
       </section>
 
       {/* ── SMART REVIEW CTA ──────────────────────────────── */}
@@ -165,7 +202,7 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
               <Flame size={18} className="text-orange-400" />
               <span className="text-sm font-semibold">Streak</span>
             </div>
-            <div className="text-3xl font-black text-white">0 <span className="text-sm font-medium text-white/30">days</span></div>
+            <div className="text-3xl font-black text-white">{stats.streak || 0}</div>
           </div>
           
           <div className="bg-white/5 border border-white/5 rounded-2xl p-5">

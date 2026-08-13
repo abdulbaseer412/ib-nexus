@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Play, Plus, Edit2, Trash2, Layers, Calendar, Activity, X, FileText, Sparkles } from "lucide-react";
-import { deleteDeckAction, deleteCardAction, createCardAction } from "../../actions";
+import { deleteDeckAction, deleteCardAction, createCardAction, updateCardStatusAction } from "../../actions";
 import { useRouter } from "next/navigation";
 
 export default function DeckClient({ initialDeck }) {
@@ -147,10 +147,11 @@ export default function DeckClient({ initialDeck }) {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {deck.cards.map(card => {
-              const isDue = new Date(card.next_review_at) <= new Date();
-              return (
-                <div key={card.id} className="group relative h-72 w-full [perspective:1000px]">
+            {deck.cards.map(card => (
+              <CardItem key={card.id} card={card} deckId={deck.id} handleDeleteCard={handleDeleteCard} />
+            ))}
+          </div>
+        )}
                   {/* Outer container for 3D flip */}
                   <div className="relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
                     
@@ -230,6 +231,87 @@ export default function DeckClient({ initialDeck }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function CardItem({ card: initialCard, handleDeleteCard }) {
+  const [card, setCard] = useState(initialCard);
+  const isDue = new Date(card.next_review_at) <= new Date();
+
+  const handleCardClick = async (e) => {
+    // Determine click count
+    if (e.detail === 2) {
+      // Double click -> Read
+      try {
+        setCard({ ...card, status: "Read" });
+        await updateCardStatusAction(card.id, "Read");
+      } catch(err) {
+        setCard(initialCard); // revert
+      }
+    } else if (e.detail === 3) {
+      // Triple click -> Mastered
+      try {
+        setCard({ ...card, status: "Mastered" });
+        await updateCardStatusAction(card.id, "Mastered");
+      } catch(err) {
+        setCard(initialCard); // revert
+      }
+    }
+  };
+
+  // Determine dynamic styling based on status
+  let frontTheme = "bg-white/5 border-white/10";
+  let backTheme = "bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20";
+  let badgeLabel = null;
+
+  if (card.status === "Read") {
+    frontTheme = "bg-emerald-500/5 border-emerald-500/20";
+    backTheme = "bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border-emerald-500/30";
+    badgeLabel = <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest text-emerald-400">Read</span>;
+  } else if (card.status === "Mastered") {
+    frontTheme = "bg-amber-500/5 border-amber-500/20";
+    backTheme = "bg-gradient-to-br from-amber-500/10 to-yellow-500/10 border-amber-500/30";
+    badgeLabel = <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest text-amber-400 flex items-center gap-1"><Activity size={10}/> Mastered</span>;
+  } else {
+    badgeLabel = <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest text-white/30">Front</span>;
+  }
+
+  return (
+    <div className="group relative h-72 w-full [perspective:1000px] cursor-pointer" onClick={handleCardClick} title="Double-click to mark as Read. Triple-click to mark as Mastered.">
+      <div className="relative w-full h-full transition-all duration-500 [transform-style:preserve-3d] group-hover:[transform:rotateY(180deg)]">
+        
+        {/* ── FRONT ── */}
+        <div className={`absolute inset-0 w-full h-full ${frontTheme} border rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] shadow-xl overflow-hidden transition-colors duration-500`}>
+           {badgeLabel}
+           {card.is_ai_generated && (
+             <span className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full flex items-center gap-1"><Sparkles size={10}/> AI</span>
+           )}
+           {isDue && !card.is_ai_generated && <span className="absolute top-4 right-4 w-2 h-2 rounded-full bg-rose-500" title="Due for review" />}
+           
+           <p className="text-white font-medium text-lg md:text-xl line-clamp-5">{card.front}</p>
+           
+           {card.note_id && (
+             <Link href={`/dashboard/notes/${card.note_id}`} className="absolute bottom-4 left-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white/40 hover:text-indigo-400 transition-colors z-20" onClick={e => e.stopPropagation()}>
+               <FileText size={12} /> Source Note
+             </Link>
+           )}
+        </div>
+        
+        {/* ── BACK ── */}
+        <div className={`absolute inset-0 w-full h-full ${backTheme} border rounded-3xl p-6 flex flex-col justify-center items-center text-center [backface-visibility:hidden] [transform:rotateY(180deg)] shadow-xl overflow-hidden transition-colors duration-500`}>
+           <span className="absolute top-4 left-4 text-[10px] font-bold uppercase tracking-widest opacity-50">Back (Answer)</span>
+           
+           <div className="absolute top-4 right-4 flex items-center gap-2">
+             <button onClick={(e) => { e.stopPropagation(); handleDeleteCard(card.id); }} className="p-1.5 text-white/30 hover:text-rose-400 bg-black/20 hover:bg-rose-500/10 rounded-lg transition-colors z-20" title="Delete Card">
+               <Trash2 size={14} />
+             </button>
+           </div>
+           
+           <p className="text-white/90 text-sm md:text-base whitespace-pre-wrap line-clamp-6">{card.back}</p>
+        </div>
+        
+      </div>
     </div>
   );
 }

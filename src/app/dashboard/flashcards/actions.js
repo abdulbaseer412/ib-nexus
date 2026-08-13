@@ -171,3 +171,42 @@ export async function generateFlashcardsFromNotesAction() {
   revalidatePath("/dashboard/flashcards");
   return { success: true, count: generatedCards.length, deckId: deck.id };
 }
+
+export async function updateCardStatusAction(cardId, status) {
+  const user = await getAuthUser();
+  const supabase = await createServerClient();
+
+  const { data, error } = await supabase.from("ib_flashcards")
+    .update({ status })
+    .eq("id", cardId)
+    .eq("user_id", user.id)
+    .select()
+    .single();
+
+  if (error) throw new Error("Failed to update card status");
+  
+  // Call streak engine since they interacted with a card
+  const { recordActivityAndStreak } = await import("@/lib/flashcards-service");
+  await recordActivityAndStreak(user.id, supabase);
+
+  revalidatePath("/dashboard/flashcards");
+  return data;
+}
+
+export async function toggleAIPreferenceAction(enabled) {
+  const user = await getAuthUser();
+  const supabase = await createServerClient();
+
+  const { data, error } = await supabase.from("ib_flashcard_profiles")
+    .upsert({ 
+      user_id: user.id, 
+      ai_generation_enabled: enabled,
+      updated_at: new Date().toISOString()
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error("Failed to update AI preference");
+  revalidatePath("/dashboard/flashcards");
+  return data;
+}

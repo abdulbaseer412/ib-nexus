@@ -232,6 +232,9 @@ export async function submitCardReview(cardId, rating, durationMs = 0) {
       .eq('id', card.deck_id);
   }
 
+  // 6. Record Activity / Streak
+  await recordActivityAndStreak(user.id, supabase);
+
   return { success: true, result: reviewResult };
 }
 
@@ -256,24 +259,93 @@ export async function getFlashcardStats() {
     if (c.repetitions > 4 && c.ease_factor >= 2.5) mastered++;
   });
 
-  // Calculate retention from reviews
+  // Calculate True Retention based on 30-day trailing reviews
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
   const { data: reviews } = await supabase
     .from('ib_flashcard_reviews')
-    .select('rating')
+    .select('rating, reviewed_at')
     .eq('user_id', user.id)
-    .limit(100)
+    .gte('reviewed_at', thirtyDaysAgo.toISOString())
     .order('reviewed_at', { ascending: false });
 
   let retention = 0;
   if (reviews && reviews.length > 0) {
-    const successReviews = reviews.filter(r => ['hard', 'good', 'easy'].includes(r.rating)).length;
-    retention = Math.round((successReviews / reviews.length) * 100);
+    // Weigh recent reviews slightly higher by looking at the last 50 vs all 30 days, 
+    // but for simplicity, True Retention = (Passed / Total)
+    const passedReviews = reviews.filter(r => ['hard', 'good', 'easy'].includes(r.rating)).length;
+    retention = Math.round((passedReviews / reviews.length) * 100);
   }
+
+  // Also fetch the current streak to return it for the UI
+  const { data: profile } = await supabase
+    .from('ib_flashcard_profiles')
+    .select('current_streak, ai_generation_enabled')
+    .eq('user_id', user.id)
+    .single();
 
   return {
     total: cards.length,
     due,
     mastered,
-    retention
+    retention,
+    streak: profile?.current_streak || 0,
+    aiEnabled: profile?.ai_generation_enabled || false
   };
+}
+
+export async function recordActivityAndStreak(userId, supabaseClient) {
+  // Try to fetch current profile
+  const { data: profile, error: fetchErr } = await supabaseClient
+    .from('ib_flashcard_profiles')
+    .select('current_streak, best_streak, last_active_date')
+    .eq('user_id', userId)
+    .single();
+
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  if (!profile) {
+    // First time activity
+    await supabaseClient.from('ib_flashcard_profiles').insert({
+      user_id: userId,
+      current_streak: 1,
+      best_streak: 1,
+      last_active_date: todayStr
+    });
+    return;
+  }
+
+  if (profile.last_active_date === todayStr) {
+    // Already active today, do nothing
+    return;
+  }
+
+  const lastActive = new Date(profile.last_active_date);
+  // Calculate difference in days
+  // Use UTC to avoid timezone midnight shift issues
+  const diffTime = Math.abs(today.getTime() - lastActive.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  let newStreak = profile.current_streak;
+
+  if (diffDays <= 2) {
+    // Increment streak (1 day gap or next day)
+    newStreak += 1;
+  } else {
+    // Reset streak
+    newStreak = 1;
+  }
+
+  const bestStreak = Math.max(newStreak, profile.best_streak || 0);
+
+  await supabaseClient.from('ib_flashcard_profiles')
+    .update({
+      current_streak: newStreak,
+      best_streak: bestStreak,
+      last_active_date: todayStr,
+      updated_at: new Date().toISOString()
+    })
+    .eq('user_id', userId);
 }
