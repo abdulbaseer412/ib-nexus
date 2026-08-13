@@ -87,7 +87,7 @@ export async function createNote(formData) {
   }
 
   revalidatePath("/dashboard/notes");
-  redirect(`/dashboard/notes/${data.id}`);
+  return { success: true, data };
 }
 
 export async function createFolder(title, subject, parentId = null, examImportance = "Mid-Level") {

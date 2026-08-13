@@ -131,10 +131,14 @@ export default function NotesClient({ initialNotes }) {
       formData.append("parent_id", currentFolderId);
     }
     try {
-      await createNote(formData);
-      setIsCreating(false);
+      const res = await createNote(formData);
+      if (res && res.success) {
+        setNotes(prev => [res.data, ...prev]);
+        setIsCreating(false);
+      }
     } catch (e) {
       console.error(e);
+    } finally {
       setLoading(false);
     }
   }
