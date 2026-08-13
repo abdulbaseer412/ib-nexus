@@ -33,7 +33,7 @@ export async function fetchFlashcardStatsAction() {
 
 export async function createDeckAction(formData) {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   const title = formData.get("title");
   const subject = formData.get("subject");
@@ -59,7 +59,7 @@ export async function createDeckAction(formData) {
 
 export async function deleteDeckAction(deckId) {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   const { error } = await supabase.from("ib_flashcard_decks")
     .delete()
@@ -74,7 +74,7 @@ export async function deleteDeckAction(deckId) {
 
 export async function createCardAction(deckId, front, back, sourceNoteId = null) {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   const { data, error } = await supabase.from("ib_flashcards").insert({
     user_id: user.id,
@@ -92,7 +92,7 @@ export async function createCardAction(deckId, front, back, sourceNoteId = null)
 
 export async function deleteCardAction(cardId) {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   const { error } = await supabase.from("ib_flashcards")
     .delete()

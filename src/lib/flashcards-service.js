@@ -73,7 +73,7 @@ export function calculateNextReview(rating, card) {
 // Get all decks for the user with counts
 export async function getDecks() {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   const { data: decks, error } = await supabase
     .from('ib_flashcard_decks')
@@ -107,7 +107,7 @@ export async function getDecks() {
 
 export async function getDeckDetails(deckId) {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   const { data: deck, error } = await supabase
     .from('ib_flashcard_decks')
@@ -150,7 +150,7 @@ export async function getDeckDetails(deckId) {
 // Generate smart review session
 export async function generateSmartReviewSession() {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const now = new Date().toISOString();
 
   // 1. Get due cards across all decks
@@ -168,7 +168,7 @@ export async function generateSmartReviewSession() {
 
 export async function getDeckReviewSession(deckId) {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const now = new Date().toISOString();
 
   const { data: cards } = await supabase
@@ -185,7 +185,7 @@ export async function getDeckReviewSession(deckId) {
 // Perform a review
 export async function submitCardReview(cardId, rating, durationMs = 0) {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
 
   // 1. Fetch current card
   const { data: card, error: fetchErr } = await supabase
@@ -236,7 +236,7 @@ export async function submitCardReview(cardId, rating, durationMs = 0) {
 // General Stats
 export async function getFlashcardStats() {
   const user = await getAuthUser();
-  const supabase = createServerClient();
+  const supabase = await createServerClient();
   const now = new Date();
 
   const { data: cards } = await supabase

@@ -13,7 +13,7 @@ export default async function FlashcardsPage() {
   // Try fetching data, catch missing table errors smoothly (since we rely on a manual SQL migration)
   let decks = [];
   let stats = { total: 0, due: 0, mastered: 0, retention: 0 };
-  let dbError = false;
+  let dbError = null;
 
   try {
     const [fetchedDecks, fetchedStats] = await Promise.all([
@@ -24,7 +24,7 @@ export default async function FlashcardsPage() {
     stats = fetchedStats;
   } catch (error) {
     console.error("Flashcards page DB error (migration likely missing):", error);
-    dbError = true;
+    dbError = error.message || String(error);
   }
 
   return (

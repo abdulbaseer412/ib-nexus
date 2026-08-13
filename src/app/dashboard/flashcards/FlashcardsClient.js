@@ -34,7 +34,8 @@ export default function FlashcardsClient({ initialDecks, initialStats, dbError }
           <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-left font-mono text-xs text-white/80 overflow-x-auto">
             1. Go to Supabase SQL Editor<br/>
             2. Run the script located at:<br/>
-            <span className="text-indigo-400">scripts/sql/flashcards_v2.sql</span>
+            <span className="text-indigo-400">scripts/sql/flashcards_v2.sql</span><br/><br/>
+            <span className="text-rose-400 font-bold">Error Details:</span> {dbError}
           </div>
         </div>
       </div>
