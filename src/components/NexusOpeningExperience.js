@@ -152,7 +152,7 @@ export default function NexusOpeningExperience() {
             </motion.div>
           )}
 
-          {/* STAGE 3: Minimal Locked IB Nexus Screen (Appears after 3D animation ends) */}
+          {/* STAGE 3: User-Friendly Locked IB Nexus Screen */}
           {animationStage === 3 && (
             <motion.div
               key={`locked-stage-${replayCount}`}
@@ -186,7 +186,7 @@ export default function NexusOpeningExperience() {
                 </div>
               </div>
 
-              {/* Minimal Locked Presentation Card */}
+              {/* User-Friendly Locked Presentation Card */}
               <div className="w-full p-6 sm:p-8 rounded-3xl bg-slate-900/60 border border-white/10 backdrop-blur-2xl shadow-2xl space-y-5 text-left relative overflow-hidden">
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-indigo-500 to-cyan-500" />
                 
@@ -195,13 +195,13 @@ export default function NexusOpeningExperience() {
                     <Lock size={12} />
                     <span>Workspace Temporarily Locked</span>
                   </div>
-                  <span className="text-[10px] font-mono text-slate-500 uppercase">System Preservation Mode</span>
+                  <span className="text-[10px] font-mono text-slate-500 uppercase">Scheduled Upgrade</span>
                 </div>
 
                 <div className="space-y-2">
                   <h2 className="text-lg font-bold text-white">Welcome to IB Nexus</h2>
                   <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
-                    The active application entry points have been temporarily disabled. All core features, database structures, user profiles, authentication, and academic resources remain 100% preserved and secure.
+                    We are currently performing a scheduled update to enhance the IB Nexus Academic Workspace. All user accounts, study materials, notes, and academic tools remain completely safe and will be accessible soon.
                   </p>
                 </div>
 
@@ -209,16 +209,16 @@ export default function NexusOpeningExperience() {
                 <div className="grid grid-cols-2 gap-2.5 pt-2">
                   <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2.5 text-xs text-slate-300">
                     <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Code & Data Preserved</span>
+                    <span>Data & Progress Safe</span>
                   </div>
                   <div className="p-3 rounded-xl bg-white/[0.03] border border-white/5 flex items-center gap-2.5 text-xs text-slate-300">
                     <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                    <span>Modular Feature Locks</span>
+                    <span>Upgrades In Progress</span>
                   </div>
                 </div>
 
                 <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-slate-400">
-                  <span>IB Nexus Architecture</span>
+                  <span>IB Academic Hub</span>
                   <button
                     type="button"
                     onClick={replayAnimation}
@@ -230,7 +230,7 @@ export default function NexusOpeningExperience() {
               </div>
 
               <p className="text-[11px] text-slate-500 font-mono">
-                © IB Nexus — All feature modules safely stored & ready for restoration.
+                © IB Nexus — Building the ultimate study platform for IB students.
               </p>
             </motion.div>
           )}
