@@ -2,9 +2,18 @@ import Link from "next/link";
 import { getAuthSession } from "@/lib/auth";
 import { getDisplayName, isOnboardingComplete } from "@/lib/profile";
 import LandingPage from "@/components/LandingPage";
+import NexusOpeningExperience from "@/components/NexusOpeningExperience";
+import { IS_APPLICATION_LOCKED } from "@/lib/constants";
 
 export default async function Home() {
+  if (IS_APPLICATION_LOCKED) {
+    return <NexusOpeningExperience />;
+  }
+
+  // TEMPORARILY LOCKED - Original landing/home implementation preserved below.
+  // Restore when feature is explicitly unlocked.
   const { user, profile } = await getAuthSession();
+
   const displayName = getDisplayName(user, profile);
   const onboardingComplete = isOnboardingComplete(profile);
 
