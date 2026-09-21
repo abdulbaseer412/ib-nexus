@@ -1,0 +1,467 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { generateFlashcardsFromNotesAction, toggleAIPreferenceAction, bulkDeleteDecksAction } from "./actions";
+import { Plus, BrainCircuit, Target, Flame, Activity, Brain, BookOpen, AlertCircle, Sparkles, Check, Settings2, Trash2, CheckSquare, Square } from "lucide-react";
+import { CreateDeckModal } from "./components/CreateDeckModal";
+import { getSubjectTextClass } from "@/lib/subject-colors";
+
+export default function FlashcardsClient({ initialDecks, initialStats, initialSmartQueue, dbError }) {
+  const router = useRouter();
+  const [decks, setDecks] = useState(initialDecks || []);
+  const [smartQueue, setSmartQueue] = useState(initialSmartQueue || []);
+  const [stats, setStats] = useState(initialStats || { total: 0, due: 0, mastered: 0, retention: 0 });
+  const [activeTab, setActiveTab] = useState("manual"); // "manual", "ai", "queue"
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState(null);
+  const [aiEnabled, setAiEnabled] = useState(initialStats?.aiEnabled || false);
+  const [isTogglingAI, setIsTogglingAI] = useState(false);
+  
+  // Bulk Selection
+  const [selectedDeckIds, setSelectedDeckIds] = useState([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  // Categorize Decks (Fallback to checking title for '[AI]' if column is missing)
+const manualDecks = decks.filter(d => d.origin === "manual" || (!d.origin && !d.title.startsWith("[AI]")));
+const aiDecks = decks.filter(d => d.origin && d.origin.startsWith("ai") || (!d.origin && d.title.startsWith("[AI]")));
+const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
+
+  // Compute weak areas from existing decks for display
+  const weakDecks = [...decks]
+    .filter(d => d.due_cards > 0)
+    .sort((a, b) => b.due_cards - a.due_cards)
+    .slice(0, 3);
+
+  // Safely handle NaN if stats are somehow broken (e.g., retention calculation on 0 reviews)
+  const safeRetention = isNaN(stats.retention) || stats.retention === null ? "—" : `${stats.retention}%`;
+
+  const handleGenerateAI = async () => {
+    setIsGenerating(true);
+    setGenerateError(null);
+    try {
+      const res = await generateFlashcardsFromNotesAction();
+      if (res.success) {
+        router.refresh();
+      }
+    } catch (err) {
+      setGenerateError(err.message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleToggleAI = async () => {
+    try {
+      setIsTogglingAI(true);
+      const newState = !aiEnabled;
+      await toggleAIPreferenceAction(newState);
+      setAiEnabled(newState);
+    } catch(err) {
+      console.error(err);
+    } finally {
+      setIsTogglingAI(false);
+    }
+  };
+
+  // --- Bulk Actions ---
+  const toggleSelection = (id) => {
+    setSelectedDeckIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const selectAll = () => {
+    if (selectedDeckIds.length === displayDecks.length) {
+      setSelectedDeckIds([]); // Deselect all
+    } else {
+      setSelectedDeckIds(displayDecks.map(d => d.id));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirm(`Are you sure you want to permanently delete ${selectedDeckIds.length} Nexus Cards and all their contents?`)) return;
+    setIsBulkDeleting(true);
+    try {
+      await bulkDeleteDecksAction(selectedDeckIds);
+      setDecks(prev => prev.filter(d => !selectedDeckIds.includes(d.id)));
+      setSelectedDeckIds([]);
+    } catch(err) {
+      console.error(err);
+      alert("Failed to delete selected Nexus Cards.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  if (dbError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] p-8 text-center space-y-6">
+        <div className="w-20 h-20 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20">
+          <AlertCircle size={32} className="text-rose-500" />
+        </div>
+        <div className="max-w-md">
+          <h2 className="text-2xl font-black text-[var(--foreground)] tracking-tight mb-2">Database Initialization Required</h2>
+          <p className="text-muted mb-6 text-[15px] leading-relaxed">
+            The advanced Spaced Repetition engine has been implemented, but your Supabase database needs the new tables. 
+            Please run the SQL migration script.
+          </p>
+          <div className="bg-surface border border-subtle rounded-xl p-4 text-left font-mono text-xs text-muted overflow-x-auto">
+            1. Go to Supabase SQL Editor<br/>
+            2. Run the script located at:<br/>
+            <span className="text-indigo-400">scripts/sql/flashcards_v2.sql</span><br/><br/>
+            <span className="text-rose-400 font-bold">Error Details:</span> {dbError}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-[calc(100vh-72px)] p-6 sm:p-10 max-w-7xl mx-auto space-y-8">
+      {/* ── HEADER ────────────────────────────────────────── */}
+      <header className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-[var(--border)] pb-8">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] text-[10px] font-bold tracking-[0.2em] uppercase mb-3">
+            <Brain className="w-3.5 h-3.5" />
+            <span>IB Nexus Flashcards</span>
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl text-[var(--foreground)]">Flashcards</h1>
+          <p className="mt-2 text-[14px] text-secondary max-w-xl">Build durable recall across your IB subjects with spaced repetition.</p>
+        </div>
+      </header>
+      
+      {/* ── AI KNOWLEDGE EXTRACTION ─────────────────────────────────── */}
+      <section className={`border rounded-3xl p-6 mb-8 relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6 transition-all duration-500 ${aiEnabled ? 'bg-gradient-to-r from-indigo-500/10 to-purple-500/10 border-indigo-500/20' : 'bg-surface border-subtle'}`}>
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <Brain size={120} />
+        </div>
+        
+        <div className="relative z-10 max-w-2xl">
+          <div className="flex items-center gap-2 mb-2">
+             <Sparkles className={aiEnabled ? "text-indigo-400" : "text-muted"} size={20} />
+             <h2 className="text-lg font-bold text-[var(--foreground)] tracking-tight">AI Knowledge Extraction</h2>
+          </div>
+          
+          {aiEnabled ? (
+            <p className="text-muted text-sm leading-relaxed mb-1">
+              Nexus AI is actively monitoring your notes. Click the button below to extract high-yield active recall cards. 
+              AI-generated cards are marked with high priority and appear first in your review queues.
+            </p>
+          ) : (
+            <p className="text-muted text-sm leading-relaxed mb-1">
+              Unlock seamless AI integration. Allow the Nexus AI to read your notes and generate beautifully formatted flashcards automatically. Turn this on to supercharge your active recall workflow.
+            </p>
+          )}
+          
+          {generateError && <p className="text-rose-400 text-xs font-bold mt-2">{generateError}</p>}
+        </div>
+        
+        <div className="relative z-10 flex flex-col sm:flex-row items-center gap-4 shrink-0">
+          <button 
+            onClick={handleToggleAI}
+            disabled={isTogglingAI}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${aiEnabled ? 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30' : 'bg-hover text-muted hover:bg-hover border border-subtle'}`}
+          >
+            {aiEnabled ? <><Check size={16}/> AI Allowed</> : <><Settings2 size={16}/> Allow AI</>}
+          </button>
+          
+          {aiEnabled && (
+            <button 
+              onClick={handleGenerateAI}
+              disabled={isGenerating}
+              className="btn bg-indigo-500 hover:bg-indigo-400 text-white font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 animate-in fade-in zoom-in duration-300"
+            >
+              {isGenerating ? "Scanning..." : "Scan Notes & Extract"}
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* ── SMART REVIEW CTA ──────────────────────────────── */}
+      <section className="relative overflow-hidden rounded-3xl border border-subtle bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent p-8 md:p-10">
+        <div className="absolute top-0 right-0 p-8 opacity-20 pointer-events-none">
+          <BrainCircuit size={160} strokeWidth={1} className="text-indigo-400" />
+        </div>
+        
+        <div className="relative z-10 max-w-xl">
+          <div className="flex items-center gap-2 text-indigo-400 font-bold tracking-widest text-xs uppercase mb-4">
+            <Sparkles size={14} /> Today's Review
+          </div>
+          <h2 className="text-3xl font-black text-[var(--foreground)] mb-2">
+            {stats.due > 0 ? `${stats.due} cards due` : "You're all caught up!"}
+          </h2>
+          <p className="text-muted mb-8 font-medium">
+            {stats.due > 0 
+              ? `Estimated time: ~${Math.ceil(stats.due * 0.7)} minutes. Focus on your weakest topics first.` 
+              : "No mandatory reviews scheduled right now. You can create new cards or do an early review."}
+          </p>
+          
+          {stats.due > 0 ? (
+            <Link 
+              href="/dashboard/flashcards/review?mode=smart"
+              className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-full bg-indigo-500 text-primary_PROTECTED font-bold hover:bg-indigo-400 transition-colors shadow-[0_0_20px_rgba(99,102,241,0.3)]"
+            >
+              Start Smart Review
+            </Link>
+          ) : (
+            <button 
+              disabled
+              className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-full bg-surface text-muted font-bold border border-subtle"
+            >
+              Start Smart Review
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* ── PROGRESS & STATS ──────────────────────────────── */}
+      <section>
+        <h3 className="text-sm font-bold text-muted tracking-widest uppercase mb-4 px-1">Your Progress</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="bg-surface border border-subtle rounded-2xl p-5">
+            <div className="flex items-center gap-3 text-muted mb-2">
+              <Target size={18} className="text-emerald-400" />
+              <span className="text-sm font-semibold">Mastered</span>
+            </div>
+            <div className="text-3xl font-black text-primary">{stats.mastered}</div>
+          </div>
+          
+          <div className="bg-surface border border-subtle rounded-2xl p-5">
+            <div className="flex items-center gap-3 text-muted mb-2">
+              <Activity size={18} className="text-blue-400" />
+              <span className="text-sm font-semibold">Retention</span>
+            </div>
+            <div className="text-3xl font-black text-primary">{safeRetention}</div>
+          </div>
+          
+          <div className="bg-surface border border-subtle rounded-2xl p-5">
+            <div className="flex items-center gap-3 text-muted mb-2">
+              <Flame size={18} className="text-orange-400" />
+              <span className="text-sm font-semibold">Streak</span>
+            </div>
+            <div className="text-3xl font-black text-primary">{stats.streak || 0}</div>
+          </div>
+          
+          <div className="bg-surface border border-subtle rounded-2xl p-5">
+            <div className="flex items-center gap-3 text-muted mb-2">
+              <BookOpen size={18} className="text-purple-400" />
+              <span className="text-sm font-semibold">Total Cards</span>
+            </div>
+            <div className="text-3xl font-black text-primary">{stats.total}</div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid md:grid-cols-3 gap-8">
+        {/* ── MAIN CONTENT AREA ─────────────────────────────────── */}
+        <div className="md:col-span-2 space-y-4">
+          {/* ── TABS ─────────────────────────────────── */}
+          <div className="flex flex-wrap items-center gap-2 mb-6 bg-surface p-1.5 rounded-2xl w-fit border border-subtle">
+            
+            {/* MANUAL CARDS TAB */}
+            <div className="group relative">
+              <button 
+                onClick={() => setActiveTab("manual")}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'manual' ? 'bg-indigo-500 text-primary_PROTECTED shadow-lg shadow-indigo-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
+              >
+                <BookOpen size={16} className={activeTab === 'manual' ? 'text-primary' : 'text-indigo-400'} />
+                My Nexus Cards
+              </button>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 p-3 bg-surface border border-subtle rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none scale-95 group-hover:scale-100 origin-top">
+                <p className="text-xs text-muted leading-relaxed font-medium">Flashcard decks that you have created manually.</p>
+              </div>
+            </div>
+
+            {/* AI CARDS TAB */}
+            <div className="group relative">
+              <button 
+                onClick={() => setActiveTab("ai")}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'ai' ? 'bg-purple-500 text-primary_PROTECTED shadow-lg shadow-purple-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
+              >
+                <Sparkles size={16} className={activeTab === 'ai' ? 'text-primary' : 'text-purple-400'} />
+                AI Nexus Cards
+              </button>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-3 bg-surface border border-subtle rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none scale-95 group-hover:scale-100 origin-top">
+                <p className="text-xs text-muted leading-relaxed font-medium">Decks generated entirely by AI based on your notes and subjects.</p>
+              </div>
+            </div>
+
+            {/* SMART QUEUE TAB */}
+            <div className="group relative">
+              <button 
+                onClick={() => setActiveTab("queue")}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'queue' ? 'bg-rose-500 text-primary_PROTECTED shadow-lg shadow-rose-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
+              >
+                <Flame size={16} className={activeTab === 'queue' ? 'text-primary' : 'text-rose-400'} />
+                Smart Priority Queue
+              </button>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-72 p-3 bg-surface border border-rose-500/20 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50 pointer-events-none scale-95 group-hover:scale-100 origin-top">
+                <p className="text-xs text-rose-200/70 leading-relaxed font-medium">An intelligent feed aggregating the top highest-priority cards that need review across all your decks.</p>
+              </div>
+            </div>
+
+          </div>
+
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-sm font-bold text-muted tracking-widest uppercase">
+              {activeTab === 'queue' ? 'Priority Action Required' : (activeTab === 'ai' ? 'AI Generated Decks' : 'Manually Created Decks')}
+            </h3>
+          </div>
+          
+          {activeTab === 'queue' ? (
+            /* SMART QUEUE UI */
+            smartQueue.length === 0 ? (
+              <div className="border border-dashed border-subtle rounded-3xl p-12 text-center bg-surface text-primary">
+                <Check className="mx-auto text-emerald-400 mb-4" size={48} />
+                <p className="text-muted mb-4 font-medium">You're all caught up! No high-priority cards pending.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {smartQueue.map((card, idx) => (
+                  <div key={card.id} className="group relative flex items-center gap-4 hover:bg-hover transition-all rounded-2xl p-4 border bg-surface border-subtle hover:border-subtle">
+                    <div className="flex-shrink-0 w-10 h-10 rounded-full bg-hover flex items-center justify-center font-black text-muted border border-subtle">
+                      {idx + 1}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">
+                          {new Date(card.next_review_at) <= new Date() ? 'DUE NOW' : 'UPCOMING'}
+                        </span>
+                        <span className="text-xs font-semibold text-muted truncate">
+                          {card.deck?.subject} — {card.deck?.title}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium text-white truncate pr-8">{card.front}</p>
+                    </div>
+                    <Link 
+                      href={`/dashboard/flashcards/deck/${card.deck?.id}`}
+                      className="flex-shrink-0 btn bg-rose-500 hover:bg-rose-400 text-white font-bold h-10 px-4 rounded-xl shadow-lg shadow-rose-500/20 opacity-0 group-hover:opacity-100 transition-all transform translate-x-4 group-hover:translate-x-0"
+                    >
+                      Review
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            /* DECKS GRID (MANUAL / AI) */
+            displayDecks.length === 0 ? (
+              <div className="border border-dashed border-subtle rounded-3xl p-12 text-center bg-surface text-primary">
+                <Brain className="mx-auto text-primary/10 mb-4" size={48} />
+                <p className="text-muted mb-4 font-medium">
+                  {activeTab === 'ai' ? "No AI-generated Nexus Cards yet." : "You haven't created any manual Nexus Cards yet."}
+                </p>
+                {activeTab === 'manual' && (
+                  <button 
+                    onClick={() => setIsCreateOpen(true)}
+                    className="btn bg-hover text-white hover:bg-hover"
+                  >
+                    Create your first Nexus Card
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-4">
+                {displayDecks.map(deck => {
+                const isSelected = selectedDeckIds.includes(deck.id);
+                return (
+                  <Link 
+                    key={deck.id} 
+                    href={`/dashboard/flashcards/deck/${deck.id}`}
+                    className={`group relative flex flex-col hover:bg-hover transition-all rounded-2xl p-5 border ${isSelected ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50' : 'bg-surface border-subtle hover:border-subtle'}`}
+                  >
+                    {/* Checkbox */}
+                    <button 
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSelection(deck.id); }}
+                      className={`absolute top-4 right-4 z-10 p-1.5 rounded-lg transition-all ${isSelected ? 'text-indigo-400 opacity-100 bg-indigo-500/10' : 'text-primary/20 opacity-0 group-hover:opacity-100 hover:text-muted bg-hover hover:bg-hover'}`}
+                    >
+                      {isSelected ? <CheckSquare size={18} className="fill-indigo-500/20" /> : <Square size={18} />}
+                    </button>
+
+                    <div className="flex justify-between items-start mb-4 pr-8">
+                    <div>
+                      {deck.subject && (
+                        <span className={`text-[10px] font-bold uppercase tracking-widest mb-1 block ${getSubjectTextClass(deck.subject)}`}>
+                          {deck.subject}
+                        </span>
+                      )}
+                      <h4 className="text-lg font-bold text-white group-hover:text-indigo-400 transition-colors">{deck.title}</h4>
+                    </div>
+                    {deck.due_cards > 0 && (
+                      <span className="bg-rose-500/20 text-rose-400 text-xs font-bold px-2.5 py-1 rounded-full border border-rose-500/20">
+                        {deck.due_cards} due
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="mt-auto flex items-center justify-between text-muted text-sm font-medium">
+                    <span>{deck.total_cards} cards</span>
+                    <span>{deck.topic || "General"}</span>
+                  </div>
+                </Link>
+              )})}
+            </div>
+          ))}
+        </div>
+
+        {/* ── WEAK AREAS ───────────────────────────────────── */}
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-muted tracking-widest uppercase px-1">Weak Areas</h3>
+          <div className="bg-surface border border-subtle rounded-3xl p-5">
+            {weakDecks.length === 0 ? (
+              <p className="text-muted text-sm text-center py-4">No weak areas identified yet. Keep reviewing!</p>
+            ) : (
+              <div className="space-y-4">
+                {weakDecks.map(deck => (
+                  <div key={`weak-${deck.id}`} className="flex items-center justify-between group cursor-pointer hover:bg-surface p-2 -mx-2 rounded-lg transition-colors">
+                    <div>
+                      <h5 className="text-white font-semibold text-sm">{deck.subject || "General"} — {deck.title}</h5>
+                      <p className="text-xs text-muted">{deck.due_cards} cards struggling</p>
+                    </div>
+                    <Link 
+                      href={`/dashboard/flashcards/review?deck=${deck.id}&mode=weak`}
+                      className="text-xs font-bold text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity bg-indigo-500/10 px-3 py-1.5 rounded-full"
+                    >
+                      Review
+                    </Link>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {isCreateOpen && (
+        <CreateDeckModal 
+          isOpen={isCreateOpen} 
+          onClose={() => setIsCreateOpen(false)} 
+          onSuccess={(newDeck) => {
+            setDecks([newDeck, ...decks]);
+            setIsCreateOpen(false);
+          }}
+        />
+      )}
+
+      {/* ── BULK ACTION TOOLBAR ────────────────────────────────── */}
+      {selectedDeckIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-surface border border-subtle rounded-full px-6 py-3 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300">
+          <span className="text-white font-bold whitespace-nowrap">{selectedDeckIds.length} Selected</span>
+          <div className="w-px h-6 bg-hover" />
+          <button onClick={selectAll} className="text-sm font-semibold text-muted hover:text-white transition-colors">
+            {selectedDeckIds.length === decks.length ? "Deselect All" : "Select All"}
+          </button>
+          <div className="w-px h-6 bg-hover" />
+          <button 
+            onClick={handleBulkDelete} 
+            disabled={isBulkDeleting}
+            className="flex items-center gap-2 text-sm font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+          >
+            <Trash2 size={16} /> {isBulkDeleting ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

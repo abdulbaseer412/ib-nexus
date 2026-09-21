@@ -1,0 +1,351 @@
+"use server";
+
+import { createServerClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { indexDocument, unindexDocument } from "@/lib/ai/knowledge-lens";
+import { extractTextFromTipTap } from "@/lib/utils/text-extractor";
+
+export async function getNotes() {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("ib_notes")
+    .select("id, created_at, updated_at, title, subject, last_opened_at, is_favorite, is_archived, is_folder, parent_id, exam_importance, topic, level")
+    .order("last_opened_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching notes:", error);
+    return [];
+  }
+  return data;
+}
+
+export async function getNote(id) {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("ib_notes")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) {
+    console.error("Error fetching note:", error);
+    return null;
+  }
+  
+  // Update last_opened_at
+  await supabase
+    .from("ib_notes")
+    .update({ last_opened_at: new Date().toISOString() })
+    .eq("id", id);
+    
+  return data;
+}
+
+export async function createNote(formData) {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+
+  const title = formData.get("title");
+  const subject = formData.get("subject");
+  const topic = formData.get("topic");
+  const level = formData.get("level");
+  const initialContent = formData.get("initial_content");
+  const parentId = formData.get("parent_id");
+  const examImportance = formData.get("exam_importance") || "Mid-Level";
+
+  if (!title || !subject) {
+    throw new Error("Title and Subject are required");
+  }
+
+  const defaultContent = {
+    type: 'doc',
+    content: [{ type: 'paragraph' }]
+  };
+
+  const { data, error } = await supabase
+    .from("ib_notes")
+    .insert({
+      user_id: user.id,
+      title,
+      subject,
+      topic,
+      level,
+      parent_id: parentId || null,
+      exam_importance: examImportance,
+      is_folder: false,
+      content: initialContent || JSON.stringify(defaultContent)
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating note:", error);
+    throw new Error("Failed to create note");
+  }
+
+  revalidatePath("/dashboard/notes");
+  return { success: true, data };
+}
+
+export async function createFolder(title, subject, parentId = null, examImportance = "Mid-Level") {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("ib_notes")
+    .insert({
+      user_id: user.id,
+      title,
+      subject,
+      is_folder: true,
+      parent_id: parentId || null,
+      exam_importance: examImportance,
+      content: null
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating folder:", error);
+    throw new Error("Failed to create folder");
+  }
+
+  revalidatePath("/dashboard/notes");
+  return { success: true, folder: data };
+}
+
+export async function bulkDeleteNotesAction(ids) {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("ib_notes")
+    .delete()
+    .in("id", ids);
+
+  if (error) {
+    console.error("Error bulk deleting notes/folders:", error);
+    throw new Error(error.message);
+  }
+
+  // Remove from knowledge lens
+  Promise.allSettled(ids.map(id => unindexDocument("note", id)))
+    .catch(err => console.warn("[KnowledgeLens] Bulk unindex failed", err));
+
+  revalidatePath("/dashboard/notes");
+  return { success: true };
+}
+
+export async function updateNoteContent(id, contentStr) {
+  const supabase = await createServerClient();
+  
+  const { data, error } = await supabase
+    .from("ib_notes")
+    .update({ 
+      content: contentStr,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", id)
+    .select("id, title, subject, level")
+    .single();
+
+  if (error) {
+    console.error("Error updating note content:", error);
+    return { error: error.message };
+  }
+  
+  // Asynchronously index for Knowledge Lens (non-blocking)
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && contentStr) {
+      const parsedContent = JSON.parse(contentStr);
+      const extractedText = extractTextFromTipTap(parsedContent);
+      
+      indexDocument({
+        sourceType: "note",
+        sourceId: id,
+        title: data.title,
+        content: extractedText,
+        userId: user.id,
+        metadata: {
+          subject: data.subject,
+          level: data.level
+        }
+      }).catch(err => console.warn("[KnowledgeLens] Async indexing error:", err));
+    }
+  } catch (err) {
+    console.warn("Failed to schedule document indexing:", err);
+  }
+  
+  return { success: true };
+}
+
+export async function updateNoteMetadata(id, formData) {
+  const supabase = await createServerClient();
+  
+  const title = formData.get("title");
+  const subject = formData.get("subject");
+  const topic = formData.get("topic");
+  const level = formData.get("level");
+  const examImportance = formData.get("exam_importance");
+
+  const updates = { updated_at: new Date().toISOString() };
+  if (title) updates.title = title;
+  if (subject) updates.subject = subject;
+  if (topic !== null) updates.topic = topic;
+  if (level !== null) updates.level = level;
+  if (examImportance) updates.exam_importance = examImportance;
+
+  const { error } = await supabase
+    .from("ib_notes")
+    .update(updates)
+    .eq("id", id);
+
+  if (error) {
+    console.error("Error updating metadata:", error);
+    return { error: error.message };
+  }
+  
+  revalidatePath("/dashboard/notes");
+  revalidatePath(`/dashboard/notes/${id}`);
+  return { success: true };
+}
+
+export async function deleteNote(id) {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("ib_notes")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    console.error("Error deleting note:", error);
+    return { error: error.message };
+  }
+
+  // Remove from knowledge lens
+  unindexDocument("note", id).catch(err => console.warn("[KnowledgeLens] Failed to unindex note:", err));
+
+  revalidatePath("/dashboard/notes");
+  redirect("/dashboard/notes");
+}
+
+export async function toggleNoteState(id, field, value) {
+  const supabase = await createServerClient();
+  const validFields = ["is_favorite", "is_pinned", "is_archived"];
+  
+  if (!validFields.includes(field)) {
+    return { error: "Invalid field" };
+  }
+
+  const { error } = await supabase
+    .from("ib_notes")
+    .update({ [field]: value })
+    .eq("id", id);
+
+  if (error) {
+    console.error(`Error toggling ${field}:`, error);
+    return { error: error.message };
+  }
+
+  revalidatePath("/dashboard/notes");
+  revalidatePath(`/dashboard/notes/${id}`);
+  return { success: true };
+}
+
+export async function duplicateNote(id) {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) return { error: "Unauthorized" };
+
+  // Fetch original note
+  const { data: note, error: fetchError } = await supabase
+    .from("ib_notes")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (fetchError || !note) {
+    return { error: "Failed to find original note" };
+  }
+
+  // Insert copy
+  const { data: newNote, error: insertError } = await supabase
+    .from("ib_notes")
+    .insert({
+      user_id: user.id,
+      title: `${note.title} (Copy)`,
+      subject: note.subject,
+      topic: note.topic,
+      level: note.level,
+      content: note.content,
+      tags: note.tags,
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    return { error: "Failed to duplicate note" };
+  }
+
+  revalidatePath("/dashboard/notes");
+  redirect(`/dashboard/notes/${newNote.id}`);
+}
+
+
+export async function analyzeNoteReadiness(noteId, textContent) {
+  const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Unauthorized" };
+
+  // Advanced logic mock to simulate AI topic coverage evaluation
+  // 1. Get length of content
+  const wordCount = textContent.trim().split(/\s+/).length;
+  let score = 0;
+
+  // Base score on word count (up to 40%)
+  if (wordCount > 500) score += 40;
+  else if (wordCount > 200) score += 25;
+  else if (wordCount > 50) score += 10;
+  else score += 5;
+
+  // 2. Fetch associated flashcards
+  const { count: flashcardCount } = await supabase
+    .from("ib_flashcards")
+    .select("*", { count: 'exact', head: true })
+    .eq("note_id", noteId);
+
+  // Bonus for active recall generation (up to 30%)
+  if (flashcardCount && flashcardCount > 5) score += 30;
+  else if (flashcardCount && flashcardCount > 0) score += 15;
+
+  // 3. Simulated AI Keyword Density & Structure Analysis (up to 30%)
+  // In a real scenario, this calls OpenAI or Claude to compare against IB syllabus
+  const hasHeadings = textContent.includes("#");
+  const hasBulletPoints = textContent.includes("-") || textContent.includes("•");
+  if (hasHeadings) score += 15;
+  if (hasBulletPoints) score += 15;
+
+  // Ensure score is capped
+  score = Math.min(100, Math.max(10, score));
+
+  // Save the calculated score
+  const { error } = await supabase
+    .from("ib_notes")
+    .update({ revision_readiness: score })
+    .eq("id", noteId);
+
+  if (error) {
+    console.error("Error updating readiness:", error);
+    return { error: error.message };
+  }
+
+  revalidatePath(`/dashboard/notes/${noteId}`);
+  revalidatePath("/dashboard/notes");
+  return { success: true, score };
+}
