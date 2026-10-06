@@ -8,11 +8,11 @@ export async function GET(request) {
 
   const supabase = await createServerClient();
 
-  // Get all platform resources to build stats
+  // Get all platform and approved community resources to build stats
   const { data, error } = await supabase
     .from("ib_resources")
-    .select("subject, resource_type, source, user_id")
-    .or(`source.eq.platform,user_id.eq."${user.id}"`);
+    .select("subject, resource_type, source, user_id, visibility")
+    .or(`source.eq.platform,and(source.eq.user,visibility.in.(approved,public)),user_id.eq."${user.id}"`);
 
   if (error) {
     console.error("Resources stats error:", error);

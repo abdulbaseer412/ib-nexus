@@ -25,6 +25,37 @@ export async function GET(request, { params }) {
     return NextResponse.json({ error: "Resource not found" }, { status: 404 });
   }
 
+  // Fetch publisher profile if user_id exists
+  let publisher = null;
+  if (data.source === "platform") {
+    publisher = {
+      name: "IB Nexus Academic Board",
+      role: "Official Curriculum Board",
+      school_name: "IB Nexus Global",
+      is_official: true,
+      is_admin: true,
+    };
+  } else if (data.user_id) {
+    const { data: pubProfile } = await createAdminClient()
+      .from("profiles")
+      .select("id, full_name, display_name, avatar_url, school_name, ib_program, is_admin")
+      .eq("id", data.user_id)
+      .single();
+    if (pubProfile) {
+      publisher = {
+        id: pubProfile.id,
+        name: pubProfile.display_name || pubProfile.full_name || "Community Member",
+        avatar_url: pubProfile.avatar_url,
+        school_name: pubProfile.school_name,
+        program: pubProfile.ib_program,
+        role: pubProfile.is_admin ? "Administrator" : "Student Contributor",
+        is_admin: pubProfile.is_admin === true,
+      };
+    }
+  }
+
+  const enrichedResource = { ...data, publisher };
+
   // Fetch related resource (paired paper/markscheme)
   let paired = null;
   if (data.related_resource_id) {
@@ -58,7 +89,7 @@ export async function GET(request, { params }) {
   }
 
   return NextResponse.json({
-    resource: data,
+    resource: enrichedResource,
     paired,
     reverseLinked: reverseLinked || [],
     related,
@@ -100,7 +131,78 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json(data);
+  // If status is updated to approved or rejected, sync admin_requests and notify the user
+  if (data?.user_id && (updates.visibility === "approved" || updates.visibility === "rejected")) {
+    try {
+      const adminClient = createAdminClient();
+      const status = updates.visibility === "approved" ? "approved" : "rejected";
+      const reason = updates.rejection_reason || updates.admin_response || updates.admin_notes || null;
+
+      // Update admin_requests
+      await adminClient
+        .from("admin_requests")
+        .update({
+          status,
+          admin_response: reason,
+          reviewed_by: user.id,
+          reviewed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("target_id", id);
+
+      // Create user notification
+      const notifTitle = status === "approved" 
+        ? "Resource Approved" 
+        : "Resource Submission Not Approved";
+      const notifMsg = reason 
+        ? (status === "approved" ? `Your resource "${data.title}" was approved! Note: ${reason}` : `Your resource "${data.title}" was not approved because: ${reason}`)
+        : (status === "approved" ? `Your resource "${data.title}" has been reviewed and published to Community Resources!` : `Your resource "${data.title}" was not approved.`);
+
+      await adminClient.from("user_notifications").insert({
+        user_id: data.user_id,
+        title: notifTitle,
+        message: notifMsg,
+        type: status === "approved" ? "approved" : "rejected",
+        request_type: "document_upload",
+        target_url: status === "approved" ? `/dashboard/resources/${data.id}` : "/dashboard/resources",
+        is_read: false,
+        is_popup_dismissed: false,
+      });
+    } catch (syncErr) {
+      console.warn("Failed to sync admin request or notification for resource:", syncErr?.message);
+    }
+  }
+
+  // Fetch publisher for updated resource
+  let publisher = null;
+  if (data.source === "platform") {
+    publisher = {
+      name: "IB Nexus Academic Board",
+      role: "Official Curriculum Board",
+      school_name: "IB Nexus Global",
+      is_official: true,
+      is_admin: true,
+    };
+  } else if (data.user_id) {
+    const { data: pubProfile } = await createAdminClient()
+      .from("profiles")
+      .select("id, full_name, display_name, avatar_url, school_name, ib_program, is_admin")
+      .eq("id", data.user_id)
+      .single();
+    if (pubProfile) {
+      publisher = {
+        id: pubProfile.id,
+        name: pubProfile.display_name || pubProfile.full_name || "Community Member",
+        avatar_url: pubProfile.avatar_url,
+        school_name: pubProfile.school_name,
+        program: pubProfile.ib_program,
+        role: pubProfile.is_admin ? "Administrator" : "Student Contributor",
+        is_admin: pubProfile.is_admin === true,
+      };
+    }
+  }
+
+  return NextResponse.json({ ...data, publisher });
 }
 
 export async function DELETE(request, { params }) {

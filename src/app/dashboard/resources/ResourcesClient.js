@@ -9,12 +9,19 @@ import {
   Download, Heart, Clock, ChevronRight, Plus, MoreVertical,
   Bookmark, BookmarkCheck, CalendarDays, Star, FolderOpen,
   Sparkles, ArrowRight, ArrowLeft, ExternalLink, Trash2, Pencil, Library,
-  Sigma, Compass, Lightbulb, Beaker, FileSpreadsheet, PlayCircle, Book, Archive, Layers
+  Sigma, Compass, Lightbulb, Beaker, FileSpreadsheet, PlayCircle, Book, Archive, Layers,
+  ShieldCheck, Users, Globe, Eye, AlertCircle, Info, Check, RefreshCw, XCircle, Send, CheckCheck
 } from "lucide-react";
 import { Button, Modal, Alert, Spinner } from "@/components/ui";
 import LayeredBrowser from "@/components/LayeredBrowser";
 
-import { getSubjectColorTheme, getSubjectIconClasses } from "@/lib/subject-colors";
+import { getSubjectColorTheme, getSubjectIconClasses, getSubjectBadgeClasses, getSubjectBgClass } from "@/lib/subject-colors";
+import { 
+  getSubjectSupportedLevels, 
+  CANONICAL_DP_SUBJECTS, 
+  CANONICAL_MYP_SUBJECTS, 
+  groupSubjectsByCategory 
+} from "@/lib/subject-levels";
 
 /* ── Constants ────────────────────────────────────────────────────────────── */
 const RESOURCE_TYPES = [
@@ -35,9 +42,41 @@ const RESOURCE_TYPES = [
 const typeLabel = (v) => RESOURCE_TYPES.find(t => t.value === v)?.label || v;
 
 const MAIN_TABS = [
-  { value: "my_subjects",  label: "My Subjects",  icon: Bookmark },
-  { value: "all_subjects", label: "All Subjects", icon: Layers },
-  { value: "my_library",   label: "My Library",   icon: Archive },
+  { 
+    value: "my_subjects",        
+    label: "My Subjects",        
+    icon: Bookmark,
+    tooltipTitle: "My Subjects View",
+    tooltipDesc: "Displays only the subjects enrolled in your student profile for focused, distraction-free study."
+  },
+  { 
+    value: "all_subjects",       
+    label: "All Subjects",       
+    icon: Layers,
+    tooltipTitle: "All Subjects Catalog",
+    tooltipDesc: "Browse the complete IB curriculum catalog. Explore past papers and resources without altering your profile."
+  },
+  { 
+    value: "nexus_library",      
+    label: "IB Nexus Library",   
+    icon: ShieldCheck,
+    tooltipTitle: "IB Nexus Official Library",
+    tooltipDesc: "Curated official past examination papers, syllabus guides, exam room rules, regulations, and verified exemplars published by IB Nexus."
+  },
+  { 
+    value: "community_resources",
+    label: "Community Resources",
+    icon: Users,
+    tooltipTitle: "IB Community Resources",
+    tooltipDesc: "Peer-to-peer knowledge exchange. Student-shared revision notes, summaries, and coursework vetted and approved by IB Nexus moderators."
+  },
+  { 
+    value: "my_library",         
+    label: "My Library",         
+    icon: BookOpen,
+    tooltipTitle: "My Personal Library",
+    tooltipDesc: "Your private study workspace for uploaded notes, personal drafts, and tracking the approval status of your community submissions."
+  },
 ];
 
 const LEVELS_DP = ["HL", "SL"];
@@ -64,160 +103,72 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-/* ── Upload Modal ─────────────────────────────────────────────────────────── */
-const UPLOAD_DP_GROUPS = [
-  {
-    category: "Group 1: Studies in Language & Literature",
-    courses: [
-      { name: "Language A: Literature", levels: ["SL", "HL"] },
-      { name: "Language A: Language & Literature", levels: ["SL", "HL"] },
-      { name: "Literature & Performance", levels: ["SL"] }
-    ]
-  },
-  {
-    category: "Group 2: Language Acquisition",
-    courses: [
-      { name: "English B", levels: ["SL", "HL"] },
-      { name: "Spanish B", levels: ["SL", "HL"] },
-      { name: "French B", levels: ["SL", "HL"] },
-      { name: "German B", levels: ["SL", "HL"] },
-      { name: "Mandarin B", levels: ["SL", "HL"] },
-      { name: "Spanish ab initio", levels: ["SL"] },
-      { name: "French ab initio", levels: ["SL"] },
-      { name: "German ab initio", levels: ["SL"] },
-      { name: "Mandarin ab initio", levels: ["SL"] },
-      { name: "Classical Languages (Latin/Greek)", levels: ["SL", "HL"] }
-    ]
-  },
-  {
-    category: "Group 3: Individuals & Societies",
-    courses: [
-      { name: "Business Management", levels: ["SL", "HL"] },
-      { name: "Digital Society", levels: ["SL", "HL"] },
-      { name: "Economics", levels: ["SL", "HL"] },
-      { name: "Geography", levels: ["SL", "HL"] },
-      { name: "Global Politics", levels: ["SL", "HL"] },
-      { name: "History", levels: ["SL", "HL"] },
-      { name: "Philosophy", levels: ["SL", "HL"] },
-      { name: "Psychology", levels: ["SL", "HL"] },
-      { name: "Social & Cultural Anthropology", levels: ["SL", "HL"] },
-      { name: "World Religions", levels: ["SL"] }
-    ]
-  },
-  {
-    category: "Group 4: Sciences",
-    courses: [
-      { name: "Biology", levels: ["SL", "HL"] },
-      { name: "Chemistry", levels: ["SL", "HL"] },
-      { name: "Computer Science", levels: ["SL", "HL"] },
-      { name: "Design Technology", levels: ["SL", "HL"] },
-      { name: "Environmental Systems & Societies (ESS)", levels: ["SL", "HL"] },
-      { name: "Physics", levels: ["SL", "HL"] },
-      { name: "Sports, Exercise & Health Science", levels: ["SL", "HL"] }
-    ]
-  },
-  {
-    category: "Group 5: Mathematics",
-    courses: [
-      { name: "Mathematics: Analysis & Approaches (AA)", levels: ["SL", "HL"] },
-      { name: "Mathematics: Applications & Interpretation (AI)", levels: ["SL", "HL"] }
-    ]
-  },
-  {
-    category: "Group 6: The Arts",
-    courses: [
-      { name: "Visual Arts", levels: ["SL", "HL"] },
-      { name: "Music", levels: ["SL", "HL"] },
-      { name: "Theatre", levels: ["SL", "HL"] },
-      { name: "Film", levels: ["SL", "HL"] },
-      { name: "Dance", levels: ["SL", "HL"] }
-    ]
-  },
-  {
-    category: "DP Core",
-    courses: [
-      { name: "Theory of Knowledge (TOK)", levels: null },
-      { name: "Extended Essay (EE)", levels: null },
-      { name: "Creativity, Activity, Service (CAS)", levels: null }
-    ]
-  }
-];
+/* ── Upload Modal & Subject Groups ────────────────────────────────────────── */
+const UPLOAD_DP_GROUPS = groupSubjectsByCategory(CANONICAL_DP_SUBJECTS, "dp").map(g => ({
+  category: g.category,
+  courses: g.subjects.map(s => ({
+    name: s.name,
+    levels: getSubjectSupportedLevels(s.name, "dp")
+  }))
+}));
 
-const UPLOAD_MYP_GROUPS = [
-  {
-    category: "Language and Literature",
-    courses: [
-      { name: "English Language & Literature", levels: null },
-      { name: "Spanish Language & Literature", levels: null },
-      { name: "German Language & Literature", levels: null },
-      { name: "French Language & Literature", levels: null }
-    ]
-  },
-  {
-    category: "Language Acquisition",
-    courses: [
-      { name: "English Language Acquisition", levels: null },
-      { name: "Spanish Language Acquisition", levels: null },
-      { name: "French Language Acquisition", levels: null },
-      { name: "German Language Acquisition", levels: null },
-      { name: "Mandarin Language Acquisition", levels: null }
-    ]
-  },
-  {
-    category: "Individuals and Societies",
-    courses: [
-      { name: "History", levels: null },
-      { name: "Geography", levels: null },
-      { name: "Economics", levels: null },
-      { name: "Global Politics", levels: null },
-      { name: "Integrated Humanities", levels: null }
-    ]
-  },
-  {
-    category: "Sciences",
-    courses: [
-      { name: "Biology", levels: null },
-      { name: "Chemistry", levels: null },
-      { name: "Physics", levels: null },
-      { name: "Integrated Sciences", levels: null },
-      { name: "Environmental Sciences", levels: null }
-    ]
-  },
-  {
-    category: "Mathematics",
-    courses: [
-      { name: "Mathematics (Standard)", levels: null },
-      { name: "Mathematics (Extended)", levels: null }
-    ]
-  },
-  {
-    category: "Arts",
-    courses: [
-      { name: "Visual Arts", levels: null },
-      { name: "Music", levels: null },
-      { name: "Drama/Theatre", levels: null }
-    ]
-  },
-  {
-    category: "Physical and Health Education",
-    courses: [
-      { name: "Physical and Health Education (PHE)", levels: null }
-    ]
-  },
-  {
-    category: "Design",
-    courses: [
-      { name: "Design", levels: null }
-    ]
-  }
-];
+const UPLOAD_MYP_GROUPS = groupSubjectsByCategory(CANONICAL_MYP_SUBJECTS, "myp").map(g => ({
+  category: g.category,
+  courses: g.subjects.map(s => ({
+    name: s.name,
+    levels: []
+  }))
+}));
 
-function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects, userProgram, initialTab }) {
+const UPLOAD_BOTH_GROUPS = [
+  ...UPLOAD_DP_GROUPS,
+  ...UPLOAD_MYP_GROUPS.filter(mg => !UPLOAD_DP_GROUPS.some(dg => dg.category === mg.category))
+].map(g => {
+  const dpGroup = UPLOAD_DP_GROUPS.find(d => d.category === g.category);
+  const mypGroup = UPLOAD_MYP_GROUPS.find(m => m.category === g.category);
+  const coursesMap = new Map();
+  dpGroup?.courses.forEach(c => coursesMap.set(c.name, c));
+  mypGroup?.courses.forEach(c => {
+    if (!coursesMap.has(c.name)) coursesMap.set(c.name, c);
+  });
+  return {
+    category: g.category,
+    courses: Array.from(coursesMap.values())
+  };
+});
+
+async function directDownload(resource) {
+  if (!resource?.file_url) return;
+  try {
+    const res = await fetch(resource.file_url);
+    if (!res.ok) throw new Error("Network error");
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = resource.file_name || resource.title || "resource";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch {
+    const link = document.createElement("a");
+    link.href = resource.file_url;
+    link.download = resource.file_name || resource.title || "resource";
+    link.target = "_self";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}
+
+function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects, userProgram, initialTab, selectedSubject }) {
   const [file, setFile] = useState(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [resourceType, setResourceType] = useState("other");
   const [programme, setProgramme] = useState(userProgram || "dp");
+  const [isGeneral, setIsGeneral] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [subject, setSubject] = useState("");
   const [level, setLevel] = useState("");
@@ -225,14 +176,14 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
   const [year, setYear] = useState("");
   const [examSession, setExamSession] = useState("");
   const [paperNumber, setPaperNumber] = useState("");
-  const [adminUpload, setAdminUpload] = useState(false);
+  const [destination, setDestination] = useState("community"); // 'community' | 'nexus' | 'my_library'
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
   const fileRef = useRef(null);
 
   useEffect(() => {
     if (open) {
-      if (initialTab && initialTab !== "all" && initialTab !== "my_library") {
+      if (initialTab && !["all", "nexus_library", "my_library", "community_library", "community_resources", "my_subjects", "all_subjects"].includes(initialTab)) {
         setResourceType(initialTab);
       } else {
         setResourceType("other");
@@ -241,17 +192,44 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
       setTitle("");
       setDescription("");
       setProgramme(userProgram || "dp");
-      setSelectedGroup("");
-      setSubject("");
-      setLevel("");
       setTopic("");
       setYear("");
       setExamSession("");
       setPaperNumber("");
-      setAdminUpload(false);
+      
+      // Context-aware upload destination:
+      if (initialTab === "nexus_library" && isAdmin) {
+        setDestination("nexus");
+      } else if (initialTab === "community_resources" || initialTab === "community_library") {
+        setDestination("community");
+      } else {
+        // my_library, my_subjects, all_subjects, or course view
+        setDestination("my_library");
+      }
+
+      // Pre-fill subject if user opened upload while inside a specific course/subject
+      if (selectedSubject) {
+        setIsGeneral(false);
+        setSubject(selectedSubject);
+        setSelectedGroup("");
+        const levels = getSubjectSupportedLevels(selectedSubject, userProgram || "dp");
+        if (!levels || levels.length === 0 || userProgram === "myp") {
+          setLevel("");
+        } else if (levels.length === 1) {
+          setLevel(levels[0]);
+        } else {
+          setLevel("SL");
+        }
+      } else {
+        setIsGeneral(false);
+        setSelectedGroup("");
+        setSubject("");
+        setLevel("");
+      }
+
       setErr(null);
     }
-  }, [open, userProgram, initialTab]);
+  }, [open, userProgram, initialTab, isAdmin, selectedSubject]);
 
   const handleFileChange = (e) => {
     const f = e.target.files?.[0];
@@ -274,20 +252,30 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
     setLevel("");
   };
 
-  const currentCatalog = programme === "myp" ? UPLOAD_MYP_GROUPS : UPLOAD_DP_GROUPS;
+  const currentCatalog = useMemo(() => {
+    if (programme === "myp") return UPLOAD_MYP_GROUPS;
+    if (programme === "both") return UPLOAD_BOTH_GROUPS;
+    return UPLOAD_DP_GROUPS;
+  }, [programme]);
+
   const currentGroupObj = currentCatalog.find(g => g.category === selectedGroup);
   const availableCourses = currentGroupObj ? currentGroupObj.courses : currentCatalog.flatMap(g => g.courses);
 
   const selectedCourseObj = availableCourses.find(c => c.name === subject);
-  const availableLevels = selectedCourseObj?.levels || null;
+  const availableLevels = useMemo(() => {
+    if (!subject || isGeneral) return null;
+    const curriculumLevels = getSubjectSupportedLevels(subject, programme === "myp" ? "myp" : "dp");
+    if (curriculumLevels && curriculumLevels.length > 0) return curriculumLevels;
+    return selectedCourseObj?.levels || null;
+  }, [subject, programme, selectedCourseObj, isGeneral]);
 
   const handleSubjectChange = (subjectName) => {
     setSubject(subjectName);
-    const course = availableCourses.find(c => c.name === subjectName);
-    if (!course || !course.levels || programme === "myp") {
+    const levels = getSubjectSupportedLevels(subjectName, programme === "myp" ? "myp" : "dp");
+    if (!levels || levels.length === 0 || programme === "myp") {
       setLevel("");
-    } else if (course.levels.length === 1) {
-      setLevel(course.levels[0]);
+    } else if (levels.length === 1) {
+      setLevel(levels[0]);
     } else {
       setLevel("SL");
     }
@@ -297,13 +285,14 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
     e.preventDefault();
     if (!file) return setErr("Please select a file.");
     if (!title.trim()) return setErr("Please enter a title.");
+    if (!isGeneral && !subject) return setErr("Please select a course or select 'General / All Subjects'.");
     setLoading(true); setErr(null);
 
     try {
       // 1. Upload file
       const fd = new FormData();
       fd.append("file", file);
-      if (isAdmin && adminUpload) fd.append("admin_upload", "true");
+      if (isAdmin && destination === "nexus") fd.append("admin_upload", "true");
 
       const uploadRes = await fetch("/api/resources/upload", { method: "POST", body: fd });
       const uploadData = await uploadRes.json();
@@ -320,18 +309,19 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
           file_size: uploadData.size,
           file_type: uploadData.type,
           resource_type: resourceType,
-          programme,
-          subject: subject || null,
-          level: level || null,
+          programme: isGeneral ? "all" : programme,
+          subject: isGeneral ? null : (subject || null),
+          level: isGeneral ? null : (level || null),
           topic: topic.trim() || null,
           year: year ? parseInt(year) : null,
           exam_session: examSession || null,
           paper_number: paperNumber || null,
-          source: (isAdmin && adminUpload) ? "platform" : "user",
+          destination,
+          source: destination === "nexus" ? "platform" : "user",
         }),
       });
 
-      onSuccess(resource);
+      onSuccess(resource, destination);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -341,26 +331,112 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
 
   const filteredTypes = useMemo(() => {
     let types = RESOURCE_TYPES;
-    if (!isAdmin) {
-      // Regular users can only upload these types
+    if (!isAdmin && destination !== "community") {
+      // Regular users uploading personal notes
       types = types.filter(t => ["study_guide", "worksheet", "coursework_example", "other"].includes(t.value));
-    } else if (userProgram === "myp") {
+    } else if (userProgram === "myp" && !isGeneral) {
       types = types.filter(t => !["ia_example", "ee_example", "tok_resource"].includes(t.value));
     }
     return types;
-  }, [userProgram, isAdmin]);
+  }, [userProgram, isAdmin, isGeneral, destination]);
+
+  const modalTitle = destination === "nexus" 
+    ? "Upload to IB Nexus Library" 
+    : destination === "community" 
+      ? (isAdmin ? "Publish to Community Resources" : "Submit Resource to Community")
+      : "Upload to My Library";
 
   return (
-    <Modal open={open} onClose={onClose} title={isAdmin && adminUpload ? "Upload to IB Nexus Library" : "Upload Resource"}>
-      <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+    <Modal 
+      open={open} 
+      onClose={onClose} 
+      title={modalTitle}
+    >
+      <form onSubmit={handleSubmit} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
         {err && <Alert variant="error" title={err} />}
 
-        {isAdmin && (
-          <label className="flex items-center gap-2 p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] cursor-pointer">
-            <input type="checkbox" checked={adminUpload} onChange={e => setAdminUpload(e.target.checked)} className="accent-[var(--accent)]" />
-            <span className="text-sm font-medium">Upload to IB Nexus Library (platform resource)</span>
-          </label>
+        {/* Context-Aware Destination Badge */}
+        <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--surface-muted)]/70 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[var(--muted)] font-medium">Destination:</span>
+            <span className="font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+              {destination === "nexus" ? (
+                <>
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                  <span>IB Nexus Official Library</span>
+                </>
+              ) : destination === "community" ? (
+                <>
+                  <Users className="w-4 h-4 text-purple-400" />
+                  <span>IB Community Library</span>
+                </>
+              ) : (
+                <>
+                  <BookOpen className="w-4 h-4 text-blue-400" />
+                  <span>My Personal Library</span>
+                </>
+              )}
+            </span>
+            {subject && (
+              <span className="text-[var(--accent)] font-semibold">· {subject}</span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {destination !== "nexus" && (
+              <button
+                type="button"
+                onClick={() => setDestination(d => d === "community" ? "my_library" : "community")}
+                className="text-[11px] font-semibold text-[var(--accent)] hover:underline flex items-center gap-1"
+              >
+                {destination === "community" ? "Save to My Library instead" : "Share to Community Library"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Short & Subtle Community Review Hint */}
+        {destination === "community" && !isAdmin && (
+          <div className="px-3 py-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-300 flex items-center gap-2">
+            <ShieldCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+            <span>Community submissions are reviewed by moderators before appearing publicly.</span>
+          </div>
         )}
+
+        {/* Scope Selector: General vs Subject-Specific */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Resource Scope & Applicability *</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => { setIsGeneral(true); setSubject(""); setLevel(""); setSelectedGroup(""); }}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                isGeneral
+                  ? "border-indigo-500 bg-indigo-500/10 text-[var(--foreground)] shadow-sm"
+                  : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--muted)]"
+              }`}
+            >
+              <div className="flex items-center gap-2 font-semibold text-xs text-indigo-400">
+                <Globe className="w-4 h-4" /> General / All Subjects
+              </div>
+              <p className="text-[11px] text-[var(--muted)] mt-1">Exam room rules, calculators, regulations, templates</p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsGeneral(false)}
+              className={`p-3 rounded-xl border text-left transition-all ${
+                !isGeneral
+                  ? "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--foreground)] shadow-sm"
+                  : "border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--muted)]"
+              }`}
+            >
+              <div className="flex items-center gap-2 font-semibold text-xs text-[var(--accent)]">
+                <BookOpen className="w-4 h-4" /> Subject-Specific
+              </div>
+              <p className="text-[11px] text-[var(--muted)] mt-1">Tied to a specific course (e.g. Biology, Math AA)</p>
+            </button>
+          </div>
+        </div>
 
         {/* File */}
         <div>
@@ -389,74 +465,115 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
         {/* Title */}
         <div>
           <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Title *</label>
-          <input className="field w-full" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Biology HL May 2025 Paper 2" />
+          <input 
+            className="field w-full" 
+            value={title} 
+            onChange={e => setTitle(e.target.value)} 
+            placeholder={isGeneral ? "e.g. Official May 2025 Exam Regulations & Room Conduct" : "e.g. Biology HL May 2025 Paper 2 Question Pack"} 
+          />
+        </div>
+
+        {/* Highlighted Details & Notes */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[var(--accent)]" />
+              <span>{destination === "nexus" ? "Official Details & Student Highlights" : "Material Details & Summary"}</span>
+            </label>
+            <span className="text-[11px] text-[var(--accent)] font-medium">Highlighted in library</span>
+          </div>
+          <textarea
+            className="field w-full min-h-[85px] text-sm resize-y"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder={
+              isGeneral
+                ? "Describe the rules, allowed calculator models, time allowances, and candidate conduct guidelines..."
+                : "Describe key takeaways, unit concepts covered, model answer annotations, or exam tips..."
+            }
+            rows={3}
+          />
         </div>
 
         {/* Row: Type + Programme */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Resource Type *</label>
+            <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Resource Category *</label>
             <select 
-              className={`field w-full ${initialTab && initialTab !== "all" && initialTab !== "my_library" ? "opacity-70 cursor-not-allowed" : ""}`} 
+              className="field w-full" 
               value={resourceType} 
               onChange={e => setResourceType(e.target.value)}
-              disabled={initialTab && initialTab !== "all" && initialTab !== "my_library"}
             >
               {filteredTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </div>
           <div>
             <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Target Programme *</label>
-            <select className="field w-full" value={programme} onChange={e => handleProgrammeChange(e.target.value)}>
-              <option value="dp">DP 2 (Diploma Programme)</option>
-              <option value="myp">MYP 5 (Middle Years Programme)</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Cascading Subject Group Selection */}
-        <div>
-          <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Subject Group</label>
-          <select className="field w-full" value={selectedGroup} onChange={e => handleGroupChange(e.target.value)}>
-            <option value="">— All Subject Groups —</option>
-            {currentCatalog.map(g => <option key={g.category} value={g.category}>{g.category}</option>)}
-          </select>
-        </div>
-
-        {/* Row: Subject + Level */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Subject Course *</label>
-            <select className="field w-full" value={subject} onChange={e => handleSubjectChange(e.target.value)}>
-              <option value="">— Select Course —</option>
-              {availableCourses.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Course Level</label>
-            {programme === "myp" || !availableLevels ? (
-              <div className="field w-full opacity-60 text-xs flex items-center justify-center bg-[var(--surface-muted)] cursor-not-allowed">
-                N/A (Group Level)
-              </div>
-            ) : availableLevels.length === 1 ? (
-              <div className="field w-full opacity-80 text-xs flex items-center justify-between bg-[var(--surface-muted)]">
-                <span>{availableLevels[0]}</span>
-                <span className="text-[10px] text-[var(--muted)]">(SL Only)</span>
+            {isGeneral ? (
+              <div className="field w-full text-xs flex items-center justify-between bg-[var(--surface-muted)] px-3 py-2.5 rounded-xl border border-[var(--border)] text-indigo-400 font-semibold">
+                <span>General (All IB Programmes)</span>
+                <Globe className="w-4 h-4" />
               </div>
             ) : (
-              <select className="field w-full" value={level} onChange={e => setLevel(e.target.value)}>
-                <option value="SL">Standard Level (SL)</option>
-                <option value="HL">Higher Level (HL)</option>
+              <select className="field w-full" value={programme} onChange={e => handleProgrammeChange(e.target.value)}>
+                <option value="dp">DP (Diploma Programme)</option>
+                <option value="myp">MYP (Middle Years Programme)</option>
+                <option value="both">Both (MYP + DP)</option>
               </select>
             )}
           </div>
         </div>
 
-        {/* Topic */}
-        <div>
-          <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Topic / Unit</label>
-          <input className="field w-full" value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Cell Respiration / Option B" />
-        </div>
+        {/* Subject Controls (Disabled/Hidden if General) */}
+        {!isGeneral ? (
+          <>
+            <div>
+              <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Subject Group</label>
+              <select className="field w-full" value={selectedGroup} onChange={e => handleGroupChange(e.target.value)}>
+                <option value="">— All Subject Groups —</option>
+                {currentCatalog.map(g => <option key={g.category} value={g.category}>{g.category}</option>)}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Subject Course *</label>
+                <select className="field w-full" value={subject} onChange={e => handleSubjectChange(e.target.value)}>
+                  <option value="">— Select Course —</option>
+                  {availableCourses.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Course Level</label>
+                {programme === "myp" || !availableLevels || availableLevels.length === 0 ? (
+                  <div className="field w-full opacity-60 text-xs flex items-center justify-center bg-[var(--surface-muted)] cursor-not-allowed">
+                    N/A (Group Level / Core)
+                  </div>
+                ) : availableLevels.length === 1 ? (
+                  <div className="field w-full opacity-90 text-xs flex items-center justify-between bg-[var(--surface-muted)] px-3 py-2 rounded-xl border border-[var(--border)]">
+                    <span className="font-bold text-[var(--foreground)]">{availableLevels[0] === "SL" ? "Standard Level (SL)" : availableLevels[0]}</span>
+                    <span className="text-[10px] font-black uppercase text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">SL Only</span>
+                  </div>
+                ) : (
+                  <select className="field w-full" value={level} onChange={e => setLevel(e.target.value)}>
+                    <option value="SL">Standard Level (SL)</option>
+                    <option value="HL">Higher Level (HL)</option>
+                  </select>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Topic / Unit (Optional)</label>
+              <input className="field w-full" value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Cell Respiration / Option B" />
+            </div>
+          </>
+        ) : (
+          <div className="p-3.5 rounded-xl border border-indigo-500/20 bg-indigo-500/5 text-xs text-indigo-300 flex items-center gap-3">
+            <Globe className="w-5 h-5 text-indigo-400 shrink-0" />
+            <span>This upload is marked <strong>General</strong>. It will be prominently highlighted in the library as applicable across all candidate subjects without restricting to a single course.</span>
+          </div>
+        )}
 
         {/* Row: Year + Session + Paper (for past papers) */}
         {(resourceType === "past_paper" || resourceType === "markscheme") && (
@@ -485,20 +602,576 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
           </div>
         )}
 
-        {/* Description */}
-        <div>
-          <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Description</label>
-          <textarea className="field w-full min-h-[60px] resize-y" value={description} onChange={e => setDescription(e.target.value)} placeholder="Optional description..." rows={2} />
-        </div>
-
         <div className="flex gap-2 pt-2">
           <div className="flex-1" />
           <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? <Spinner /> : "Upload"}
+            {loading ? <Spinner /> : "Upload to Library"}
           </Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+/* ── Edit Resource Details Modal ─────────────────────────────────────────── */
+function EditResourceModal({ open, onClose, resource, onSaved, isAdmin }) {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [subject, setSubject] = useState("");
+  const [level, setLevel] = useState("");
+  const [topic, setTopic] = useState("");
+  const [resourceType, setResourceType] = useState("other");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (resource && open) {
+      setTitle(resource.title || resource.file_name || "");
+      setDescription(resource.description || "");
+      setSubject(resource.subject || "");
+      setLevel(resource.level || "");
+      setTopic(resource.topic || "");
+      setResourceType(resource.resource_type || "other");
+      setErr(null);
+    }
+  }, [resource, open]);
+
+  const handleUpdate = async (overrideVisibility = null) => {
+    if (!title.trim()) return setErr("Title is required");
+    setLoading(true);
+    setErr(null);
+    try {
+      const payload = {
+        title: title.trim(),
+        description: description.trim() || null,
+        subject: subject || null,
+        level: level || null,
+        topic: topic.trim() || null,
+        resource_type: resourceType,
+      };
+
+      if (overrideVisibility) {
+        payload.visibility = overrideVisibility;
+      }
+
+      const res = await fetch(`/api/resources/${resource.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update");
+      onSaved(data);
+      onClose();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!open || !resource) return null;
+
+  const isPending = resource.visibility === "pending_approval";
+
+  return (
+    <Modal open={open} onClose={onClose} title={isPending && isAdmin ? "Moderate & Edit Submission" : "Edit Resource Details"}>
+      <form onSubmit={(e) => { e.preventDefault(); handleUpdate(); }} className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+        {err && <Alert variant="error" title={err} />}
+
+        {isPending && isAdmin && (
+          <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300 flex items-start gap-2.5">
+            <Clock className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <p className="font-semibold text-amber-200">Moderation Review Mode</p>
+              <p className="text-[11px] text-amber-300/90 leading-relaxed">
+                You can correct or refine the resource name, subject, level, or summary notes before approving. Clicking <strong>Approve & Publish</strong> will immediately release it to the IB Community Resources section.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Resource Title *</label>
+          <input className="field w-full" value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Biology HL Paper 2 Comprehensive Notes" />
+        </div>
+
+        {isAdmin && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Subject</label>
+              <input className="field w-full text-xs" value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Biology (or blank for General)" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Level</label>
+              <select className="field w-full text-xs" value={level} onChange={e => setLevel(e.target.value)}>
+                <option value="">None / Core</option>
+                <option value="SL">Standard Level (SL)</option>
+                <option value="HL">Higher Level (HL)</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Topic / Unit</label>
+              <input className="field w-full text-xs" value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Cell Respiration" />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-[var(--foreground)] mb-1.5 block">Resource Category</label>
+              <select className="field w-full text-xs" value={resourceType} onChange={e => setResourceType(e.target.value)}>
+                {RESOURCE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-sm font-medium text-[var(--foreground)] flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-[var(--accent)]" />
+              <span>Description & Contributor Notes</span>
+            </label>
+            <span className="text-[11px] text-[var(--accent)] font-medium">Highlighted in Library</span>
+          </div>
+          <textarea
+            className="field w-full min-h-[90px] text-sm resize-y"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="Key highlights, exam tips, syllabus notes..."
+            rows={3}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-[var(--border)]">
+          {isPending && isAdmin ? (
+            <>
+              <Button
+                type="button"
+                variant="danger"
+                onClick={() => handleUpdate("rejected")}
+                disabled={loading}
+                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs"
+              >
+                <XCircle className="w-3.5 h-3.5 mr-1" /> Reject Submission
+              </Button>
+              <div className="flex-1" />
+              <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={() => handleUpdate("approved")}
+                disabled={loading}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-500/20"
+              >
+                {loading ? <Spinner /> : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve & Publish</>}
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="flex-1" />
+              <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+              <Button type="submit" variant="primary" disabled={loading}>
+                {loading ? <Spinner /> : "Save Changes"}
+              </Button>
+            </>
+          )}
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ── Publisher & Resource Details Modal ──────────────────────────────────── */
+function PublisherDetailsModal({ open, resource, onClose, onPreview, onStudy, directDownload }) {
+  if (!open || !resource) return null;
+
+  const isPlatform = resource.source === "platform";
+  const pub = resource.publisher || {};
+  const pubName = isPlatform ? "IB Nexus Academic Board" : (pub.name || "Community Scholar");
+  const pubRole = isPlatform ? "Official Curriculum Board" : (pub.role || "Verified Student Contributor");
+  const pubSchool = isPlatform ? "IB Nexus Global Academy" : (pub.school_name || "IB World School Candidate");
+  const pubAvatar = pub.avatar_url;
+  const isApproved = resource.visibility === "approved" || resource.visibility === "public" || isPlatform;
+  const isPending = resource.visibility === "pending_approval";
+  const isRejected = resource.visibility === "rejected";
+
+  return (
+    <Modal open={open} onClose={onClose} title="Resource & Contributor Overview">
+      <div className="space-y-5 max-h-[78vh] overflow-y-auto pr-1">
+        {/* Contributor Profile Card */}
+        <div className="p-4 rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] to-[var(--surface-hover)] shadow-sm">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] mb-3 flex items-center justify-between">
+            <span>Publisher Profile</span>
+            {isApproved ? (
+              <span className="text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold">
+                <ShieldCheck className="w-3 h-3" /> {isPlatform ? "Official Curriculum" : "Vetted & Approved"}
+              </span>
+            ) : isPending ? (
+              <span className="text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold">
+                <Clock className="w-3 h-3" /> Under Review
+              </span>
+            ) : isRejected ? (
+              <span className="text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold">
+                <XCircle className="w-3 h-3" /> Rejected
+              </span>
+            ) : (
+              <span className="text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold">
+                <BookOpen className="w-3 h-3" /> Personal Upload
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3.5">
+            {pubAvatar ? (
+              <img src={pubAvatar} alt={pubName} className="w-12 h-12 rounded-2xl object-cover ring-2 ring-[var(--accent)]/30 shadow-md" />
+            ) : (
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[var(--accent)] to-purple-500 text-white flex items-center justify-center font-bold text-lg shadow-md">
+                {pubName[0] || "U"}
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h4 className="font-bold text-base text-[var(--foreground)] truncate">{pubName}</h4>
+                {isPlatform ? (
+                  <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-1.5 py-0.5 rounded border border-emerald-500/30">Official</span>
+                ) : (
+                  <span className="bg-purple-500/20 text-purple-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-purple-500/30">Contributor</span>
+                )}
+              </div>
+              <p className="text-xs text-[var(--muted)] truncate mt-0.5">{pubRole} · {pubSchool}</p>
+              <p className="text-[11px] text-[var(--muted)]/80 mt-1 flex items-center gap-1">
+                <Clock className="w-3 h-3 text-[var(--muted)]" />
+                <span>Uploaded {fmtDate(resource.created_at)}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Academic & Syllabus Specifications */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Academic Specifications</label>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Subject</span>
+              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
+                {resource.subject ? `${resource.subject}${resource.level ? ` (${resource.level})` : ""}` : "General (All Subjects)"}
+              </span>
+            </div>
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Category</span>
+              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
+                {typeLabel(resource.resource_type)}
+              </span>
+            </div>
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Programme</span>
+              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block uppercase">
+                {resource.programme || "DP"}
+              </span>
+            </div>
+            {resource.topic && (
+              <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] sm:col-span-2">
+                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Unit / Topic</span>
+                <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
+                  {resource.topic}
+                </span>
+              </div>
+            )}
+            {resource.year && (
+              <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Session / Year</span>
+                <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
+                  {resource.exam_session ? `${resource.exam_session.toUpperCase()} ` : ""}{resource.year}
+                </span>
+              </div>
+            )}
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">File Size</span>
+              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block">
+                {fmtSize(resource.file_size) || "Unknown"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Highlighted Notes / Contributor Guidance */}
+        {resource.description && (
+          <div className="p-4 rounded-2xl bg-[var(--surface-hover)] border border-[var(--border)]">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[var(--accent)] mb-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Contributor Notes & Key Highlights</span>
+            </div>
+            <p className="text-xs sm:text-sm text-[var(--foreground)]/90 leading-relaxed whitespace-pre-line">
+              {resource.description}
+            </p>
+          </div>
+        )}
+
+        {/* Moderation Verification Note */}
+        <div className="p-3 rounded-xl border border-[var(--border)]/60 bg-[var(--surface)] text-[11px] text-[var(--muted)] flex items-center gap-2.5">
+          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>
+            {isPlatform
+              ? "Official platform resource published and vetted directly by IB Nexus curriculum directors."
+              : "Quality & Academic Integrity: Community submissions are manually checked and approved by IB Nexus moderators before appearing here."}
+          </span>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => { onClose(); onPreview && onPreview(resource); }}
+            className="flex-1"
+          >
+            <BookOpen className="w-4 h-4 mr-2" /> Open in Viewer
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => directDownload(resource)}
+            className="shrink-0"
+          >
+            <Download className="w-4 h-4 mr-1.5" /> Download
+          </Button>
+          {onStudy && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => { onClose(); onStudy(resource); }}
+              className="shrink-0"
+              title="Add to study plan"
+            >
+              <CalendarDays className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Admin Moderation Review Queue Modal ─────────────────────────────────── */
+function AdminModerationQueueModal({ open, onClose, onRefreshResources, onPreview, onEdit }) {
+  const [pendingItems, setPendingItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [actionId, setActionId] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const fetchPending = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/resources?visibility=pending_approval&limit=50");
+      if (!res.ok) throw new Error("Failed to load moderation queue");
+      const d = await res.json();
+      setPendingItems(d.resources || []);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      fetchPending();
+    }
+  }, [open, fetchPending]);
+
+  const handleApprove = async (resource) => {
+    setActionId(resource.id);
+    try {
+      const res = await fetch(`/api/resources/${resource.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility: "approved" }),
+      });
+      if (!res.ok) throw new Error("Failed to approve resource");
+      setPendingItems(prev => prev.filter(r => r.id !== resource.id));
+      onRefreshResources();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  const handleReject = async (resource) => {
+    if (!confirm(`Are you sure you want to reject "${resource.title}"?`)) return;
+    setActionId(resource.id);
+    try {
+      const res = await fetch(`/api/resources/${resource.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility: "rejected" }),
+      });
+      if (!res.ok) throw new Error("Failed to reject resource");
+      setPendingItems(prev => prev.filter(r => r.id !== resource.id));
+      onRefreshResources();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  if (!open) return null;
+
+  return (
+    <Modal open={open} onClose={onClose} title="Admin Moderation Queue · Community Submissions">
+      <div className="space-y-4 max-h-[78vh] overflow-y-auto pr-1">
+        {err && <Alert variant="error" title={err} />}
+
+        {/* Queue header strip */}
+        <div className="p-4 rounded-2xl border border-purple-500/20 bg-gradient-to-r from-purple-500/10 via-purple-500/5 to-transparent flex items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <h4 className="font-bold text-sm text-[var(--foreground)] flex items-center gap-2">
+              <Users className="w-4 h-4 text-purple-400" />
+              <span>Pending Community Review</span>
+            </h4>
+            <p className="text-xs text-[var(--muted)]">
+              Inspect uploaded documents, polish titles and metadata, then approve for instant publication.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={fetchPending}
+            disabled={loading}
+            className="p-2 rounded-xl hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)] transition-colors shrink-0"
+            title="Refresh queue"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-[var(--accent)]" : ""}`} />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="py-16 text-center">
+            <Spinner className="w-8 h-8 mx-auto text-[var(--accent)] mb-3" />
+            <p className="text-xs text-[var(--muted)]">Loading pending community uploads...</p>
+          </div>
+        ) : pendingItems.length === 0 ? (
+          <div className="py-16 text-center border border-[var(--border)] rounded-2xl bg-[var(--surface)]/40 p-8">
+            <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+            <h4 className="font-bold text-base text-[var(--foreground)] mb-1">Queue is Completely Clear!</h4>
+            <p className="text-xs text-[var(--muted)] max-w-sm mx-auto">
+              All community member uploads have been moderated and published. New submissions will appear here automatically.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pendingItems.map((r) => {
+              const pub = r.publisher || {};
+              const pubName = pub.name || "Community Member";
+              const isWorking = actionId === r.id;
+
+              return (
+                <div
+                  key={r.id}
+                  className="p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--border-strong)] transition-all space-y-3"
+                >
+                  {/* Top: submitter info */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      {pub.avatar_url ? (
+                        <img src={pub.avatar_url} alt={pubName} className="w-8 h-8 rounded-xl object-cover shrink-0" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 font-bold flex items-center justify-center text-xs shrink-0">
+                          {pubName[0] || "U"}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-xs text-[var(--foreground)] truncate">{pubName}</span>
+                          <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-bold uppercase">
+                            Pending Review
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-[var(--muted)]">{pub.school_name || "IB Student"} · Submitted {fmtDate(r.created_at)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--foreground)]">
+                        {r.subject || "General"}
+                      </span>
+                      {r.level && (
+                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                          {r.level}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Title & metadata */}
+                  <div>
+                    <h5 className="font-bold text-sm text-[var(--foreground)] leading-snug">{r.title}</h5>
+                    <div className="flex items-center gap-2 text-xs text-[var(--muted)] mt-1 flex-wrap">
+                      <span>{typeLabel(r.resource_type)}</span>
+                      {r.topic && <span>· Unit: {r.topic}</span>}
+                      {r.file_size && <span>· {fmtSize(r.file_size)}</span>}
+                    </div>
+                  </div>
+
+                  {/* Submitter notes */}
+                  {r.description && (
+                    <div className="p-2.5 rounded-xl bg-[var(--surface-hover)]/70 border border-[var(--border)]/70 text-xs text-[var(--foreground)]/90">
+                      <span className="text-[10px] font-bold text-[var(--accent)] uppercase tracking-wider block mb-0.5">Author's Notes:</span>
+                      {r.description}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border)]/50">
+                    <button
+                      type="button"
+                      onClick={() => onPreview && onPreview(r)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-[var(--surface-hover)] hover:bg-[var(--border)] border border-[var(--border)] text-[var(--foreground)] flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-[var(--accent)]" /> Inspect File
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => onEdit && onEdit(r)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Pencil className="w-3.5 h-3.5" /> Edit Details
+                    </button>
+
+                    <div className="flex-1" />
+
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => handleReject(r)}
+                      disabled={isWorking}
+                      className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs py-1.5 px-3"
+                    >
+                      <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => handleApprove(r)}
+                      disabled={isWorking}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-1.5 px-3.5 shadow-md shadow-emerald-500/20"
+                    >
+                      {isWorking ? <Spinner className="w-3.5 h-3.5" /> : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve & Publish</>}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }
@@ -582,11 +1255,157 @@ function StudyFromModal({ open, onClose, resource }) {
   );
 }
 
+/* ── In-Website Document Viewer Modal ────────────────────────────────────── */
+function InWebsiteViewerModal({ open, resource, onClose, onStudy, isSaved, onToggleSave, isAdmin, userProfile }) {
+  if (!open || !resource) return null;
+
+  const type = (resource.file_type || "").toLowerCase();
+  const name = (resource.file_name || "").toLowerCase();
+  const isImage = type.startsWith("image/") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".png") || name.endsWith(".webp");
+  const isOfficeDoc = type.includes("word") || type.includes("excel") || type.includes("powerpoint") || type.includes("officedocument") || name.endsWith(".doc") || name.endsWith(".docx") || name.endsWith(".ppt") || name.endsWith(".pptx") || name.endsWith(".xls") || name.endsWith(".xlsx");
+
+  const embedUrl = isOfficeDoc
+    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(resource.file_url)}`
+    : resource.file_url;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 backdrop-blur-md p-2 sm:p-4 md:p-6"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ scale: 0.95, y: 15 }}
+          animate={{ scale: 1, y: 0 }}
+          exit={{ scale: 0.95, y: 15 }}
+          className="w-full max-w-6xl h-[92vh] bg-[var(--background)] rounded-2xl sm:rounded-3xl overflow-hidden flex flex-col shadow-2xl border border-[var(--border)]"
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-[var(--border)] bg-[var(--surface)]">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-bold text-[var(--foreground)] text-sm sm:text-base truncate max-w-md">
+                    {resource.title || resource.file_name}
+                  </h3>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                    resource.source === "platform" 
+                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                      : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                  }`}>
+                    {resource.source === "platform" ? <><ShieldCheck className="w-3 h-3" /> IB Nexus Library</> : <><BookOpen className="w-3 h-3" /> My Library</>}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-[var(--muted)] mt-0.5 flex-wrap">
+                  {resource.subject ? (
+                    <span>{resource.subject}{resource.level ? ` (${resource.level})` : ""}</span>
+                  ) : (
+                    <span className="text-indigo-400 font-semibold flex items-center gap-1"><Globe className="w-3 h-3" /> General · All Subjects</span>
+                  )}
+                  {resource.resource_type && <span>· {typeLabel(resource.resource_type)}</span>}
+                  {resource.file_size && <span>· {fmtSize(resource.file_size)}</span>}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => directDownload(resource)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--accent)] text-white text-xs font-semibold hover:shadow-lg transition-all"
+                title="Download directly to your device"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download</span>
+              </button>
+
+              {onStudy && (
+                <button
+                  type="button"
+                  onClick={() => onStudy(resource)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--foreground)] text-xs font-semibold hover:border-[var(--accent)] transition-all"
+                >
+                  <CalendarDays className="w-3.5 h-3.5 text-[var(--accent)]" />
+                  <span className="hidden sm:inline">Add to Plan</span>
+                </button>
+              )}
+
+              {onToggleSave && (
+                <button
+                  type="button"
+                  onClick={() => onToggleSave(resource.id)}
+                  className="p-2 rounded-xl bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)] transition-all"
+                  title={isSaved ? "Saved" : "Save"}
+                >
+                  {isSaved ? <BookmarkCheck className="w-4 h-4 text-[var(--accent)]" /> : <Bookmark className="w-4 h-4" />}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-2 rounded-xl hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-red-500 transition-colors"
+                title="Close viewer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Highlighted Details Strip */}
+          {resource.description && (
+            <div className="px-4 sm:px-6 py-2.5 bg-[var(--surface-hover)] border-b border-[var(--border)] flex items-start gap-2.5 text-xs">
+              <Sparkles className="w-4 h-4 text-[var(--accent)] shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-[var(--accent)] mr-1.5 uppercase text-[10px] tracking-wider">
+                  {resource.source === "platform" ? "Official Guidance & Notes:" : "Notes & Details:"}
+                </span>
+                <span className="text-[var(--foreground)]">{resource.description}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Embedded Viewer */}
+          <div className="flex-1 bg-neutral-900/90 relative w-full h-full overflow-hidden flex items-center justify-center">
+            {isImage ? (
+              <div className="w-full h-full overflow-auto flex items-center justify-center p-4">
+                <img
+                  src={resource.file_url}
+                  alt={resource.title || "Resource preview"}
+                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                />
+              </div>
+            ) : (
+              <iframe
+                src={`${embedUrl}#toolbar=1`}
+                className="w-full h-full border-none bg-white"
+                title="Document Viewer"
+              />
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 /* ── Resource Card ────────────────────────────────────────────────────────── */
-function ResourceCard({ resource, isSaved, onToggleSave, onStudy, isAdmin, onDelete, onEdit }) {
+function ResourceCard({ resource, isSaved, onToggleSave, onStudy, isAdmin, onDelete, onEdit, onPreview, onShowPublisherDetails, userProfile }) {
+  const [hoverPub, setHoverPub] = useState(false);
   const sessionLabel = resource.exam_session
     ? `${resource.exam_session === "may" ? "May" : "Nov"} ${resource.year || ""}`
     : resource.year ? `${resource.year}` : null;
+
+  const canEditOrDelete = isAdmin || (resource.user_id && userProfile?.id && resource.user_id === userProfile.id);
+  const isGeneral = !resource.subject;
 
   return (
     <motion.div
@@ -594,35 +1413,62 @@ function ResourceCard({ resource, isSaved, onToggleSave, onStudy, isAdmin, onDel
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
-      className="group relative flex flex-col rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] shadow-sm hover:shadow-md hover:border-[var(--border-strong)] transition-all duration-300 overflow-hidden"
+      className="group relative flex flex-col rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] shadow-sm hover:shadow-md hover:border-[var(--border-strong)] transition-all duration-300"
     >
       {/* Top colour bar */}
-      <div className={`h-1 ${getSubjectBgClass(resource.subject)}`} />
+      <div className={`h-1.5 rounded-t-[1.25rem] ${isGeneral ? "bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" : getSubjectBgClass(resource.subject)}`} />
 
       <div className="flex-1 p-5">
-        {/* Subject badge + source */}
-        <div className="flex items-center justify-between mb-3">
+        {/* Subject badge + source / status */}
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
           <div className="flex items-center gap-2">
-            {resource.subject && (
+            {isGeneral ? (
+              <span className="text-[10px] font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center gap-1">
+                <Globe className="w-3 h-3" /> General • All Subjects
+              </span>
+            ) : (
               <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full ${getSubjectBadgeClasses(resource.subject)}`}>
                 {resource.subject}{resource.level ? ` ${resource.level}` : ""}
               </span>
             )}
           </div>
-          <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--muted)]">
-            {resource.source === "platform" ? "IB Nexus" : "My Library"}
-          </span>
+
+          {resource.source === "platform" ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <ShieldCheck className="w-3 h-3" /> IB Nexus Library
+            </span>
+          ) : resource.visibility === "pending_approval" ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <Clock className="w-3 h-3" /> Under Review
+            </span>
+          ) : resource.visibility === "approved" ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 bg-purple-500/10 text-purple-400 border border-purple-500/20">
+              <Users className="w-3 h-3" /> Community
+            </span>
+          ) : resource.visibility === "rejected" ? (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 bg-rose-500/10 text-rose-400 border border-rose-500/20">
+              <XCircle className="w-3 h-3" /> Needs Revision
+            </span>
+          ) : (
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center gap-1 bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              <BookOpen className="w-3 h-3" /> My Library
+            </span>
+          )}
         </div>
 
-        {/* Title */}
-        <Link href={`/dashboard/resources/${resource.id}`} className="block">
-          <h3 className="font-semibold text-[var(--foreground)] text-sm leading-snug group-hover:text-[var(--accent)] transition-colors line-clamp-2">
+        {/* Title: clicking triggers in-website preview without redirecting */}
+        <button
+          type="button"
+          onClick={() => onPreview && onPreview(resource)}
+          className="text-left w-full block group/title cursor-pointer"
+        >
+          <h3 className="font-semibold text-[var(--foreground)] text-sm leading-snug group-hover/title:text-[var(--accent)] transition-colors line-clamp-2">
             {resource.title}
           </h3>
-        </Link>
+        </button>
 
         {/* Type + session */}
-        <div className="flex items-center gap-2 mt-2 text-xs text-[var(--muted)]">
+        <div className="flex items-center gap-2 mt-2 text-xs text-[var(--muted)] flex-wrap">
           <span>{typeLabel(resource.resource_type)}</span>
           {sessionLabel && (
             <>
@@ -636,40 +1482,154 @@ function ResourceCard({ resource, isSaved, onToggleSave, onStudy, isAdmin, onDel
               <span>{resource.paper_number}</span>
             </>
           )}
+          {resource.file_size && (
+            <>
+              <span className="opacity-40">·</span>
+              <span>{fmtSize(resource.file_size)}</span>
+            </>
+          )}
         </div>
 
         {resource.topic && (
           <p className="text-xs text-[var(--muted)] mt-1.5 line-clamp-1">{resource.topic}</p>
         )}
+
+        {/* Publisher attribution card (Click or hover for contributor overview & material specs) */}
+        <div className="relative mt-3.5">
+          <button
+            type="button"
+            onClick={() => onShowPublisherDetails && onShowPublisherDetails(resource)}
+            onMouseEnter={() => setHoverPub(true)}
+            onMouseLeave={() => setHoverPub(false)}
+            className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[var(--surface-hover)]/70 hover:bg-[var(--surface-hover)] border border-[var(--border)] text-left transition-all group/pub cursor-pointer"
+            title="Click to view contributor profile and material details"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              {resource.publisher?.avatar_url ? (
+                <img src={resource.publisher.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-[var(--accent)]/30" />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[var(--accent)] to-purple-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                  {(resource.publisher?.name || (resource.source === "platform" ? "N" : "C"))[0]}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[var(--foreground)] truncate group-hover/pub:text-[var(--accent)] transition-colors">
+                  {resource.publisher?.name || (resource.source === "platform" ? "IB Nexus Academic Board" : "Community Member")}
+                </p>
+                <p className="text-[10px] text-[var(--muted)] flex items-center gap-1">
+                  <span>{fmtDate(resource.created_at)}</span>
+                  {resource.publisher?.school_name && <span>· {resource.publisher.school_name}</span>}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-[11px] font-semibold text-[var(--accent)] shrink-0 ml-2 group-hover/pub:translate-x-0.5 transition-transform">
+              <span>Details</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
+          </button>
+
+          {/* Quick Hover Preview Popover */}
+          <AnimatePresence>
+            {hoverPub && (
+              <motion.div
+                initial={{ opacity: 0, y: 4, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                transition={{ duration: 0.15 }}
+                className="absolute left-0 right-0 bottom-full mb-2 p-3 rounded-2xl bg-neutral-900/95 backdrop-blur-xl border border-[var(--border)] shadow-2xl z-40 text-left pointer-events-none space-y-1.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" /> Contributor Details
+                  </span>
+                  <span className="text-[10px] text-[var(--muted)]">
+                    {fmtDate(resource.created_at)}
+                  </span>
+                </div>
+                <div className="text-xs font-bold text-[var(--foreground)]">
+                  {resource.publisher?.name || (resource.source === "platform" ? "IB Nexus Academic Board" : "Community Contributor")}
+                </div>
+                <div className="text-[11px] text-[var(--muted)]">
+                  {resource.publisher?.school_name || "IB World School Candidate"}
+                </div>
+                {resource.subject && (
+                  <div className="text-[10px] text-[var(--muted)]">
+                    Subject: <strong className="text-[var(--foreground)]">{resource.subject}{resource.level ? ` (${resource.level})` : ""}</strong>
+                  </div>
+                )}
+                <div className="pt-1 border-t border-[var(--border)]/60 text-[10px] text-[var(--accent)] font-semibold flex items-center gap-1">
+                  <span>Click card to open full specifications & notes</span>
+                  <ChevronRight className="w-2.5 h-2.5" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Highlighted Details & Notes added by user or admin */}
+        {resource.description && (
+          <div className="mt-3 p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] group-hover:border-[var(--accent)]/30 transition-colors">
+            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--accent)] mb-1">
+              <Sparkles className="w-3 h-3 shrink-0" />
+              <span>{resource.source === "platform" ? "Official Notes & Guidance" : "Item Details"}</span>
+            </div>
+            <p className="text-xs text-[var(--foreground)]/90 leading-relaxed line-clamp-2">
+              {resource.description}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Actions bar */}
-      <div className="flex items-center gap-1 px-4 py-3 border-t border-[var(--border)]/50">
-        <Link
-          href={`/dashboard/resources/${resource.id}`}
-          className="flex items-center gap-1.5 text-xs font-medium text-[var(--accent)] hover:underline"
+      <div className="flex items-center gap-1.5 px-4 py-3 border-t border-[var(--border)]/50">
+        <button
+          type="button"
+          onClick={() => onPreview && onPreview(resource)}
+          className="flex items-center gap-1.5 text-xs font-semibold text-[var(--accent)] hover:underline cursor-pointer"
+          title="Open in-website preview"
         >
-          <ExternalLink className="w-3.5 h-3.5" /> Open
-        </Link>
+          <BookOpen className="w-3.5 h-3.5" /> Open
+        </button>
+
+        <button
+          type="button"
+          onClick={() => directDownload(resource)}
+          className="flex items-center gap-1 text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors px-2 py-1 rounded-lg hover:bg-[var(--surface)] cursor-pointer"
+          title="Download file directly"
+        >
+          <Download className="w-3.5 h-3.5" /> Download
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onShowPublisherDetails && onShowPublisherDetails(resource)}
+          className="flex items-center gap-1 text-xs font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors px-2 py-1 rounded-lg hover:bg-[var(--surface)] cursor-pointer"
+          title="View publisher & material info"
+        >
+          <Info className="w-3.5 h-3.5 text-[var(--muted)]" /> Details
+        </button>
+
         <div className="flex-1" />
-        {isAdmin && (
+
+        {canEditOrDelete && (
           <>
             <button
               onClick={() => onEdit(resource)}
-              className="p-1.5 rounded-lg hover:bg-blue-500/10 text-[var(--muted)] hover:text-blue-500 transition-colors mr-1"
-              title="Rename resource (Admin)"
+              className="p-1.5 rounded-lg hover:bg-blue-500/10 text-[var(--muted)] hover:text-blue-500 transition-colors"
+              title="Edit title & details"
             >
               <Pencil className="w-4 h-4" />
             </button>
             <button
               onClick={() => onDelete(resource.id)}
-              className="p-1.5 rounded-lg hover:bg-red-500/10 text-[var(--muted)] hover:text-red-500 transition-colors mr-1"
-              title="Delete resource (Admin)"
+              className="p-1.5 rounded-lg hover:bg-red-500/10 text-[var(--muted)] hover:text-red-500 transition-colors"
+              title="Delete resource"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </>
         )}
+
         <button
           onClick={() => onToggleSave(resource.id)}
           className="p-1.5 rounded-lg hover:bg-[var(--surface)] transition-colors"
@@ -680,6 +1640,7 @@ function ResourceCard({ resource, isSaved, onToggleSave, onStudy, isAdmin, onDel
             : <Bookmark className="w-4 h-4 text-[var(--muted)]" />
           }
         </button>
+
         <button
           onClick={() => onStudy(resource)}
           className="p-1.5 rounded-lg hover:bg-[var(--surface)] transition-colors"
@@ -789,8 +1750,7 @@ function ResourceSkeleton() {
   );
 }
 
-/* ── Main ResourcesClient ─────────────────────────────────────────────────── */
-export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) {
+export default function ResourcesClient({ userProfile, userProgram, isAdmin, userSubjects, globalSubjects = [] }) {
   const router = useRouter();
 
   // State
@@ -802,6 +1762,15 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
   const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [recommended, setRecommended] = useState([]);
   const [tab, setTab] = useState("my_subjects");
+  const [libraryScopeFilter, setLibraryScopeFilter] = useState("all"); // 'all' | 'general' | 'subject'
+  const [previewResource, setPreviewResource] = useState(null);
+  const [editingResource, setEditingResource] = useState(null);
+  const [detailsResource, setDetailsResource] = useState(null);
+  const [adminQueueOpen, setAdminQueueOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [hoveredTab, setHoveredTab] = useState(null);
+  const [showSectionInfo, setShowSectionInfo] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState(null);
   const [selectedSubject, setSelectedSubject] = useState(null);
   const [selectedResourceType, setSelectedResourceType] = useState(null);
   const [subjectStats, setSubjectStats] = useState({});
@@ -809,6 +1778,7 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
   useEffect(() => {
     setSelectedSubject(null);
     setSelectedResourceType(null);
+    setLibraryScopeFilter("all");
   }, [tab]);
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({});
@@ -821,6 +1791,24 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
   // Enhanced search UI states
   const [placeholderText, setPlaceholderText] = useState("Search resources...");
   const [isMac, setIsMac] = useState(false);
+
+  // Fetch pending review count for admins
+  const fetchPendingCount = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      const res = await fetch("/api/resources?pending_count=true");
+      if (res.ok) {
+        const d = await res.json();
+        setPendingCount(d.pending_count || 0);
+      }
+    } catch (e) {
+      console.error("Failed to load pending count", e);
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    fetchPendingCount();
+  }, [fetchPendingCount]);
 
   useEffect(() => {
     setIsMac(navigator.platform.toUpperCase().indexOf('MAC') >= 0);
@@ -885,26 +1873,41 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
     return () => clearTimeout(timeout);
   }, []);
 
-  // Programme-specific Course Catalog for All Subjects Discovery
-  const programCatalog = userProgram === "myp" ? UPLOAD_MYP_GROUPS : UPLOAD_DP_GROUPS;
+  // Programme-specific Canonical Course Catalog from the database
+  const effectiveGlobalSubjects = useMemo(() => {
+    if (Array.isArray(globalSubjects) && globalSubjects.length > 0) {
+      const filtered = globalSubjects.filter(
+        (s) => (s.program || "dp").toLowerCase() === (userProgram || "dp").toLowerCase()
+      );
+      if (filtered.length > 0) return filtered;
+    }
+    return userProgram === "myp" ? CANONICAL_MYP_SUBJECTS : CANONICAL_DP_SUBJECTS;
+  }, [globalSubjects, userProgram]);
+
   const allSubjectsList = useMemo(() => {
-    const names = programCatalog.flatMap(g => g.courses.map(c => c.name));
-    return Array.from(new Set(names));
-  }, [programCatalog]);
+    return Array.from(new Set(effectiveGlobalSubjects.map((s) => s.name)));
+  }, [effectiveGlobalSubjects]);
   const allSubjects = allSubjectsList;
   
-  // User's enrolled subjects from profile
+  // User's enrolled subjects from profile: strictly only the selected subjects
   const mySubjectNames = useMemo(() => {
-    return (userSubjects || []).map(s => typeof s === 'string' ? s : s.name || s.subject || String(s));
+    return (userSubjects || [])
+      .map(s => typeof s === 'string' ? s : (s?.name || s?.subject || ''))
+      .filter(Boolean);
   }, [userSubjects]);
 
   // Build query params from tab + filters + search
   const buildParams = useCallback((offset = 0) => {
     const p = new URLSearchParams();
-    if (tab === "my_library") {
-      p.set("source", "user");
-    } else {
+    if (tab === "nexus_library") {
       p.set("source", "platform");
+    } else if (tab === "community_resources") {
+      p.set("source", "community");
+    } else if (tab === "my_library" || tab === "community_library") {
+      p.set("source", "user");
+      p.set("scope", "mine");
+    } else {
+      p.set("source", "all");
     }
     // Strict programme locking (MYP vs DP)
     p.set("programme", filters.programme || userProgram || "dp");
@@ -986,6 +1989,18 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, filters]);
 
+  // Filtered resources for active tab and libraryScopeFilter
+  const displayedResources = useMemo(() => {
+    if (tab !== "nexus_library" && tab !== "my_library" && tab !== "community_library" && tab !== "community_resources") return resources;
+    if (libraryScopeFilter === "general") {
+      return resources.filter(r => !r.subject);
+    }
+    if (libraryScopeFilter === "subject") {
+      return resources.filter(r => !!r.subject);
+    }
+    return resources;
+  }, [resources, tab, libraryScopeFilter]);
+
   // Debounced search
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -1031,18 +2046,14 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
     }
   };
 
-  const handleEdit = async (resource) => {
-    const newTitle = prompt("Enter new title:", resource.title || resource.file_name);
-    if (!newTitle || newTitle === (resource.title || resource.file_name)) return;
-    try {
-      const updated = await api(`/api/resources/${resource.id}`, {
-        method: "PUT",
-        body: JSON.stringify({ title: newTitle }),
-      });
-      setResources(prev => prev.map(r => r.id === resource.id ? updated : r));
-    } catch (err) {
-      console.error(err);
-      alert("Failed to update resource");
+  const handleEdit = (resource) => {
+    setEditingResource(resource);
+  };
+
+  const handleResourceUpdated = (updated) => {
+    setResources(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+    if (previewResource && previewResource.id === updated.id) {
+      setPreviewResource(prev => ({ ...prev, ...updated }));
     }
   };
 
@@ -1141,64 +2152,333 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
       {/* ── Top Level Navigation ────────────────────────────────────────────── */}
       {!selectedSubject && !search && activeFilterCount === 0 && (
         <div className="mb-10 flex justify-center">
-          <div className="inline-flex bg-[var(--surface)] p-1 rounded-full border border-[var(--border)] shadow-sm" role="tablist">
+          <div className="inline-flex bg-[var(--surface)] p-1.5 rounded-full border border-[var(--border)] shadow-sm flex-wrap justify-center gap-1" role="tablist">
             {MAIN_TABS.map(t => {
               const isActive = tab === t.value;
               const Icon = t.icon;
               return (
-                <button
+                <div
                   key={t.value}
-                  role="tab"
-                  aria-selected={isActive}
-                  onClick={() => setTab(t.value)}
-                  className={`group shrink-0 flex items-center relative px-5 py-2.5 text-[13px] font-semibold rounded-full transition-colors duration-300 outline-none ${
-                    isActive
-                      ? "text-[var(--foreground)]"
-                      : "text-muted hover:text-[var(--foreground)]"
-                  }`}
+                  className="relative"
+                  onMouseEnter={() => setHoveredTab(t.value)}
+                  onMouseLeave={() => setHoveredTab(null)}
                 >
-                  {isActive && (
-                    <motion.div 
-                      layoutId="active-resource-tab"
-                      className="absolute inset-0 bg-[var(--card)] border border-[var(--border)] rounded-full shadow-sm"
-                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                    />
-                  )}
-                  <span className="relative z-10 flex items-center">
-                    <Icon className={`w-4 h-4 mr-2 ${isActive ? 'text-[var(--accent)]' : 'text-muted group-hover:text-[var(--foreground)]'}`} strokeWidth={2.5} />
-                    {t.label}
-                  </span>
-                </button>
+                  <button
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setTab(t.value)}
+                    className={`group shrink-0 flex items-center relative px-4 sm:px-5 py-2.5 text-[13px] font-semibold rounded-full transition-colors duration-300 outline-none ${
+                      isActive
+                        ? "text-[var(--foreground)]"
+                        : "text-muted hover:text-[var(--foreground)]"
+                    }`}
+                  >
+                    {isActive && (
+                      <motion.div 
+                        layoutId="active-resource-tab"
+                        className="absolute inset-0 bg-[var(--card)] border border-[var(--border)] rounded-full shadow-sm"
+                        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      />
+                    )}
+                    <span className="relative z-10 flex items-center">
+                      <Icon className={`w-4 h-4 mr-2 ${isActive ? 'text-[var(--accent)]' : 'text-muted group-hover:text-[var(--foreground)]'}`} strokeWidth={2.5} />
+                      {t.label}
+                      {t.value === "community_resources" && isAdmin && pendingCount > 0 && (
+                        <span className="ml-1.5 px-1.5 py-0.5 text-[10px] font-black rounded-full bg-amber-500 text-black leading-none animate-pulse">
+                          {pendingCount}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+
+                  {/* Hover Information Tooltip */}
+                  <AnimatePresence>
+                    {hoveredTab === t.value && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-64 p-3 rounded-2xl bg-neutral-900/95 backdrop-blur-xl border border-[var(--border)] shadow-2xl z-50 pointer-events-none text-left"
+                      >
+                        <div className="flex items-center gap-1.5 font-bold text-xs text-[var(--foreground)] mb-1">
+                          <Icon className="w-3.5 h-3.5 text-[var(--accent)]" />
+                          <span>{t.tooltipTitle}</span>
+                        </div>
+                        <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                          {t.tooltipDesc}
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               );
             })}
           </div>
         </div>
       )}
 
+      {/* ── Submission Notice Toast Banner ─────────────────────────────────── */}
+      <AnimatePresence>
+        {uploadNotice && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mb-6 p-4 rounded-2xl border border-purple-500/30 bg-purple-500/10 text-purple-200 text-xs flex items-center justify-between gap-3 shadow-lg"
+          >
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0" />
+              <span>{uploadNotice}</span>
+            </div>
+            <button onClick={() => setUploadNotice(null)} className="text-purple-400 hover:text-white p-1">
+              <X className="w-4 h-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Main View Area ────────────────────────────────────────────────── */}
-      {search || activeFilterCount > 0 || tab === "my_library" ? (
-        // Grid View for Search, Filters, or My Library
+      {search || activeFilterCount > 0 || tab === "nexus_library" || tab === "my_library" || tab === "community_library" || tab === "community_resources" ? (
+        // Grid View for Search, Filters, IB Nexus Library, Community Resources, or My Library
         <>
+          {/* Header for IB Nexus Library */}
+          {tab === "nexus_library" && !search && activeFilterCount === 0 && (
+            <div className="p-6 mb-6 rounded-3xl border border-emerald-500/20 bg-gradient-to-r from-emerald-500/[0.08] via-emerald-500/[0.02] to-transparent flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>IB Nexus Repository</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-[var(--foreground)] tracking-tight">
+                  IB Nexus Library
+                </h2>
+                <p className="text-xs sm:text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
+                  Curated official past examination papers, syllabus guides, exam room rules, regulations, and verified exemplars published directly by IB Nexus.
+                </p>
+              </div>
+              {isAdmin && (
+                <Button
+                  variant="primary"
+                  onClick={() => setUploadOpen(true)}
+                  className="shrink-0 shadow-lg shadow-emerald-500/10"
+                >
+                  <Upload className="w-4 h-4 mr-2" /> Upload to IB Nexus Library
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* Header for Community Resources */}
+          {tab === "community_resources" && !search && activeFilterCount === 0 && (
+            <div className="p-6 mb-6 rounded-3xl border border-purple-500/20 bg-gradient-to-r from-purple-500/[0.08] via-purple-500/[0.02] to-transparent flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-purple-400 bg-purple-500/10 px-2.5 py-0.5 rounded-full border border-purple-500/20">
+                    <Users className="w-4 h-4" />
+                    <span>Peer Knowledge Exchange</span>
+                  </div>
+                  <span className="text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold">
+                    <ShieldCheck className="w-3 h-3" /> Moderator Approved
+                  </span>
+
+                  {/* Section Hover Detail Popover */}
+                  <div 
+                    className="relative inline-block"
+                    onMouseEnter={() => setShowSectionInfo(true)}
+                    onMouseLeave={() => setShowSectionInfo(false)}
+                  >
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-300 hover:text-purple-200 bg-purple-500/10 hover:bg-purple-500/20 px-2.5 py-0.5 rounded-full border border-purple-500/20 transition-colors cursor-pointer"
+                    >
+                      <Info className="w-3 h-3" />
+                      <span>About this section</span>
+                    </button>
+                    <AnimatePresence>
+                      {showSectionInfo && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 6, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.95 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute left-0 top-full mt-2 w-72 sm:w-80 p-4 rounded-2xl bg-neutral-900/95 backdrop-blur-xl border border-[var(--border)] shadow-2xl z-50 text-left space-y-2 pointer-events-none"
+                        >
+                          <div className="flex items-center gap-2 text-xs font-bold text-[var(--foreground)]">
+                            <Users className="w-4 h-4 text-purple-400" />
+                            <span>About IB Community Resources</span>
+                          </div>
+                          <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                            • <strong>Peer-to-Peer Knowledge:</strong> Student-contributed revision notes, formula sheets, summaries, and exam strategies.
+                          </p>
+                          <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                            • <strong>Admin Verification:</strong> Every student submission is verified and approved by an administrator before appearing publicly.
+                          </p>
+                          <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                            • <strong>Attribution & Transparency:</strong> Publisher identity, school, upload date, and curriculum notes are clearly displayed on every resource card.
+                          </p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-[var(--foreground)] tracking-tight">
+                  IB Community Resources
+                </h2>
+                <p className="text-xs sm:text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
+                  Peer-to-peer revision packs, student notes, and verified exemplars. Every community upload is checked and approved by an IB Nexus administrator before being published.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {isAdmin && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => setAdminQueueOpen(true)}
+                    className={`shrink-0 border-purple-500/30 text-purple-300 hover:bg-purple-500/10 shadow-sm relative ${
+                      pendingCount > 0 ? "ring-2 ring-amber-500/50" : ""
+                    }`}
+                  >
+                    <Clock className="w-4 h-4 mr-1.5 text-amber-400" />
+                    <span>Review Queue</span>
+                    {pendingCount > 0 && (
+                      <span className="ml-2 px-1.5 py-0.5 rounded-full bg-amber-500 text-black text-[10px] font-black">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </Button>
+                )}
+
+                <Button
+                  variant="primary"
+                  onClick={() => setUploadOpen(true)}
+                  className="shrink-0 shadow-lg shadow-purple-500/20 bg-purple-600 hover:bg-purple-500"
+                >
+                  <Upload className="w-4 h-4 mr-2" /> Submit Resource
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Header for My Library */}
+          {(tab === "my_library" || tab === "community_library") && !search && activeFilterCount === 0 && (
+            <div className="p-6 mb-6 rounded-3xl border border-blue-500/20 bg-gradient-to-r from-blue-500/[0.08] via-blue-500/[0.02] to-transparent flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 px-2.5 py-0.5 rounded-full border border-blue-500/20">
+                  <BookOpen className="w-4 h-4" />
+                  <span>Personal Study Repository</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-[var(--foreground)] tracking-tight">
+                  My Library
+                </h2>
+                <p className="text-xs sm:text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
+                  Your private workspace for uploaded revision guides, notes, summaries, coursework drafts, and study materials.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                onClick={() => setUploadOpen(true)}
+                className="shrink-0 shadow-lg shadow-blue-500/10"
+              >
+                <Upload className="w-4 h-4 mr-2" /> Upload to My Library
+              </Button>
+            </div>
+          )}
+
+          {/* Scope Filter Pills for Libraries */}
+          {(tab === "nexus_library" || tab === "my_library" || tab === "community_library" || tab === "community_resources") && !search && activeFilterCount === 0 && resources.length > 0 && (
+            <div className="flex items-center gap-2 mb-6 flex-wrap">
+              <span className="text-xs font-semibold text-[var(--muted)] mr-1">Scope:</span>
+              <button
+                type="button"
+                onClick={() => setLibraryScopeFilter("all")}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                  libraryScopeFilter === "all"
+                    ? "bg-[var(--accent)] text-white shadow-sm"
+                    : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
+                }`}
+              >
+                All Items ({resources.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setLibraryScopeFilter("general")}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  libraryScopeFilter === "general"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                General / All Subjects ({resources.filter(r => !r.subject).length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setLibraryScopeFilter("subject")}
+                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  libraryScopeFilter === "subject"
+                    ? "bg-[var(--accent)] text-white shadow-sm"
+                    : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                Subject-Specific ({resources.filter(r => !!r.subject).length})
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {Array.from({ length: 6 }).map((_, i) => <ResourceSkeleton key={i} />)}
             </div>
-          ) : resources.length === 0 ? (
+          ) : displayedResources.length === 0 ? (
             <div className="card p-12 sm:p-20 text-center border border-[var(--border)] bg-[var(--surface)]/30 backdrop-blur-sm overflow-hidden relative">
               <div className="absolute -top-40 -right-40 w-80 h-80 bg-[var(--accent)] opacity-[0.03] blur-3xl rounded-full pointer-events-none"></div>
               <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-[var(--accent)] opacity-[0.03] blur-3xl rounded-full pointer-events-none"></div>
               
-              {tab === "my_library" ? (
+              {tab === "nexus_library" ? (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-                  <div className="w-16 h-16 rounded-full bg-[var(--accent)]/10 flex items-center justify-center mx-auto mb-6 shadow-inner">
-                    <Archive className="w-8 h-8 text-[var(--accent)]" />
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/10 flex items-center justify-center mx-auto mb-6 shadow-inner text-emerald-400">
+                    <ShieldCheck className="w-8 h-8" />
                   </div>
-                  <h3 className="text-xl font-bold text-[var(--foreground)] mb-3 tracking-tight">YOUR PERSONAL LIBRARY IS EMPTY</h3>
+                  <h3 className="text-xl font-bold text-[var(--foreground)] mb-3 tracking-tight">IB NEXUS LIBRARY IS EMPTY</h3>
                   <p className="text-base text-[var(--muted)] max-w-md mx-auto mb-8 leading-relaxed">
-                    Save resources you want to return to, or upload your own study material to keep everything organized in one premium workspace.
+                    No official resources or exam regulations have been published yet. They will appear here dynamically as soon as an Admin uploads them.
                   </p>
-                  <Button variant="primary" onClick={() => setUploadOpen(true)} className="shadow-lg shadow-[var(--accent)]/20 transition-all duration-300 hover:scale-105">
-                    <Upload className="w-4 h-4 mr-2" /> <span className="font-medium">Upload Resource</span>
+                  {isAdmin && (
+                    <Button variant="primary" onClick={() => setUploadOpen(true)} className="shadow-lg shadow-emerald-500/20">
+                      <Upload className="w-4 h-4 mr-2" /> <span className="font-medium">Upload to IB Nexus Library</span>
+                    </Button>
+                  )}
+                </motion.div>
+              ) : tab === "community_resources" ? (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+                  <div className="w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mx-auto mb-6 shadow-inner text-purple-400">
+                    <Users className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[var(--foreground)] mb-3 tracking-tight">
+                    COMMUNITY REPOSITORY IS READY
+                  </h3>
+                  <p className="text-base text-[var(--muted)] max-w-md mx-auto mb-8 leading-relaxed">
+                    No peer study packs or notes have been approved for this section yet. Click below to submit your study guide or summary to be verified by a moderator!
+                  </p>
+                  <Button variant="primary" onClick={() => setUploadOpen(true)} className="shadow-lg shadow-purple-500/20 bg-purple-600 hover:bg-purple-500">
+                    <Upload className="w-4 h-4 mr-2" /> <span className="font-medium">Submit Community Resource</span>
+                  </Button>
+                </motion.div>
+              ) : (tab === "my_library" || tab === "community_library") ? (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+                  <div className="w-16 h-16 rounded-full bg-blue-500/10 flex items-center justify-center mx-auto mb-6 shadow-inner text-blue-400">
+                    <BookOpen className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-xl font-bold text-[var(--foreground)] mb-3 tracking-tight">
+                    YOUR LIBRARY IS EMPTY
+                  </h3>
+                  <p className="text-base text-[var(--muted)] max-w-md mx-auto mb-8 leading-relaxed">
+                    You haven't uploaded any study materials or notes yet. Click below to add your first document and build your personal academic library.
+                  </p>
+                  <Button variant="primary" onClick={() => setUploadOpen(true)} className="shadow-lg shadow-blue-500/20">
+                    <Upload className="w-4 h-4 mr-2" /> <span className="font-medium">Upload to My Library</span>
                   </Button>
                 </motion.div>
               ) : search ? (
@@ -1235,7 +2515,7 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <AnimatePresence mode="popLayout">
-                  {resources.map(r => (
+                  {displayedResources.map(r => (
                     <ResourceCard
                       key={r.id}
                       resource={r}
@@ -1245,6 +2525,9 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
                       isAdmin={isAdmin}
                       onDelete={handleDelete}
                       onEdit={handleEdit}
+                      onPreview={setPreviewResource}
+                      onShowPublisherDetails={setDetailsResource}
+                      userProfile={userProfile}
                     />
                   ))}
                 </AnimatePresence>
@@ -1342,16 +2625,25 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
                 <ArrowLeft className="w-4 h-4" /> Back to Subjects
               </button>
               
-              <div className="flex items-center gap-4 border-b border-[var(--border)] pb-8">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-sm ${getSubjectIconClasses(selectedSubject)}`}>
-                  <BookOpen className="w-8 h-8" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--border)] pb-8">
+                <div className="flex items-center gap-4">
+                  <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl shadow-sm ${getSubjectIconClasses(selectedSubject)}`}>
+                    <BookOpen className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <h2 className="text-3xl font-extrabold text-[var(--foreground)] tracking-tight">
+                      {selectedSubject}
+                    </h2>
+                    <p className="text-[var(--muted)] mt-1">Explore and contribute resources for {selectedSubject}.</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-3xl font-extrabold text-[var(--foreground)] tracking-tight">
-                    {selectedSubject}
-                  </h2>
-                  <p className="text-[var(--muted)] mt-1">Explore the resources available for {selectedSubject}.</p>
-                </div>
+                <Button 
+                  variant="primary" 
+                  onClick={() => setUploadOpen(true)}
+                  className="shrink-0 flex items-center gap-2 self-start sm:self-auto shadow-md"
+                >
+                  <Upload className="w-4 h-4" /> Upload Document
+                </Button>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -1389,6 +2681,7 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
                 userSubjects={mySubjectNames} 
                 userProgram={userProgram}
                 isAdmin={isAdmin}
+                userProfile={userProfile}
               />
             </motion.div>
           )}
@@ -1399,15 +2692,24 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
       <UploadModal
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onSuccess={(r) => {
-          setResources(prev => [r, ...prev]);
-          setTotal(prev => prev + 1);
+        onSuccess={(r, dest) => {
+          if (dest === "community" && !isAdmin) {
+            setUploadNotice("Your resource has been submitted for review! An IB Nexus administrator will verify it before it appears in Community Resources.");
+            setTimeout(() => setUploadNotice(null), 8000);
+          } else {
+            setResources(prev => [r, ...prev]);
+            setTotal(prev => prev + 1);
+          }
           setUploadOpen(false);
+          fetchPendingCount();
+          loadResources();
         }}
         isAdmin={isAdmin}
+        userProfile={userProfile}
         subjects={allSubjects}
         userProgram={userProgram}
         initialTab={tab}
+        selectedSubject={selectedSubject}
       />
 
       <StudyFromModal
@@ -1415,6 +2717,44 @@ export default function ResourcesClient({ userProgram, isAdmin, userSubjects }) 
         onClose={() => setStudyResource(null)}
         resource={studyResource}
       />
+
+      <InWebsiteViewerModal
+        open={!!previewResource}
+        resource={previewResource}
+        onClose={() => setPreviewResource(null)}
+        onStudy={setStudyResource}
+        isSaved={previewResource ? savedIds.has(previewResource.id) : false}
+        onToggleSave={toggleSave}
+        isAdmin={isAdmin}
+        userProfile={userProfile}
+      />
+
+      <EditResourceModal
+        open={!!editingResource}
+        resource={editingResource}
+        onClose={() => setEditingResource(null)}
+        onSaved={handleResourceUpdated}
+        isAdmin={isAdmin}
+      />
+
+      <PublisherDetailsModal
+        open={!!detailsResource}
+        resource={detailsResource}
+        onClose={() => setDetailsResource(null)}
+        onPreview={setPreviewResource}
+        onStudy={setStudyResource}
+        directDownload={directDownload}
+      />
+
+      {isAdmin && (
+        <AdminModerationQueueModal
+          open={adminQueueOpen}
+          onClose={() => { setAdminQueueOpen(false); fetchPendingCount(); }}
+          onRefreshResources={() => { loadResources(); fetchPendingCount(); }}
+          onPreview={setPreviewResource}
+          onEdit={(r) => { setEditingResource(r); setAdminQueueOpen(false); }}
+        />
+      )}
     </div>
   );
 }

@@ -112,6 +112,7 @@
   --ring: 0 0 0 3px rgba(66, 102, 232, 0.2);
 
   /* Global Motion Tokens */
+  --motion-instant: 100ms cubic-bezier(0.4, 0, 0.2, 1);
   --motion-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
   --motion-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --motion-emphasis: 300ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -462,10 +463,14 @@ body, .card, nav, aside, button, a, input, textarea, select {
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow-sm);
-  transition: transform var(--motion-normal), box-shadow var(--motion-normal), border-color var(--motion-normal);
+  transition: transform var(--motion-fast), box-shadow var(--motion-fast), border-color var(--motion-fast), background-color var(--motion-fast);
 }
 .card:hover {
   box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.card:active {
+  transform: translateY(0) scale(0.99);
 }
 .dark .card { box-shadow: var(--shadow-sm); }
 
@@ -580,11 +585,27 @@ body, .card, nav, aside, button, a, input, textarea, select {
 html { transition: opacity 200ms ease; }
 html.page-leaving { opacity: .92; }
 
+/* ── DOM Interaction Utilities (Overrides) ─────────────────────────────────── */
+.interactive-hover {
+  transition: transform 150ms cubic-bezier(0.4, 0, 0.2, 1), box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+@media (hover: hover) and (pointer: fine) {
+  .interactive-hover:hover {
+    transform: translateY(-2px) !important;
+  }
+}
+.interactive-press:active {
+  transform: scale(0.96) !important;
+}
+.interactive-press-subtle:active {
+  transform: scale(0.98) !important;
+}
+
 /* ── Theme Transition ──────────────────────────────────────────────────────── */
 html, body, .card, .btn, .field, header, nav, aside {
   transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 200ms;
+  transition-duration: 150ms;
 }
 
 /* ── Dashboard ──────────────────────────────────────────────────────────────── */
@@ -602,3 +623,19 @@ body.sidebar-collapsed .dashboard-content { margin-left: 80px; }
   from { opacity: 0; margin-left: -4px; }
   to { opacity: 1; margin-left: 0; }
 }
+
+/* ── Global Scrolling Freedom ─────────────────────────────────────────────── */
+html {
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  height: 100%;
+}
+
+body {
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100%;
+  overscroll-behavior-y: auto;
+}
+

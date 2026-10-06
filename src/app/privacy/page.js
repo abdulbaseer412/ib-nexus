@@ -119,13 +119,22 @@ export default function PrivacyPolicyPage() {
 
       <LegalSection id="ai-features" category="AI Features" title="How AI fits into your study">
         <LegalP>
-          IB Nexus includes AI-powered learning support, such as our AI Tutor. When you ask a question or request help, AI tools help generate clear explanations, practice questions, and revision prompts based on the material you&apos;re studying.
+          IB Nexus includes AI-powered learning support, such as Nexus AI (our AI Tutor). When you ask a question or request help, AI tools help generate clear explanations, practice questions, and revision prompts based on the material you&apos;re studying across IB DP and MYP subjects.
         </LegalP>
         <LegalP>
           When you use these features, the questions you ask and the context you provide may be processed by AI technology providers to generate a response. We take reasonable steps to ensure any AI provider we work with protects the information it receives and does not use it for purposes unrelated to providing the service.
         </LegalP>
+        <LegalH3>Shared Content & Snippet Privacy</LegalH3>
         <LegalP>
-          AI responses are generated to support understanding, not to complete assignments on your behalf. You remain responsible for the work you submit, and you should always follow the academic integrity rules of your school and the International Baccalaureate organisation.
+          When you choose to share a user prompt or an AI response snippet from IB Nexus using our share tools, only the specific text snippet you select is included in the share link or visual card. Your account profile, private study history, personal Knowledge Lens context, saved subject notes, and internal IB progress tracking remain strictly private and are never accessible to external viewers.
+        </LegalP>
+        <LegalH3>Memory Sources & Personalization Protection</LegalH3>
+        <LegalP>
+          IB Nexus isolates your study memory and workspace preferences to your authenticated session. Memory sources used to personalize your responses (such as your subject level or uploaded syllabus notes) are not transmitted or exposed when you export a shared link.
+        </LegalP>
+        <LegalH3>Off-the-Record Temporary Chat Sessions</LegalH3>
+        <LegalP>
+          When you enable Temporary Chat in IB Nexus, your session is off-the-record. Temporary conversations, prompts, file attachments, and generated responses are held transiently in memory and are never saved to permanent database storage, never added to your sidebar chat history, and are completely purged when you end the session or turn off temporary chat.
         </LegalP>
         <LegalCallout icon={TriangleAlert} title="Please verify important information" tone="warning">
           <p>

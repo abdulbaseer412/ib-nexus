@@ -40,10 +40,10 @@ const NavItem = ({ label, href, icon: Icon, color = "var(--accent)", isActive, i
         prefetch 
         href={href} 
         onClick={onNavigate} 
-        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-all duration-300 outline-none ${
+        className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-all duration-150 outline-none interactive-press ${
           isActive 
             ? "text-[var(--sidebar-active-text)]" 
-            : "text-[var(--sidebar-text)] hover:text-[var(--sidebar-active-text)]"
+            : "text-[var(--sidebar-text)] hover:text-[var(--sidebar-active-text)] hover:bg-[var(--sidebar-hover-bg)]"
         }`}
       >
         {/* Subtle active background */}
@@ -55,10 +55,7 @@ const NavItem = ({ label, href, icon: Icon, color = "var(--accent)", isActive, i
          />
         )}
         
-        {/* Hover background for inactive */}
-        {!isActive && (
-          <div className="absolute inset-0 rounded-xl bg-[var(--sidebar-hover-bg)] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-        )}
+
 
         {/* Animated line indicator */}
         {isActive && (
@@ -71,7 +68,7 @@ const NavItem = ({ label, href, icon: Icon, color = "var(--accent)", isActive, i
         )}
         
         <div className="relative z-10 flex items-center justify-center w-5 h-5 shrink-0">
-          <Icon size={18} strokeWidth={isActive ? 2.5 : 2} className="transition-all duration-300" style={{ color: isActive ? color : undefined }} />
+          <Icon size={18} strokeWidth={isActive ? 2.5 : 2} className="transition-all duration-150" style={{ color: isActive ? color : undefined }} />
         </div>
         
         <AnimatePresence>
@@ -165,9 +162,9 @@ export default function DashboardSidebar({ profile }) {
             {isCollapsed ? <ChevronRight size={14} strokeWidth={2.5} className="transition-transform duration-300 group-hover:scale-110 group-hover:translate-x-0.5" /> : <ChevronLeft size={14} strokeWidth={2.5} className="transition-transform duration-300 group-hover:scale-110 group-hover:-translate-x-0.5" />}
             
             {/* Tooltip */}
-            <div className="absolute left-[calc(100%+16px)] top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-[var(--foreground)] text-[var(--background)] text-xs font-bold rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap shadow-lg">
+            <span className="absolute left-[calc(100%+16px)] top-1/2 -translate-y-1/2 px-2.5 py-1.5 bg-[var(--foreground)] text-[var(--background)] text-xs font-bold rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap shadow-lg pointer-events-none">
               {isCollapsed ? "Open navigation" : "Collapse navigation"}
-            </div>
+            </span>
           </button>
         </div>
 
@@ -227,7 +224,7 @@ export default function DashboardSidebar({ profile }) {
               label="Settings"
               href="/settings"
               icon={Settings}
-              isActive={path === "/settings"}
+              isActive={path === "/settings" || path.startsWith("/settings/")}
               isCollapsed={isCollapsed}
             />
             
@@ -238,12 +235,12 @@ export default function DashboardSidebar({ profile }) {
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-all duration-300 outline-none w-full text-left"
                 aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
-                <div className="absolute inset-0 rounded-xl bg-[var(--surface-hover)] opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <span className="absolute inset-0 rounded-xl bg-[var(--surface-hover)] opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                 
                 {/* Fixed the icon size to match NavItem precisely */}
-                <div className="relative z-10 flex items-center justify-center w-5 h-5 shrink-0">
+                <span className="relative z-10 flex items-center justify-center w-5 h-5 shrink-0">
                   {theme === 'dark' ? <Sun size={18} className="group-hover:text-amber-400 transition-colors" /> : <Moon size={18} className="group-hover:text-indigo-400 transition-colors" />}
-                </div>
+                </span>
                 
                 <AnimatePresence>
                   {!isCollapsed && (
@@ -342,9 +339,9 @@ export default function DashboardSidebar({ profile }) {
                     <Link
                       href="/settings"
                       onClick={() => setIsMobileOpen(false)}
-                      className={`flex items-center gap-3 px-5 py-4 text-[15px] font-medium border-b border-[var(--border)]/50 transition-colors ${path === '/settings' ? "text-[var(--accent)] bg-[var(--accent)]/5" : "text-[var(--foreground)]"}`}
+                      className={`flex items-center gap-3 px-5 py-4 text-[15px] font-medium border-b border-[var(--border)]/50 transition-colors ${path === '/settings' || path.startsWith('/settings/') ? "text-[var(--accent)] bg-[var(--accent)]/5" : "text-[var(--foreground)]"}`}
                     >
-                      <Settings size={20} className={path === '/settings' ? "text-[var(--accent)]" : "text-[var(--muted)]"} /> Settings
+                      <Settings size={20} className={path === '/settings' || path.startsWith('/settings/') ? "text-[var(--accent)]" : "text-[var(--muted)]"} /> Settings
                     </Link>
                     <button
                       onClick={() => {

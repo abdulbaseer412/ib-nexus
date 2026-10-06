@@ -40,3 +40,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local scratch, debug & temp scripts
+/scratch/
+supabase/.temp/
+test-*.js
+test_*.mjs
+test-*.mjs
+add_admin_notes_col.js
+add_col.js
+fetch-messages.js
+*.log

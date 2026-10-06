@@ -95,6 +95,8 @@ export async function* streamGeminiChat({
   modelId,
   knowledgeContext = [],
   masterRules = [],
+  userPreferences = {},
+  isTemporary = false,
 }) {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -122,7 +124,9 @@ export async function* streamGeminiChat({
     userProfile,
     subjectFilter,
     knowledgeContext,
-    masterRules
+    masterRules,
+    userPreferences,
+    isTemporary,
   });
   const contents = formatContents(messages);
 

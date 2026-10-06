@@ -10,6 +10,10 @@ export async function GET() {
     const { is_locked, lock_message } = await getWebsiteLockSettings();
     const { user, profile } = await getAuthSession();
 
+    const superAdminEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+    const userEmail = user?.email?.trim().toLowerCase();
+    const isSuperAdmin = Boolean(superAdminEmail && userEmail === superAdminEmail);
+
     let isApproved = false;
     if (user && is_locked) {
       isApproved = await isUserApprovedForLockedSite(user, profile);
@@ -20,6 +24,7 @@ export async function GET() {
       lockMessage: lock_message || null,
       isAuthenticated: Boolean(user),
       isApproved,
+      isSuperAdmin,
       userEmail: user?.email || null,
     });
   } catch (error) {

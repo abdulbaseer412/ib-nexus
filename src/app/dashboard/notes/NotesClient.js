@@ -7,7 +7,7 @@ import {
   Search, Plus, PenLine, Clock, Star, Archive, 
   MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, 
   CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity,
-  Camera, X, FolderUp, Folder, ChevronRight, CheckSquare, Square
+  Camera, X, FolderUp, Folder, ChevronRight, CheckSquare, Square, Settings
 } from "lucide-react";
 import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent, createFolder, updateNoteMetadata, bulkDeleteNotesAction } from "./actions";
 import { createClient } from "@/utils/supabase-browser";
@@ -466,14 +466,14 @@ export default function NotesClient({ initialNotes, userProgram }) {
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a2e] border border-white/10 rounded-full px-6 py-3 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300">
           <span className="text-white font-bold whitespace-nowrap">{selectedIds.length} Selected</span>
           <div className="w-px h-6 bg-white/10" />
-          <button onClick={selectAll} className="text-[13px] font-semibold text-white/70 hover:text-white transition-colors">
+          <button onClick={selectAll} className="text-[13px] font-semibold text-white/70 hover:text-white transition-colors interactive-hover interactive-press-subtle">
             {selectedIds.length === filteredNotes.length ? "Deselect All" : "Select All"}
           </button>
           <div className="w-px h-6 bg-white/10" />
           <button 
             onClick={handleBulkDelete} 
             disabled={isBulkDeleting}
-            className="flex items-center gap-2 text-[13px] font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 text-[13px] font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50 interactive-hover interactive-press"
           >
             <Trash2 size={16} /> {isBulkDeleting ? "Deleting..." : "Delete"}
           </button>
@@ -522,7 +522,7 @@ export default function NotesClient({ initialNotes, userProgram }) {
       {/* Quick Action / Command Area */}
       {notes.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">
-          <button onClick={startCamera} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition group">
+          <button onClick={startCamera} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition group interactive-hover interactive-press-subtle">
             <Camera size={14} className="text-accent group-hover:scale-110 transition-transform" /> Quick capture
           </button>
           
@@ -609,10 +609,10 @@ export default function NotesClient({ initialNotes, userProgram }) {
                 </button>
               ))}
               <div className="w-px h-6 bg-[var(--divider)] mx-1"></div>
-              <button onClick={() => setViewMode("grid")} className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-[var(--card)] text-[var(--foreground)] shadow-sm border border-[var(--border)]' : 'text-muted hover:text-[var(--foreground)] border border-transparent'}`}>
+              <button onClick={() => setViewMode("grid")} className={`p-1.5 rounded-lg transition-all interactive-hover interactive-press-subtle ${viewMode === 'grid' ? 'bg-[var(--card)] text-[var(--foreground)] shadow-sm border border-[var(--border)]' : 'text-muted hover:text-[var(--foreground)] border border-transparent'}`}>
                 <LayoutGrid size={16} />
               </button>
-              <button onClick={() => setViewMode("list")} className={`p-1.5 rounded-lg transition-all ${viewMode === 'list' ? 'bg-[var(--card)] text-[var(--foreground)] shadow-sm border border-[var(--border)]' : 'text-muted hover:text-[var(--foreground)] border border-transparent'}`}>
+              <button onClick={() => setViewMode("list")} className={`p-1.5 rounded-lg transition-all interactive-hover interactive-press-subtle ${viewMode === 'list' ? 'bg-[var(--card)] text-[var(--foreground)] shadow-sm border border-[var(--border)]' : 'text-muted hover:text-[var(--foreground)] border border-transparent'}`}>
                 <List size={16} />
               </button>
             </div>
@@ -819,8 +819,8 @@ export default function NotesClient({ initialNotes, userProgram }) {
           </div>
           <div>
             <label className="text-sm font-medium text-primary mb-1.5 block">Subject</label>
-            <select name="subject" required className="field w-full bg-[var(--surface-alt)]">
-              <option value="" disabled selected>Select subject</option>
+            <select name="subject" required defaultValue="" className="field w-full bg-[var(--surface-alt)]">
+              <option value="" disabled>Select subject</option>
               {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
@@ -977,7 +977,7 @@ const NoteCard = memo(function NoteCard({ note, isSelected, onToggleSelect, onTo
     : { href: `/dashboard/notes/${note.id}`, className: "block w-full h-full" };
 
   return (
-    <div className={`group card flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border relative h-52 ${isFolder ? 'ring-1 ring-accent/10 shadow-sm' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-divider'}`}>
+    <div className={`group card interactive-hover flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border relative h-52 ${isFolder ? 'ring-1 ring-accent/10 shadow-sm' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-divider'}`}>
       
       {/* Selection Checkbox */}
       <button 
@@ -1034,19 +1034,19 @@ const NoteCard = memo(function NoteCard({ note, isSelected, onToggleSelect, onTo
             <Clock size={12} /> {timeAgo(note.updated_at)}
           </span>
           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2" onClick={e => e.stopPropagation()}>
-            <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="hover:text-primary transition" title="Edit Details">
-              <PenLine size={14} />
+            <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="hover:text-primary transition interactive-hover interactive-press-subtle" title="Edit Details">
+              <Settings size={14} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
-              <Star size={14} className={note.is_favorite ? "fill-current" : ""} />
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition interactive-hover interactive-press-subtle" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
+              <Star size={14} className={note.is_favorite ? "fill-yellow-500 text-yellow-500" : ""} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition" title={note.is_pinned ? "Unpin" : "Pin"}>
-              <Pin size={14} className={note.is_pinned ? "fill-current" : ""} />
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition interactive-hover interactive-press-subtle" title={note.is_pinned ? "Unpin" : "Pin"}>
+              <Pin size={14} className={note.is_pinned ? "text-accent fill-accent/20" : ""} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="hover:text-primary transition" title={note.is_archived ? "Restore" : "Archive"}>
-              <Archive size={14} />
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="hover:text-primary transition interactive-hover interactive-press-subtle" title={note.is_archived ? "Restore" : "Archive"}>
+              <Archive size={14} className={note.is_archived ? "text-primary" : ""} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1" title="Delete">
+            <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1 interactive-hover interactive-press-subtle" title="Delete">
               <Trash2 size={14} />
             </button>
           </div>
@@ -1112,19 +1112,19 @@ const NoteListItem = memo(function NoteListItem({ note, isSelected, onToggleSele
         )}
         <span className="text-xs text-muted hidden sm:block">Edited {timeAgo(note.updated_at)}</span>
         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-          <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="text-muted hover:text-primary transition p-1" title="Edit Details">
-            <PenLine size={16} />
+          <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="text-muted hover:text-primary transition p-1 interactive-hover interactive-press-subtle" title="Edit Details">
+            <Settings size={15} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className={`hover:text-yellow-500 transition p-1 ${note.is_favorite ? "text-yellow-500" : "text-muted"}`} title={note.is_favorite ? "Unfavorite" : "Favorite"}>
-            <Star size={16} className={note.is_favorite ? "fill-current" : ""} />
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className={`hover:text-yellow-500 transition p-1 interactive-hover interactive-press-subtle ${note.is_favorite ? "text-yellow-500" : "text-muted"}`} title={note.is_favorite ? "Unfavorite" : "Favorite"}>
+            <Star size={15} className={note.is_favorite ? "fill-yellow-500 text-yellow-500" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className={`hover:text-accent transition p-1 ${note.is_pinned ? "text-accent" : "text-muted"}`} title={note.is_pinned ? "Unpin" : "Pin"}>
-            <Pin size={16} className={note.is_pinned ? "fill-current" : ""} />
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className={`hover:text-accent transition p-1 interactive-hover interactive-press-subtle ${note.is_pinned ? "text-accent" : "text-muted"}`} title={note.is_pinned ? "Unpin" : "Pin"}>
+            <Pin size={15} className={note.is_pinned ? "text-accent fill-accent/20" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="text-muted hover:text-primary transition p-1" title={note.is_archived ? "Restore" : "Archive"}>
-            <Archive size={16} />
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="text-muted hover:text-primary transition p-1 interactive-hover interactive-press-subtle" title={note.is_archived ? "Restore" : "Archive"}>
+            <Archive size={15} className={note.is_archived ? "text-primary" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="text-muted hover:text-danger transition p-1" title="Delete">
+          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="text-muted hover:text-danger transition p-1 interactive-hover interactive-press-subtle" title="Delete">
             <Trash2 size={16} />
           </button>
         </div>

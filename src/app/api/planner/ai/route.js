@@ -1,7 +1,7 @@
 import { getAuthUser } from "@/lib/auth";
 import { NextResponse } from "next/server";
 import { streamAIChat } from "@/lib/ai/router";
-import { getUserProfile } from "@/lib/user-profile";
+import { getProfile } from "@/lib/profile-service";
 
 export async function POST(request) {
   const user = await getAuthUser();
@@ -10,7 +10,7 @@ export async function POST(request) {
   const { message, context } = await request.json();
   if (!message?.trim()) return NextResponse.json({ error: "Message is required" }, { status: 400 });
 
-  const profile = await getUserProfile(user.id);
+  const profile = await getProfile(user.id);
   const userName = profile?.full_name || profile?.name || profile?.display_name || "Student";
 
   const systemPrompt = `You are Nexus AI, a personal study planner for ${userName}.

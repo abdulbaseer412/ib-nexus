@@ -238,6 +238,7 @@ export default function RoomClient({
         <AskModal
           room={room}
           c={c}
+          userProfile={userProfile}
           onClose={() => setShowAskModal(false)}
         />
       )}
@@ -365,13 +366,7 @@ function OverviewTab({ room, trending, posts, presence, c, onAsk, onSwitchTab })
                 key={user.user_id}
                 className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2"
               >
-                {user.user_avatar ? (
-                  <img src={user.user_avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
-                ) : (
-                  <div className="h-6 w-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white/50">
-                    {user.user_name?.[0]?.toUpperCase() || "?"}
-                  </div>
-                )}
+                <Avatar url={user.user_avatar} name={user.user_name} size="sm" />
                 <span className="text-xs font-medium text-white/70">{user.user_name}</span>
                 {user.is_admin ? (
                   <span className="px-1.5 py-0.5 text-[9px] font-extrabold text-indigo-300 bg-indigo-500/20 border border-indigo-500/30 rounded-full flex items-center gap-1">
@@ -588,6 +583,10 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
 
   const handleSend = async (e) => {
     e.preventDefault();
+    if (userProfile?.is_restricted) {
+      alert("Your account is currently restricted from sending live chat messages.");
+      return;
+    }
     if (!newMessage.trim() || isSending) return;
 
     setIsSending(true);
@@ -913,80 +912,87 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
       </div>
 
       {/* Input Form with Admin Toggles & Live Preview */}
-      <form onSubmit={handleSend} className="flex flex-col gap-2.5 mt-4 shrink-0">
-        {isAdmin && (
-          <div className="flex items-center justify-between px-1">
-            <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer select-none group">
-              <input
-                type="checkbox"
-                checked={isNoticePost}
-                onChange={(e) => setIsNoticePost(e.target.checked)}
-                className="rounded border-amber-500/50 text-amber-500 focus:ring-amber-500 bg-black/40 w-4 h-4"
-              />
-              <Megaphone size={15} className={`text-amber-400 ${isNoticePost ? "animate-bounce" : ""}`} />
-              <span className={isNoticePost ? "text-amber-300 font-extrabold" : "text-white/70 group-hover:text-white"}>
-                Post as Official Room Guidance Notice 🛡
-              </span>
-            </label>
+      {userProfile?.is_restricted ? (
+        <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-300 text-xs font-semibold shrink-0">
+          <ShieldAlert size={18} className="text-amber-400 shrink-0" />
+          <span>Your account is currently restricted from sending live chat messages. You can still read chat messages freely.</span>
+        </div>
+      ) : (
+        <form onSubmit={handleSend} className="flex flex-col gap-2.5 mt-4 shrink-0">
+          {isAdmin && (
+            <div className="flex items-center justify-between px-1">
+              <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer select-none group">
+                <input
+                  type="checkbox"
+                  checked={isNoticePost}
+                  onChange={(e) => setIsNoticePost(e.target.checked)}
+                  className="rounded border-amber-500/50 text-amber-500 focus:ring-amber-500 bg-black/40 w-4 h-4"
+                />
+                <Megaphone size={15} className={`text-amber-400 ${isNoticePost ? "animate-bounce" : ""}`} />
+                <span className={isNoticePost ? "text-amber-300 font-extrabold" : "text-white/70 group-hover:text-white"}>
+                  Post as Official Room Guidance Notice 🛡
+                </span>
+              </label>
 
-            <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
-              isNoticePost
-                ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
-            }`}>
-              {isNoticePost ? "OFFICIAL NOTICE MODE" : "MODERATOR MODE"}
-            </span>
-          </div>
-        )}
-
-        {/* Live Preview Callout when Official Notice mode is active */}
-        {isAdmin && isNoticePost && (
-          <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/80 to-orange-950/70 border border-amber-500/50 flex items-center justify-between text-amber-200 text-xs shadow-lg">
-            <div className="flex items-center gap-2">
-              <Megaphone size={15} className="text-amber-400 animate-bounce" />
-              <span className="font-extrabold text-amber-300">
-                📌 Live Preview: OFFICIAL ROOM GUIDANCE NOTICE
+              <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                isNoticePost
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+              }`}>
+                {isNoticePost ? "OFFICIAL NOTICE MODE" : "MODERATOR MODE"}
               </span>
             </div>
-            <span className="text-[10px] font-bold text-amber-400/80">
-              Will be automatically pinned to top room header bar
-            </span>
-          </div>
-        )}
+          )}
 
-        <div className="flex gap-3">
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder={
-              isNoticePost
-                ? "Write an Official Room Guidance Notice..."
-                : isAdmin
-                ? "Type message as Moderator..."
-                : `Message ${room.name}...`
-            }
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            maxLength={2000}
-            className={`flex-1 bg-white/[0.03] border rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none transition-colors ${
-              isNoticePost
-                ? "border-amber-500/60 bg-amber-500/10 focus:border-amber-400"
-                : isAdmin
-                ? "border-indigo-500/50 bg-indigo-950/30 focus:border-indigo-400"
-                : "border-white/10 focus:border-indigo-500/50"
-            }`}
-          />
-          <button
-            type="submit"
-            disabled={isSending || !newMessage.trim()}
-            className="px-5 py-3 rounded-xl text-white font-bold text-sm transition-all disabled:opacity-30 shrink-0 flex items-center gap-2 shadow-lg hover:scale-105"
-            style={{ background: isNoticePost ? "linear-gradient(to right, #f59e0b, #d97706)" : isAdmin ? "linear-gradient(to right, #4f46e5, #7c3aed)" : c.accent }}
-          >
-            {isAdmin && <ShieldCheck size={16} />}
-            <Send size={16} />
-          </button>
-        </div>
-      </form>
+          {/* Live Preview Callout when Official Notice mode is active */}
+          {isAdmin && isNoticePost && (
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/80 to-orange-950/70 border border-amber-500/50 flex items-center justify-between text-amber-200 text-xs shadow-lg">
+              <div className="flex items-center gap-2">
+                <Megaphone size={15} className="text-amber-400 animate-bounce" />
+                <span className="font-extrabold text-amber-300">
+                  📌 Live Preview: OFFICIAL ROOM GUIDANCE NOTICE
+                </span>
+              </div>
+              <span className="text-[10px] font-bold text-amber-400/80">
+                Will be automatically pinned to top room header bar
+              </span>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder={
+                isNoticePost
+                  ? "Write an Official Room Guidance Notice..."
+                  : isAdmin
+                  ? "Type message as Moderator..."
+                  : `Message ${room.name}...`
+              }
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              maxLength={2000}
+              className={`flex-1 bg-white/[0.03] border rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none transition-colors ${
+                isNoticePost
+                  ? "border-amber-500/60 bg-amber-500/10 focus:border-amber-400"
+                  : isAdmin
+                  ? "border-indigo-500/50 bg-indigo-950/30 focus:border-indigo-400"
+                  : "border-white/10 focus:border-indigo-500/50"
+              }`}
+            />
+            <button
+              type="submit"
+              disabled={isSending || !newMessage.trim()}
+              className="px-5 py-3 rounded-xl text-white font-bold text-sm transition-all disabled:opacity-30 shrink-0 flex items-center gap-2 shadow-lg hover:scale-105"
+              style={{ background: isNoticePost ? "linear-gradient(to right, #f59e0b, #d97706)" : isAdmin ? "linear-gradient(to right, #4f46e5, #7c3aed)" : c.accent }}
+            >
+              {isAdmin && <ShieldCheck size={16} />}
+              <Send size={16} />
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -994,7 +1000,7 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /*  ASK MODAL                                                               */
 /* ══════════════════════════════════════════════════════════════════════════ */
-function AskModal({ room, c, onClose }) {
+function AskModal({ room, c, userProfile, onClose }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -1004,6 +1010,10 @@ function AskModal({ room, c, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (userProfile?.is_restricted) {
+      setErrorMsg("Your account is currently restricted from asking questions or creating discussions.");
+      return;
+    }
     if (!title.trim()) { setErrorMsg("Please enter a title."); return; }
     if (!content.trim()) { setErrorMsg("Please enter content."); return; }
 
@@ -1023,6 +1033,28 @@ function AskModal({ room, c, onClose }) {
       setStatus("error");
     }
   };
+
+  if (userProfile?.is_restricted) {
+    return (
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="bg-[#121217] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden">
+          <div className="h-16 w-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Communication Restricted</h3>
+          <p className="text-white/60 text-sm mb-6 leading-relaxed">
+            Your account is currently restricted from creating discussions or asking questions. All other areas of IB Nexus remain fully accessible to you.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white text-sm font-bold rounded-xl transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (status === "success") {
     return (
@@ -1050,8 +1082,9 @@ function AskModal({ room, c, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden my-auto">
         {/* Accent glow */}
         <div
           className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-24 blur-[80px] opacity-20 pointer-events-none"
@@ -1156,6 +1189,7 @@ function AskModal({ room, c, onClose }) {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

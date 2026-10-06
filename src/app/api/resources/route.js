@@ -13,6 +13,8 @@ export async function GET(request) {
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
   const { searchParams } = new URL(request.url);
+  const countOnly = searchParams.get("count_only");
+  const pendingCountOnly = searchParams.get("pending_count");
   let programme = searchParams.get("programme");
   const subject = searchParams.get("subject");
   const level = searchParams.get("level");
@@ -20,51 +22,98 @@ export async function GET(request) {
   const topic = searchParams.get("topic");
   const year = searchParams.get("year");
   const search = searchParams.get("search");
-  const source = searchParams.get("source");       // platform | user | saved
+  const source = searchParams.get("source");       // platform | user | community | saved
+  const visibilityParam = searchParams.get("visibility"); // pending_approval | approved | private | public
   const offset = parseInt(searchParams.get("offset") || "0", 10);
   const limit = parseInt(searchParams.get("limit") || "24", 10);
 
   const supabase = await createServerClient();
 
+  // Check if current user is an admin
+  const { data: currentProfile } = await supabase
+    .from("profiles")
+    .select("is_admin, programme, ib_program")
+    .eq("id", user.id)
+    .single();
+  const isAdmin = currentProfile?.is_admin === true;
+
+  // Quick endpoint for admin pending queue counter badge
+  if (pendingCountOnly === "true") {
+    if (!isAdmin) {
+      return NextResponse.json({ pending_count: 0 });
+    }
+    const { count: pendingCount, error: countErr } = await createAdminClient()
+      .from("ib_resources")
+      .select("*", { count: "exact", head: true })
+      .eq("visibility", "pending_approval");
+    return NextResponse.json({ pending_count: pendingCount || 0 });
+  }
+
   if (!programme || programme === "auto") {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("programme, ib_program")
-      .eq("id", user.id)
-      .single();
-    if (profile?.programme) {
-      programme = profile.programme.toLowerCase();
-    } else if (profile?.ib_program) {
-      programme = profile.ib_program.toLowerCase().includes("myp") ? "myp" : "dp";
+    if (currentProfile?.programme) {
+      programme = currentProfile.programme.toLowerCase();
+    } else if (currentProfile?.ib_program) {
+      programme = currentProfile.ib_program.toLowerCase().includes("myp") ? "myp" : "dp";
     }
   }
 
-  let query = supabase
+  // Use admin client if user is admin and viewing pending moderation queue
+  const isReviewQueue = visibilityParam === "pending_approval" && isAdmin;
+  const client = isReviewQueue ? createAdminClient() : supabase;
+
+  let query = client
     .from("ib_resources")
     .select("*", { count: "exact" });
 
-  // Source filtering
-  if (source === "user") {
-    query = query.eq("user_id", user.id).eq("source", "user");
-  } else if (source === "platform") {
+  // Source & Visibility filtering
+  const scope = searchParams.get("scope");
+
+  if (isReviewQueue) {
+    // Admin Moderation Hub: pending community submissions
+    query = query.eq("visibility", "pending_approval");
+  } else if (source === "platform" || source === "nexus" || source === "nexus_library") {
     query = query.eq("source", "platform");
+  } else if (source === "community" || source === "community_resources") {
+    // Public Community Resources: only show approved (or public) community items
+    query = query.eq("source", "user").in("visibility", ["approved", "public"]);
+  } else if (source === "user" || source === "my_library") {
+    if (scope === "all") {
+      query = query.eq("source", "user");
+    } else {
+      // User's personal library: show all of their items (private, pending, approved, rejected)
+      query = query.eq("user_id", user.id);
+    }
+  } else if (source === "all") {
+    // Public directory: platform resources + approved community resources
+    query = query.or("source.eq.platform,and(source.eq.user,visibility.in.(approved,public))");
   } else {
-    // Default: show platform + own resources
-    query = query.or(`source.eq.platform,user_id.eq."${user.id}"`);
+    // Default fallback: platform + approved community
+    query = query.or("source.eq.platform,and(source.eq.user,visibility.in.(approved,public))");
   }
 
-  // Metadata filters
+  // Specific visibility filter if requested and allowed
+  if (visibilityParam && !isReviewQueue) {
+    query = query.eq("visibility", visibilityParam);
+  }
+
+  // Metadata filters (skip when reviewing general queue unless explicitly passed)
   if (programme && programme !== "all") {
     const progLower = programme.toLowerCase();
     if (progLower.includes("myp")) {
-      query = query.or("programme.ilike.%myp%,programme.ilike.%myp 5%");
+      query = query.or("programme.ilike.%myp%,programme.ilike.%myp 5%,programme.eq.both,programme.eq.all,programme.is.null");
     } else if (progLower.includes("dp")) {
-      query = query.or("programme.ilike.%dp%,programme.ilike.%dp 2%");
+      query = query.or("programme.ilike.%dp%,programme.ilike.%dp 2%,programme.eq.both,programme.eq.all,programme.is.null");
     } else {
-      query = query.ilike("programme", programme);
+      query = query.or(`programme.ilike.${programme},programme.eq.both,programme.eq.all,programme.is.null`);
     }
   }
-  if (subject) query = query.eq("subject", subject);
+  if (subject) {
+    if (subject === "general" || subject === "General") {
+      query = query.is("subject", null);
+    } else {
+      query = query.eq("subject", subject);
+    }
+  }
   if (level) query = query.eq("level", level);
   if (resourceType) {
     if (resourceType.includes(",")) {
@@ -93,7 +142,62 @@ export async function GET(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ resources: data ?? [], total: count ?? 0 });
+  // Batch-fetch publisher profiles for all unique user_ids
+  const userIds = Array.from(new Set((data || []).map(r => r.user_id).filter(Boolean)));
+  const profilesMap = {};
+
+  if (userIds.length > 0) {
+    const { data: profiles, error: profErr } = await createAdminClient()
+      .from("profiles")
+      .select("id, full_name, display_name, avatar_url, school_name, ib_program, is_admin")
+      .in("id", userIds);
+
+    if (!profErr && profiles) {
+      for (const p of profiles) {
+        profilesMap[p.id] = {
+          id: p.id,
+          name: p.display_name || p.full_name || "Community Member",
+          avatar_url: p.avatar_url,
+          school_name: p.school_name,
+          program: p.ib_program,
+          role: p.is_admin ? "Administrator" : "Student Contributor",
+          is_admin: p.is_admin === true,
+        };
+      }
+    }
+  }
+
+  // Enrich resources with formatted publisher and submission info
+  const enrichedResources = (data || []).map(r => {
+    let publisher = null;
+    if (r.source === "platform") {
+      publisher = {
+        id: "platform",
+        name: "IB Nexus Academic Board",
+        role: "Official Curriculum Board",
+        school_name: "IB Nexus Global",
+        is_official: true,
+        is_admin: true,
+      };
+    } else if (r.user_id && profilesMap[r.user_id]) {
+      publisher = profilesMap[r.user_id];
+    } else if (r.user_id) {
+      publisher = {
+        id: r.user_id,
+        name: "Community Member",
+        role: "Student Contributor",
+        school_name: null,
+        is_official: false,
+        is_admin: false,
+      };
+    }
+    return {
+      ...r,
+      publisher,
+    };
+  });
+
+  return NextResponse.json({ resources: enrichedResources, total: count ?? 0 });
 }
 
 export async function POST(request) {
@@ -111,21 +215,44 @@ export async function POST(request) {
 
   const supabase = await createServerClient();
 
-  // Check admin status for platform uploads
+  // Check admin status
   const { data: profile } = await supabase
     .from("profiles")
-    .select("is_admin")
+    .select("is_admin, display_name, full_name")
     .eq("id", user.id)
     .single();
   const isAdmin = profile?.is_admin === true;
 
-  const isAdminUpload = payload.source === "platform";
-  if (isAdminUpload && !isAdmin) {
-    return NextResponse.json({ error: "Only admins can create platform resources" }, { status: 403 });
+  // Determine destination and source/visibility
+  // destination: 'nexus' | 'community' | 'my_library'
+  const destination = payload.destination || (payload.source === "platform" ? "nexus" : "my_library");
+
+  let source = "user";
+  let visibility = "private";
+
+  if (destination === "nexus" || payload.source === "platform") {
+    if (!isAdmin) {
+      return NextResponse.json({ error: "Only admins can upload to IB Nexus Library" }, { status: 403 });
+    }
+    source = "platform";
+    visibility = "public";
+  } else if (destination === "community") {
+    source = "user";
+    // Admins uploading directly to community are instantly approved; community members go to review queue
+    visibility = isAdmin ? "approved" : "pending_approval";
+  } else {
+    // My Library (personal)
+    source = "user";
+    visibility = "private";
+  }
+
+  // If visibility is explicitly provided and valid
+  if (payload.visibility && (isAdmin || payload.visibility === "pending_approval" || payload.visibility === "private")) {
+    visibility = payload.visibility;
   }
 
   const resource = {
-    user_id: isAdminUpload ? null : user.id,
+    user_id: source === "platform" ? null : user.id,
     title: payload.title.trim(),
     description: payload.description?.trim() || null,
     file_url: payload.file_url,
@@ -141,13 +268,13 @@ export async function POST(request) {
     exam_session: payload.exam_session || null,
     paper_number: payload.paper_number || null,
     tags: payload.tags || [],
-    source: isAdminUpload ? "platform" : "user",
-    visibility: isAdminUpload ? "public" : "private",
+    source,
+    visibility,
     related_resource_id: payload.related_resource_id || null,
   };
 
-  // Admin inserts bypass RLS (user_id is null for platform resources)
-  const client = isAdminUpload ? createAdminClient() : supabase;
+  // Admin inserts bypass RLS
+  const client = (source === "platform" || isAdmin) ? createAdminClient() : supabase;
 
   const { data, error } = await client
     .from("ib_resources")
@@ -160,10 +287,59 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Create admin request record if pending approval
+  if (visibility === "pending_approval") {
+    try {
+      const adminClient = createAdminClient();
+      await adminClient.from("admin_requests").insert({
+        user_id: user.id,
+        user_email: user.email,
+        user_name: profile?.display_name || profile?.full_name || user.email?.split("@")[0] || "Student",
+        request_type: "document_upload",
+        title: data.title,
+        details: data.description || `Resource submitted to Community Library: ${data.subject || "General"} (${(data.programme || "dp").toUpperCase()})`,
+        metadata: {
+          resource_id: data.id,
+          file_name: data.file_name,
+          file_url: data.file_url,
+          file_size: data.file_size,
+          resource_type: data.resource_type,
+          programme: data.programme,
+          subject: data.subject,
+          level: data.level,
+          topic: data.topic,
+        },
+        target_id: String(data.id),
+        target_table: "ib_resources",
+        status: "pending",
+      });
+    } catch (reqErr) {
+      console.warn("Failed to create admin_requests row for resource:", reqErr?.message);
+    }
+  }
+
+  // Attach publisher profile
+  const enriched = {
+    ...data,
+    publisher: source === "platform" ? {
+      name: "IB Nexus Academic Board",
+      role: "Official Curriculum Board",
+      school_name: "IB Nexus Global",
+      is_official: true,
+      is_admin: true,
+    } : {
+      id: user.id,
+      name: profile?.display_name || profile?.full_name || "Community Member",
+      avatar_url: profile?.avatar_url,
+      school_name: profile?.school_name,
+      role: isAdmin ? "Administrator" : "Student Contributor",
+      is_admin: isAdmin,
+    }
+  };
+
   // Asynchronously index for Knowledge Lens (non-blocking)
   try {
     const { indexDocument } = await import("@/lib/ai/knowledge-lens");
-    // For now we index the metadata since we do not have an active PDF extraction microservice
     const indexContent = `${data.title}\n\n${data.description || ""}\n\nKeywords: ${(data.tags || []).join(", ")}\nTopic: ${data.topic || ""}`;
     
     indexDocument({
@@ -171,17 +347,18 @@ export async function POST(request) {
       sourceId: data.id,
       title: data.title,
       content: indexContent,
-      userId: isAdminUpload ? null : user.id, // null makes it global
+      userId: source === "platform" ? null : user.id,
       metadata: {
         subject: data.subject,
         level: data.level,
         programme: data.programme,
-        url: data.file_url
+        url: data.file_url,
+        visibility: data.visibility,
       }
     }).catch(err => console.warn("[KnowledgeLens] Async indexing error for resource:", err));
   } catch (err) {
     console.warn("Failed to schedule document indexing:", err);
   }
 
-  return NextResponse.json(data, { status: 201 });
+  return NextResponse.json(enriched, { status: 201 });
 }

@@ -20,8 +20,6 @@ export default async function OnboardingPage() {
 
   const defaults = getOnboardingDefaults(user, profile);
   const globalSubjects = await fetchGlobalSubjects();
-  const needsDisplayName = !defaults.hasDisplayName;
-  const needsProgram = !defaults.hasIbProgram;
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
@@ -33,7 +31,7 @@ export default async function OnboardingPage() {
               : "Welcome to IB Nexus"}
           </h1>
           <p className="text-secondary text-sm">
-            {needsProgram && defaults.hasDisplayName
+            {!defaults.hasIbProgram && defaults.hasDisplayName
               ? "Just one more step — tell us your IB programme."
               : "Tell us a bit about yourself to personalize your experience."}
           </p>
@@ -41,8 +39,8 @@ export default async function OnboardingPage() {
 
         <OnboardingForm
           defaults={defaults}
-          needsDisplayName={!profile.display_name}
-          needsProgram={!profile.ib_program}
+          needsDisplayName={!profile?.display_name}
+          needsProgram={!profile?.ib_program}
           completeOnboarding={completeOnboarding}
           globalSubjects={globalSubjects}
         />

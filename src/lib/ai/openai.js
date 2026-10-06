@@ -30,6 +30,8 @@ export async function* streamOpenAIChat({
   modelId,
   knowledgeContext = [],
   masterRules = [],
+  userPreferences = {},
+  isTemporary = false,
 }) {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -56,6 +58,8 @@ export async function* streamOpenAIChat({
     subjectFilter,
     knowledgeContext,
     masterRules,
+    userPreferences,
+    isTemporary,
   });
   
   // Keep recent messages

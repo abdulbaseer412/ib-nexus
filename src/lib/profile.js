@@ -7,9 +7,8 @@ export function isOnboardingComplete(profile) {
   if (profile.is_admin === true) return true;
   if (profile.onboarding_completed === true) return true;
 
-  return Boolean(
-    profile.display_name?.trim() && profile.ib_program
-  );
+  // Onboarding is complete if an IB program track (DP or MYP) has been set on the profile
+  return Boolean(profile.ib_program?.trim());
 }
 
 export function getDisplayName(user, profile) {

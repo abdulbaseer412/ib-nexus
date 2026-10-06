@@ -280,43 +280,45 @@ export default function MyAnswersClient({ answers: initialAnswers, summary, user
 
       {/* Edit Answer Modal */}
       {editingAnswer && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Edit3 size={18} className="text-amber-400" /> Edit Answer
-              </h3>
-              <button type="button" onClick={() => setEditingAnswer(null)} className="p-1 rounded-lg text-white/50 hover:text-white hover:bg-white/5">
-                <X size={18} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveEdit} className="space-y-4">
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="w-full bg-black/50 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-amber-500/50 min-h-[140px] resize-y custom-scrollbar font-medium"
-                placeholder="Update your answer content..."
-                required
-              />
-
-              <div className="flex items-center justify-end gap-3 pt-2 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setEditingAnswer(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-white/60 hover:text-white hover:bg-white/5 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSaving || !editContent.trim()}
-                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all shadow-lg disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {isSaving ? "Saving..." : "Save Changes"}
+        <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+          <div className="min-h-full flex items-center justify-center py-6">
+            <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-auto">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Edit3 size={18} className="text-amber-400" /> Edit Answer
+                </h3>
+                <button type="button" onClick={() => setEditingAnswer(null)} className="p-1 rounded-lg text-white/50 hover:text-white hover:bg-white/5">
+                  <X size={18} />
                 </button>
               </div>
-            </form>
+
+              <form onSubmit={handleSaveEdit} className="space-y-4">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full bg-black/50 border border-white/10 rounded-2xl p-4 text-sm text-white focus:outline-none focus:border-amber-500/50 min-h-[140px] resize-y custom-scrollbar font-medium"
+                  placeholder="Update your answer content..."
+                  required
+                />
+
+                <div className="flex items-center justify-end gap-3 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setEditingAnswer(null)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-white/60 hover:text-white hover:bg-white/5 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSaving || !editContent.trim()}
+                    className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition-all shadow-lg disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSaving ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}

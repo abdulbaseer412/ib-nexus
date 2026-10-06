@@ -5,6 +5,7 @@ import { streamGroqChat } from "./groq.js";
 import { streamOllamaChat } from "./ollama.js";
 import { streamRemoteQwenChat } from "./remote_qwen.js";
 import { streamTogetherChat } from "./together.js";
+import { getUserPreferences } from "./db-conversations.js";
 
 const MAX_FALLBACK_DEPTH = 1;
 
@@ -26,12 +27,19 @@ export async function* streamAIChat(options, depth = 0) {
   const resolvedModel = await resolveModelForUserAsync(options.modelId);
   const actualModelId = resolvedModel.id;
   const provider = resolvedModel.provider;
+  
+  // Fetch user preferences
+  const userPrefs = await getUserPreferences(options.userProfile?.id);
 
   try {
     let generator;
     
     // Pass along the resolved actual model ID so the adapter uses it precisely
-    const providerOptions = { ...options, modelId: actualModelId };
+    const providerOptions = { 
+      ...options, 
+      modelId: actualModelId,
+      userPreferences: userPrefs
+    };
 
     switch (provider) {
       case "google":

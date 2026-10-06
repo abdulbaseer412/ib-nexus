@@ -26,8 +26,13 @@ export async function addGlobalSubjectAction(program, category, name, available_
   const isAdmin = await checkIsAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
   const supabase = createAdminClient();
-  const { error } = await supabase.from("ib_subjects").insert({ program, category, name, available_levels });
-  if (error) throw new Error(error.message);
+  let res = await supabase.from("ib_subjects").insert({ program, category, name, available_levels });
+  
+  if (res.error && res.error.message.includes("available_levels")) {
+    res = await supabase.from("ib_subjects").insert({ program, category, name });
+  }
+  
+  if (res.error) throw new Error(res.error.message);
   revalidatePath("/", "layout");
 }
 
@@ -35,8 +40,13 @@ export async function editGlobalSubjectAction(id, program, category, name, avail
   const isAdmin = await checkIsAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
   const supabase = createAdminClient();
-  const { error } = await supabase.from("ib_subjects").update({ program, category, name, available_levels }).eq("id", id);
-  if (error) throw new Error(error.message);
+  let res = await supabase.from("ib_subjects").update({ program, category, name, available_levels }).eq("id", id);
+  
+  if (res.error && res.error.message.includes("available_levels")) {
+    res = await supabase.from("ib_subjects").update({ program, category, name }).eq("id", id);
+  }
+  
+  if (res.error) throw new Error(res.error.message);
   revalidatePath("/", "layout");
 }
 
@@ -67,6 +77,7 @@ export async function bootstrapSubjectsDB() {
       UNIQUE (program, category, name)
     );
 
+    ALTER TABLE public.ib_subjects ADD COLUMN IF NOT EXISTS available_levels JSONB DEFAULT NULL;
     ALTER TABLE public.ib_subjects ADD COLUMN IF NOT EXISTS selection_mode TEXT DEFAULT 'single';
     ALTER TABLE public.ib_subjects ADD COLUMN IF NOT EXISTS min_selections INTEGER DEFAULT 0;
     ALTER TABLE public.ib_subjects ADD COLUMN IF NOT EXISTS max_selections INTEGER DEFAULT 1;
@@ -299,20 +310,34 @@ export async function bootstrapSubjectsDB() {
   return { success: true };
 }
 
-export async function updateSubjectsAction(subjects) {
+export async function updateSubjectsAction(subjects, program = "dp") {
   const user = await requireAuth();
   const supabase = await createServerClient();
 
+  const cleanProgram = program?.toLowerCase()?.includes("myp") ? "myp" : "dp";
+  const cleanSubjects = Array.isArray(subjects) ? subjects : [];
+
   const { error } = await supabase
     .from("profiles")
-    .update({ subjects })
+    .update({ 
+      subjects: cleanSubjects,
+      ib_program: cleanProgram
+    })
     .eq("id", user.id);
 
   if (error) {
     console.error("Failed to update subjects:", error);
-    throw new Error("Failed to update subjects");
+    throw new Error("Failed to update subjects: " + error.message);
   }
 
-  revalidatePath("/", "layout");
+  try {
+    revalidatePath("/dashboard/subjects");
+    revalidatePath("/settings/profile");
+    revalidatePath("/dashboard/resources");
+    revalidatePath("/dashboard");
+    revalidatePath("/", "layout");
+  } catch (_) {}
+
   return { success: true };
 }
+

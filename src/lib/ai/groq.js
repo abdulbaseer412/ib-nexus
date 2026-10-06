@@ -30,6 +30,8 @@ export async function* streamGroqChat({
   modelId,
   knowledgeContext = [],
   masterRules = [],
+  userPreferences = {},
+  isTemporary = false,
 }) {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -59,6 +61,8 @@ export async function* streamGroqChat({
     subjectFilter,
     knowledgeContext,
     masterRules,
+    userPreferences,
+    isTemporary,
   });
   const recentMessages = messages.slice(-20);
 

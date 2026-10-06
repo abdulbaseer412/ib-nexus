@@ -20,41 +20,36 @@ export async function isUserApprovedForLockedSite(user, profile = null) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  // 1. Check Admin status
-  let userProfile = profile;
-  if (!userProfile && user.id) {
-    const { data: fetchedProfile } = await adminSupabase
-      .from("profiles")
-      .select("is_admin, is_restricted")
-      .eq("id", user.id)
-      .maybeSingle();
-    userProfile = fetchedProfile;
-  }
+  // 1. Check Super Admin status
+  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
+  const userEmail = user.email?.trim().toLowerCase();
 
-  if (userProfile?.is_admin === true && userProfile?.is_restricted !== true && userProfile?.is_suspended !== true) {
+  if (superAdminEmail && userEmail === superAdminEmail) {
     return true;
   }
 
-  // 2. Check Google Allowlist
+  // 2. Check if user is suspended
+  const isSuspended = Boolean(
+    (profile?.preferences?.is_suspended === true) ||
+    (profile?.preferences?.is_suspended !== false && user.user_metadata?.is_suspended === true) ||
+    (user.banned_until && new Date(user.banned_until).getTime() > Date.now())
+  );
+  if (isSuspended) {
+    return false;
+  }
+
+  // 3. Check Allowlist
   if (user.email) {
-    const isGoogleAuth = 
-      user.app_metadata?.providers?.includes('google') || 
-      user.app_metadata?.provider === 'google' ||
-      user.identities?.some(id => id.provider === 'google');
+    const normalizedEmail = user.email.trim().toLowerCase();
+    const { data: allowlistData, error } = await adminSupabase
+      .from("website_access_allowlist")
+      .select("id")
+      .eq("normalized_email", normalizedEmail)
+      .eq("active", true)
+      .maybeSingle();
 
-    if (isGoogleAuth) {
-      const normalizedEmail = user.email.trim().toLowerCase();
-      const { data: allowlistData, error } = await adminSupabase
-        .from("website_access_allowlist")
-        .select("id")
-        .eq("provider", "google")
-        .eq("normalized_email", normalizedEmail)
-        .eq("active", true)
-        .maybeSingle();
-
-      if (!error && allowlistData) {
-        return true;
-      }
+    if (!error && allowlistData) {
+      return true;
     }
   }
 

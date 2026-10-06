@@ -1,22 +1,34 @@
+import { streamAIChat } from "./router.js";
+
 function cleanTitle(raw) {
   if (!raw || typeof raw !== "string") return "";
   let title = raw
-    .replace(/^["'#\s]+|["'#\s]+$/g, "")
-    .replace(/^Title:\s*/i, "")
-    .replace(/\?+$/, "")
-    .replace(/\.+$/, "")
+    .replace(/^(here(?:'s| is) a (?:suggested )?(?:title|name).*?:)/i, "")
+    .replace(/^(suggested )?title:\s*/i, "")
+    .replace(/^["'*#\s]+|["'*#\s]+$/g, "")
+    .replace(/[.?!]+$/, "") // Strip trailing punctuation
+    .replace(/[\r\n]+/g, " ") // Remove line breaks
+    .replace(/\s{2,}/g, " ") // Collapse whitespace
     .trim();
-
-  // Limit length to 2–6 words / 45 chars max
-  const words = title.split(/\s+/);
-  if (words.length > 6) {
-    title = words.slice(0, 5).join(" ");
-  }
-  if (title.length > 45) {
-    title = title.substring(0, 42).trim() + "…";
-  }
-
   return title;
+}
+
+function isValidTitle(title, originalPrompt) {
+  if (!title || title.length === 0) return false;
+  
+  const wordCount = title.split(/\s+/).length;
+  if (wordCount > 6) return false;
+  if (title.length > 45) return false;
+  
+  // Reject if it's identical to or just a substring of the prompt
+  const normTitle = title.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normPrompt = originalPrompt.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (normPrompt.includes(normTitle) && wordCount > 4) return false;
+
+  const badPhrases = ["the user wants", "the user asks", "can you", "please explain", "i want you", "help me"];
+  if (badPhrases.some(phrase => title.toLowerCase().includes(phrase))) return false;
+
+  return true;
 }
 
 /**
@@ -74,48 +86,62 @@ export function generateHeuristicTitle(firstUserMessage) {
  * Smart Title Generator
  * Generates a concise 2–5 word topic title from the conversation context.
  */
-export async function generateSmartTitle({ conversationId, messages, currentTitle = "New Conversation" }) {
+export async function generateSmartTitle({ conversationId, messages, modelId, userProfile, currentTitle = "New Conversation" }) {
   if (!messages || messages.length === 0) return currentTitle;
 
-  // Find the most meaningful user message for the heuristic (usually the longest one if the first was just a short greeting)
+  // Find the FIRST user message ONLY
   const userMsgs = messages.filter((m) => m.role === "user");
-  const targetUserMsg = userMsgs.length > 1 && userMsgs[0].content.length < 15 ? userMsgs[userMsgs.length - 1]?.content : userMsgs[0]?.content;
-  const firstUserMsg = targetUserMsg || "";
+  const firstUserMsg = userMsgs[0]?.content || "";
   const heuristicTitle = generateHeuristicTitle(firstUserMsg);
 
   let finalTitle = heuristicTitle;
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
-      const contextStr = messages.slice(0, 3).map(m => `${m.role}: ${m.content}`).join("\n").substring(0, 600);
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-      const prompt = `Generate a concise 2 to 5 word topic title for this conversation context:
-"${contextStr}"
+    if (firstUserMsg && modelId) {
+      const prompt = `You generate concise conversation titles.
+
+Use ONLY the user's first prompt provided below.
+Create ONE natural title that represents the main topic or intent.
 
 Rules:
-- Return ONLY the 2-5 word topic title (e.g. "Photosynthesis Reactions", "World War I Causes", "Krebs Cycle", "Electrolysis Explained").
-- Do NOT use quotation marks, punctuation, or conversational filler.
-- If it's just a simple greeting like "Hello", return "Hello".
-- Do NOT output generic titles like "Question", "Help", or "Conversation".`;
+- 2–5 words preferred.
+- Maximum 6 words.
+- Maximum about 40 characters.
+- Do not write a sentence.
+- Do not ask a question.
+- Do not copy the user's wording.
+- Remove conversational filler ("please", "can you", "help me").
+- Use meaningful topic words.
+- Rephrase naturally.
+- No explanations.
+- No quotation marks.
+- No markdown.
+- Return ONLY the title. No other text.
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 25,
-            temperature: 0.2,
-          },
-        }),
+User's first prompt:
+"${firstUserMsg.substring(0, 1000)}"`;
+
+      const titleMessages = [{ role: "user", content: prompt }];
+
+      const stream = streamAIChat({
+        messages: titleMessages,
+        modelId,
+        userProfile,
+        subjectFilter: "All subjects",
+        knowledgeContext: [],
+        masterRules: []
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      let rawText = "";
+      for await (const chunk of stream) {
+        if (chunk.type === "text") {
+          rawText += chunk.text;
+        }
+      }
+
+      if (rawText) {
         const aiTitle = cleanTitle(rawText);
-        if (aiTitle && aiTitle.length >= 3) {
+        if (isValidTitle(aiTitle, firstUserMsg)) {
           finalTitle = aiTitle;
         }
       }
@@ -124,19 +150,8 @@ Rules:
     console.warn("[generateSmartTitle] AI title generation notice:", err?.message);
   }
 
-  // Persist title to Supabase DB if conversationId provided
-  if (conversationId && finalTitle) {
-    try {
-      const { createAdminClient } = await import("../supabase/server.js");
-      const supabase = createAdminClient();
-      await supabase
-        .from("ai_conversations")
-        .update({ title: finalTitle, updated_at: new Date().toISOString() })
-        .eq("id", conversationId);
-    } catch (dbErr) {
-      // Ignore DB write error in non-Supabase isolated runners
-    }
-  }
-
+  // We explicitly DO NOT update the database here.
+  // The caller (route.js) is responsible for safely updating the DB using the authenticated user.
+  
   return finalTitle;
 }

@@ -10,17 +10,22 @@ import {
   AlertTriangle, RefreshCw, X, MessageCircle, ShieldCheck,
   Eye, Check, Shield, Layers, HelpCircle, Users2, Flag, FileText, ArrowRight, CornerDownRight, XCircle,
   Megaphone, ExternalLink, Send, Sparkles, BookOpen, Lock, Unlock, Globe, Power, Clock, Save,
-  Cpu, Pause, Play, EyeOff, Star
+  Cpu, Pause, Play, EyeOff, Star, ThumbsUp, ThumbsDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   suspendUserAction,
+  unsuspendUserAction,
   restoreUserAction,
+  restrictUserCommunicationAction,
+  restoreUserCommunicationAction,
   fetchUserDetailStats,
   fetchAdminCommunityItems,
   updateCommunityContentAction,
   approvePostAction,
   rejectPostAction,
+  updatePostStatusAction,
+  fetchPostDetailsAndRepliesAction,
   approveStudyGroupAction,
   rejectStudyGroupAction,
   dismissReportAction,
@@ -33,8 +38,9 @@ import {
   sendModeratorChatMessageAction,
   updateRoomStatusAction,
   deleteChatMessageAction,
-  fetchAdminOverviewStats,
   fetchAdminUsers,
+  deleteUserAccountAction,
+  updateUserProfileByAdminAction,
   fetchAdminRooms,
   fetchAdminActivityLogs,
   deleteSingleAuditLogAction,
@@ -51,8 +57,25 @@ import {
   toggleModelEnableAction,
   addGoogleAccountToAllowlist,
   removeGoogleAccountFromAllowlist,
+  fetchContactMessagesAction,
+  fetchAdminOverviewStats,
+  getWebsiteAccessAllowlist,
 } from "./actions";
+import {
+  fetchAdminAiCoreVersionsAction,
+  fetchAdminAiFeedbackAction,
+  updateAdminAiFeedbackStatusAction,
+  updateAdminAiFeedbackNoteAction,
+  deleteAdminAiFeedbackAction,
+  deleteAllAdminNegativeFeedbackAction,
+  deleteAllAdminPositiveFeedbackAction,
+  deleteMultipleAdminAiFeedbackAction,
+} from "./ai-actions";
 import AiCoreTab from "./AiCoreTab";
+import AiModelsTab from "./AiModelsTab";
+import ContactInboxTab from "./ContactInboxTab";
+import ResourceSubmissionsTab from "./ResourceSubmissionsTab";
+import AdminRequestsTab from "./AdminRequestsTab";
 import {
   bootstrapSubjectsDB,
   addGlobalSubjectAction,
@@ -60,6 +83,12 @@ import {
   deleteGlobalSubjectAction,
   fetchGlobalSubjects,
 } from "../subjects/actions";
+import {
+  ADMIN_INFORMATION_ARCHITECTURE,
+  findGroupForSection,
+  getAllSections,
+} from "./admin-navigation";
+import { PRESET_AVATARS } from "@/lib/avatars";
 
 function renderStatCount(metric, isRefreshing) {
   if (isRefreshing) {
@@ -83,6 +112,45 @@ function getMetricNumber(metric, fallback = 0) {
   return fallback;
 }
 
+function renderUserAvatar(avatarUrl, displayName) {
+  if (avatarUrl && (avatarUrl.startsWith("http://") || avatarUrl.startsWith("https://") || avatarUrl.startsWith("/"))) {
+    return (
+      <div className="relative w-9 h-9 shrink-0">
+        <img
+          src={avatarUrl}
+          alt={displayName || "User"}
+          className="w-9 h-9 rounded-full object-cover border border-[var(--border)] shrink-0 shadow-sm"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+            if (e.currentTarget.nextSibling) {
+              e.currentTarget.nextSibling.style.display = 'flex';
+            }
+          }}
+        />
+        <div className="hidden w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-400 font-extrabold items-center justify-center text-xs uppercase border border-indigo-500/30 shrink-0 shadow-sm">
+          {(displayName || "U")[0].toUpperCase()}
+        </div>
+      </div>
+    );
+  }
+
+  const preset = PRESET_AVATARS.find(p => p.id === avatarUrl);
+  if (preset) {
+    return (
+      <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${preset.color} flex items-center justify-center text-sm border border-white/20 shrink-0 shadow-sm`}>
+        <span>{preset.emoji}</span>
+      </div>
+    );
+  }
+
+  const initial = (displayName || "U")[0].toUpperCase();
+  return (
+    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20 text-indigo-400 font-extrabold flex items-center justify-center text-xs uppercase border border-indigo-500/30 shrink-0 shadow-sm">
+      {initial}
+    </div>
+  );
+}
+
 export default function AdminClient({
   adminUser,
   adminProfile,
@@ -96,9 +164,12 @@ export default function AdminClient({
   initialModelConfigs = [],
   initialWebsiteAllowlist = [],
   initialCoreVersions = [],
+  initialAiFeedback = [],
+  initialContactMessages = [],
+  superAdminEmail = null,
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("overview"); // overview, users, community, rooms, courses, models, website, logs
+  const [activeTab, setActiveTab] = useState("overview"); // overview, users, contact_inbox, community, rooms, courses, models, feedback, aicore, website, logs
   const [websiteLockSettings, setWebsiteLockSettings] = useState(initialWebsiteSettings || { is_locked: false, lock_message: "" });
   const [lockMessageInput, setLockMessageInput] = useState(initialWebsiteSettings?.lock_message || "");
   const [isUpdatingLock, setIsUpdatingLock] = useState(false);
@@ -120,6 +191,54 @@ export default function AdminClient({
   const [logs, setLogs] = useState(initialLogs);
   const [subjects, setSubjects] = useState(initialSubjects);
   const [modelConfigs, setModelConfigs] = useState(initialModelConfigs || []);
+  const [aiFeedback, setAiFeedback] = useState(initialAiFeedback || []);
+  const [contactMessages, setContactMessages] = useState(initialContactMessages || []);
+
+  // AI Feedback States
+  const [activeFeedbackTab, setActiveFeedbackTab] = useState("negative"); // negative | positive
+  const [isSelectModeNeg, setIsSelectModeNeg] = useState(false);
+  const [isSelectModePos, setIsSelectModePos] = useState(false);
+  const [selectedNegativeIds, setSelectedNegativeIds] = useState([]);
+  const [selectedPositiveIds, setSelectedPositiveIds] = useState([]);
+  const [feedbackSearch, setFeedbackSearch] = useState("");
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState("all");
+
+  const [showAdvancedSearchNeg, setShowAdvancedSearchNeg] = useState(false);
+  const [showAdvancedSearchPos, setShowAdvancedSearchPos] = useState(false);
+
+  const [advancedFiltersNeg, setAdvancedFiltersNeg] = useState({
+    email: "", name: "", dateFrom: "", dateTo: "", topic: "", issueKeywords: "", userPrompt: "", aiResponse: "", modelId: "all", provider: "all", negativeStatus: "all", negativeReason: "all"
+  });
+  const [activeFiltersNeg, setActiveFiltersNeg] = useState(null);
+  const [searchedNegativeFeedback, setSearchedNegativeFeedback] = useState(null);
+  const [isSearchingNeg, setIsSearchingNeg] = useState(false);
+  const [feedbackCountNeg, setFeedbackCountNeg] = useState(0);
+
+  const [advancedFiltersPos, setAdvancedFiltersPos] = useState({
+    email: "", name: "", dateFrom: "", dateTo: "", topic: "", issueKeywords: "", userPrompt: "", aiResponse: "", modelId: "all", provider: "all"
+  });
+  const [activeFiltersPos, setActiveFiltersPos] = useState(null);
+  const [searchedPositiveFeedback, setSearchedPositiveFeedback] = useState(null);
+  const [isSearchingPos, setIsSearchingPos] = useState(false);
+  const [feedbackCountPos, setFeedbackCountPos] = useState(0);
+  const [expandedPosFeedbackIds, setExpandedPosFeedbackIds] = useState([]);
+  const [expandedNegFeedbackIds, setExpandedNegFeedbackIds] = useState([]);
+
+  const toggleExpandPositiveFeedback = (id) => {
+    setExpandedPosFeedbackIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const toggleExpandNegativeFeedback = (id) => {
+    setExpandedNegFeedbackIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const [confirmDeleteFeedback, setConfirmDeleteFeedback] = useState(null);
+  const [editingNoteModal, setEditingNoteModal] = useState(null);
+  const [noteInputText, setNoteInputText] = useState("");
 
   // AI Models Control State
   const [editingModelModal, setEditingModelModal] = useState(null);
@@ -136,369 +255,821 @@ export default function AdminClient({
   // Search & Filter States
   const [userSearch, setUserSearch] = useState("");
   const [userStatusFilter, setUserStatusFilter] = useState("all");
+  const [userProgramFilter, setUserProgramFilter] = useState("all");
+  const [editingUserModal, setEditingUserModal] = useState(null);
+  const [editUserDisplayName, setEditUserDisplayName] = useState("");
+  const [editUserFullName, setEditUserFullName] = useState("");
+  const [editUserProgram, setEditUserProgram] = useState("DP");
+  const [editUserExamSession, setEditUserExamSession] = useState("May 2026");
+  const [editUserIsAdmin, setEditUserIsAdmin] = useState(false);
+  const [isSavingUserEdit, setIsSavingUserEdit] = useState(false);
+  const [userSaveBanner, setUserSaveBanner] = useState(null);
   
   const [communitySearch, setCommunitySearch] = useState("");
-  const [communityContentType, setCommunityContentType] = useState("all"); // all, discussion, question, study_group, report
+  const [communityContentType, setCommunityContentType] = useState("all");
   const [communityCategory, setCommunityCategory] = useState("all");
-  const [communityStatusFilter, setCommunityStatusFilter] = useState("all"); // all, pending, approved, rejected
+  const [communityStatusFilter, setCommunityStatusFilter] = useState("all");
 
   const [logSearch, setLogSearch] = useState("");
   const [logCategoryFilter, setLogCategoryFilter] = useState("all");
 
   const [subjectSearch, setSubjectSearch] = useState("");
-  const [subjectProgramFilter, setSubjectProgramFilter] = useState("all"); // 'all' | 'dp' | 'myp'
-  const [subjectModal, setSubjectModal] = useState(null); // { mode: 'create' | 'edit', subject?: {} }
-  const [isSeedingSubjects, setIsSeedingSubjects] = useState(false);
-
-  // Notifications
-  const [toast, setToast] = useState(null);
-  const showToast = (text, type = "success") => {
-    setToast({ type, text });
-    setTimeout(() => setToast(null), 4000);
-  };
+  const [subjectProgramFilter, setSubjectProgramFilter] = useState("all");
+  const [subjectModal, setSubjectModal] = useState(null);
 
   // Modals & Drawers
+  const [toast, setToast] = useState(null);
   const [confirmModal, setConfirmModal] = useState(null);
-  const [roomModal, setRoomModal] = useState(null); // { mode: 'create'|'edit', room?: {} }
-  const [chatDrawer, setChatDrawer] = useState(null); // { room, messages: [] }
-  const [userDrawer, setUserDrawer] = useState(null); // { profile, userStats }
-  const [itemDrawer, setItemDrawer] = useState(null); // { item, isEditing: false }
-  const [logDetailModal, setLogDetailModal] = useState(null);
-  const [confirmDeleteLogModal, setConfirmDeleteLogModal] = useState(null);
-  const [confirmClearLogsModal, setConfirmClearLogsModal] = useState(false);
-
-  // Live Chat Moderation Input & Filter States
+  const [userDrawer, setUserDrawer] = useState(null);
+  const [userStats, setUserStats] = useState(null);
+  const [itemDrawer, setItemDrawer] = useState(null);
+  const [roomModal, setRoomModal] = useState(null);
+  const [chatDrawer, setChatDrawer] = useState(null);
+  const [chatDrawerActiveTab, setChatDrawerActiveTab] = useState("messages");
+  const [chatDrawerSearch, setChatDrawerSearch] = useState("");
+  const [chatDrawerFilter, setChatDrawerFilter] = useState("all");
   const [adminChatMessage, setAdminChatMessage] = useState("");
   const [adminChatIsNotice, setAdminChatIsNotice] = useState(false);
   const [adminChatSending, setAdminChatSending] = useState(false);
-  const [chatDrawerFilter, setChatDrawerFilter] = useState("all");
+  const [refreshingChat, setRefreshingChat] = useState(false);
+  const [logDetailModal, setLogDetailModal] = useState(null);
+  const [confirmDeleteLogModal, setConfirmDeleteLogModal] = useState(null);
+  const [confirmClearLogsModal, setConfirmClearLogsModal] = useState(false);
+  const [isSeedingSubjects, setIsSeedingSubjects] = useState(false);
 
-  const [aiKnowledgeModal, setAiKnowledgeModal] = useState(null); // { mode: 'create' | 'edit', item?: {} }
-
-  // Realtime subscription for chat moderation drawer
   useEffect(() => {
-    if (!chatDrawer?.room?.id) return;
-    const supabase = createClient();
-    const channel = supabase
-      .channel(`admin-room-chat-${chatDrawer.room.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "community_messages",
-          filter: `room_id=eq.${chatDrawer.room.id}`
-        },
-        async () => {
-          const res = await fetchRoomMessagesForModeration(chatDrawer.room.id);
-          if (res.success) {
-            setChatDrawer(prev => prev ? { ...prev, messages: res.messages } : null);
-          }
-        }
-      )
-      .subscribe();
+    if (activeTab === "overview") {
+      const interval = setInterval(() => {
+        fetchAdminOverviewStats().then(sRes => {
+          if (sRes?.stats) setStats(sRes.stats);
+        }).catch(console.error);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [activeTab]);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [chatDrawer?.room?.id]);
+  const showToast = (text, type = "success") => {
+    setToast({ text, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
-  // Refresh All Data with Visual Feedback
-  const handleRefresh = async () => {
+  const isTargetSuperAdmin = (target) => {
+    if (!target) return false;
+    let email = "";
+    if (typeof target === "string") {
+      email = target;
+    } else {
+      email = target.email || target.user_metadata?.email || "";
+    }
+    const normalized = email.trim().toLowerCase();
+    const superEnv = (superAdminEmail || "").trim().toLowerCase();
+    return Boolean(
+      superEnv && (normalized === superEnv || superEnv.split(",").map(e => e.trim().toLowerCase()).includes(normalized))
+    );
+  };
+
+  const isSelfAccount = (target) => {
+    if (!target || !adminUser) return false;
+    const targetId = typeof target === "string" ? target : (target.id || target.user_id);
+    const targetEmail = typeof target === "string" ? target : (target.email || target.user_metadata?.email || "");
+    const normalizedEmail = (targetEmail || "").trim().toLowerCase();
+    const currentEmail = (adminUser.email || "").trim().toLowerCase();
+
+    return targetId === adminUser.id || (Boolean(currentEmail) && normalizedEmail === currentEmail);
+  };
+
+  const isProtectedAccount = (target) => {
+    return isSelfAccount(target) || isTargetSuperAdmin(target);
+  };
+
+  const handleRefresh = () => {
     setRefreshState("refreshing");
+    
+    // Fire requests based on current section
+    if (currentGroup.id === "overview_group") {
+      fetchAdminOverviewStats().then(sRes => { if (sRes?.stats) setStats(sRes.stats); }).catch(console.error);
+    } else if (currentGroup.id === "users_access_group") {
+      fetchAdminUsers({ search: userSearch, statusFilter: userStatusFilter }).then(uRes => { if (uRes?.users) setUsers(uRes.users); }).catch(console.error);
+      fetchWebsiteLockSettingsAction().then(lockRes => { if (lockRes?.settings) setWebsiteLockSettings(lockRes.settings); }).catch(console.error);
+      getWebsiteAccessAllowlist().then(allowRes => { if (allowRes?.allowlist) setAllowlist(allowRes.allowlist); }).catch(console.error);
+    } else if (currentGroup.id === "content_academics_group") {
+      fetchAdminCommunityItems({ search: communitySearch, contentType: communityContentType, category: communityCategory }).then(cRes => { if (cRes?.items) setCommunityItems(cRes.items); }).catch(console.error);
+      fetchGlobalSubjects().then(subRes => { if (subRes) setSubjects(subRes); }).catch(console.error);
+    } else if (currentGroup.id === "community_live_group") {
+      fetchAdminRooms().then(rRes => { if (rRes?.rooms) setRooms(rRes.rooms); }).catch(console.error);
+    } else if (currentGroup.id === "system_logs_group") {
+      fetchAdminActivityLogs({ search: logSearch, categoryFilter: logCategoryFilter }).then(lRes => { if (lRes?.logs) setLogs(lRes.logs); }).catch(console.error);
+      fetchContactMessagesAction().then(contactRes => { if (contactRes?.messages) setContactMessages(contactRes.messages); }).catch(console.error);
+    } else if (currentGroup.id === "ai_group") {
+      fetchAdminModelConfigsAction().then(modRes => { if (modRes?.models) setModelConfigs(modRes.models); }).catch(console.error);
+      fetchAdminAiFeedbackAction({ limit: 100 }).then(aiFeedRes => { if (aiFeedRes?.feedback) setAiFeedback(aiFeedRes.feedback); }).catch(console.error);
+    }
+
+    // Provide an immediate "quick blink" UX matching the inbox refresh speed
+    setTimeout(() => {
+      setRefreshState("success");
+      setTimeout(() => setRefreshState("idle"), 2500);
+    }, 400);
+  };
+
+  // Allowlist Handlers
+  const handleAddAllowlist = async (e) => {
+    e.preventDefault();
+    if (!newAllowlistEmail.trim() || !newAllowlistEmail.includes("@")) {
+      showToast("Please enter a valid Google Account email.", "error");
+      return;
+    }
+    setIsAddingAllowlist(true);
     startTransition(async () => {
-      try {
-        router.refresh();
-        const [sRes, uRes, cRes, rRes, lRes] = await Promise.all([
-          fetchAdminOverviewStats(),
-          fetchAdminUsers({ search: userSearch, statusFilter: userStatusFilter }),
-          fetchAdminCommunityItems({ search: communitySearch, contentType: communityContentType, category: communityCategory, statusFilter: communityStatusFilter }),
-          fetchAdminRooms(),
-          fetchAdminActivityLogs({ search: logSearch, categoryFilter: logCategoryFilter }),
-        ]);
-
-        if (sRes.stats) setStats(sRes.stats);
-        if (uRes.users) setUsers(uRes.users);
-        if (cRes.items) setCommunityItems(cRes.items);
-        if (rRes.rooms) setRooms(rRes.rooms);
-        if (lRes.logs) setLogs(lRes.logs);
-
-        setRefreshState("success");
-        showToast("All administrative data refreshed successfully", "success");
-        setTimeout(() => setRefreshState("idle"), 2500);
-      } catch (err) {
-        setRefreshState("idle");
-        showToast("Failed to refresh data: " + err.message, "error");
+      const res = await addGoogleAccountToAllowlist(newAllowlistEmail);
+      setIsAddingAllowlist(false);
+      if (res.success) {
+        setAllowlist(prev => [res.item, ...prev]);
+        setNewAllowlistEmail("");
+        showToast(res.message, "success");
+      } else {
+        showToast(res.error || "Failed to add email to allowlist.", "error");
       }
     });
+  };
+
+  const handleRemoveAllowlist = async (id, email) => {
+    if (isTargetSuperAdmin(email)) {
+      showToast("Action Prohibited: The Super Admin email is protected and cannot be removed from the access allowlist.", "error");
+      return;
+    }
+    if (!confirm(`Are you sure you want to remove "${email}" from the website access allowlist?`)) return;
+    setRemovingAllowlistId(id);
+    startTransition(async () => {
+      const res = await removeGoogleAccountFromAllowlist(id);
+      setRemovingAllowlistId(null);
+      if (res.success) {
+        setAllowlist(prev => prev.filter(item => item.id !== id));
+        showToast(res.message, "success");
+      } else {
+        showToast(res.error || "Failed to remove email from allowlist.", "error");
+      }
+    });
+  };
+
+  // Feedback Handlers
+  const handleToggleSelectNegative = (id) => {
+    setSelectedNegativeIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllNegative = (visibleIds) => {
+    const allSelected = visibleIds.every(id => selectedNegativeIds.includes(id));
+    if (allSelected) {
+      setSelectedNegativeIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedNegativeIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const clearSelectedNegative = () => {
+    setSelectedNegativeIds([]);
+  };
+
+  const handleToggleSelectPositive = (id) => {
+    setSelectedPositiveIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllPositive = (visiblePosIds) => {
+    const allSelected = visiblePosIds.every(id => selectedPositiveIds.includes(id));
+    if (allSelected) {
+      setSelectedPositiveIds(prev => prev.filter(id => !visiblePosIds.includes(id)));
+    } else {
+      setSelectedPositiveIds(prev => Array.from(new Set([...prev, ...visiblePosIds])));
+    }
+  };
+
+  const clearSelectedPositive = () => {
+    setSelectedPositiveIds([]);
+  };
+
+  const handleUpdateFeedbackStatus = async (feedbackId, status) => {
+    startTransition(async () => {
+      const res = await updateAdminAiFeedbackStatusAction(feedbackId, status);
+      if (res.success) {
+        showToast(`Feedback status updated to ${status.replace("_", " ")}`, "success");
+        setAiFeedback(prev => prev.map(f => f.id === feedbackId ? { ...f, admin_status: status } : f));
+      } else {
+        showToast(res.error || "Failed to update feedback status", "error");
+      }
+    });
+  };
+
+  const handleSaveAdminNote = async () => {
+    if (!editingNoteModal) return;
+    startTransition(async () => {
+      const res = await updateAdminAiFeedbackNoteAction(editingNoteModal.id, noteInputText);
+      if (res.success) {
+        showToast("Admin note saved", "success");
+        setAiFeedback(prev => prev.map(f => f.id === editingNoteModal.id ? { ...f, admin_note: noteInputText } : f));
+        setEditingNoteModal(null);
+      } else {
+        showToast(res.error || "Failed to save note", "error");
+      }
+    });
+  };
+
+  const handleDeleteFeedbackConfirm = async () => {
+    if (!confirmDeleteFeedback) return;
+    const { type, id } = confirmDeleteFeedback;
+    startTransition(async () => {
+      let res;
+      if (type === 'single' && id) {
+        res = await deleteAdminAiFeedbackAction(id);
+        if (res.success) {
+          setAiFeedback(prev => prev.filter(f => f.id !== id));
+          setSelectedNegativeIds(prev => prev.filter(i => i !== id));
+          setSelectedPositiveIds(prev => prev.filter(i => i !== id));
+          showToast("Feedback report deleted", "success");
+        }
+      } else if (type === 'selected_neg') {
+        res = await deleteMultipleAdminAiFeedbackAction(selectedNegativeIds);
+        if (res.success) {
+          setAiFeedback(prev => prev.filter(f => !selectedNegativeIds.includes(f.id)));
+          setSelectedNegativeIds([]);
+          setIsSelectModeNeg(false);
+          showToast(`Deleted ${res.count} negative feedback record(s)`, "success");
+        }
+      } else if (type === 'selected_pos') {
+        res = await deleteMultipleAdminAiFeedbackAction(selectedPositiveIds);
+        if (res.success) {
+          setAiFeedback(prev => prev.filter(f => !selectedPositiveIds.includes(f.id)));
+          setSelectedPositiveIds([]);
+          setIsSelectModePos(false);
+          showToast(`Deleted ${res.count} positive feedback record(s)`, "success");
+        }
+      } else if (type === 'all_negative') {
+        res = await deleteAllAdminNegativeFeedbackAction();
+        if (res.success) {
+          setAiFeedback(prev => prev.filter(f => f.rating !== 'negative'));
+          setSelectedNegativeIds([]);
+          setIsSelectModeNeg(false);
+          showToast("All negative feedback cleared", "success");
+        }
+      } else if (type === 'all_positive') {
+        res = await deleteAllAdminPositiveFeedbackAction();
+        if (res.success) {
+          setAiFeedback(prev => prev.filter(f => f.rating !== 'positive'));
+          setSelectedPositiveIds([]);
+          setIsSelectModePos(false);
+          showToast("All positive feedback cleared", "success");
+        }
+      }
+
+      if (res && !res.success) {
+        showToast(res.error || "Failed to delete feedback", "error");
+      }
+      setConfirmDeleteFeedback(null);
+    });
+  };
+
+  const handleAdvancedSearch = async (type) => {
+    const isNeg = type === "negative";
+    const filters = isNeg ? advancedFiltersNeg : advancedFiltersPos;
+    const setSearching = isNeg ? setIsSearchingNeg : setIsSearchingPos;
+    const setSearched = isNeg ? setSearchedNegativeFeedback : setSearchedPositiveFeedback;
+    const setActive = isNeg ? setActiveFiltersNeg : setActiveFiltersPos;
+    const setShow = isNeg ? setShowAdvancedSearchNeg : setShowAdvancedSearchPos;
+    const setCount = isNeg ? setFeedbackCountNeg : setFeedbackCountPos;
+
+    setSearching(true);
+    try {
+      const res = await fetchAdminAiFeedbackAction({
+        limit: 1000,
+        filters: { ...filters, rating: type }
+      });
+      if (res.success) {
+        setSearched(res.feedback);
+        setCount(res.count);
+        setActive({ ...filters });
+        setShow(false);
+      } else {
+        showToast("Unable to search feedback.", "error");
+      }
+    } catch (e) {
+      console.error(e);
+      showToast("Unable to search feedback.", "error");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleClearSearch = (type) => {
+    if (type === "negative") {
+      setSearchedNegativeFeedback(null);
+      setActiveFiltersNeg(null);
+      setAdvancedFiltersNeg({ email: "", name: "", dateFrom: "", dateTo: "", topic: "", issueKeywords: "", userPrompt: "", aiResponse: "", modelId: "all", provider: "all", negativeStatus: "all", negativeReason: "all" });
+    } else {
+      setSearchedPositiveFeedback(null);
+      setActiveFiltersPos(null);
+      setAdvancedFiltersPos({ email: "", name: "", dateFrom: "", dateTo: "", topic: "", issueKeywords: "", userPrompt: "", aiResponse: "", modelId: "all", provider: "all" });
+    }
   };
 
   // User Actions
-  const handleInspectUser = async (u) => {
+  const handleInspectUser = async (user) => {
+    setUserDrawer({ user, loading: true });
+    setUserStats(null);
+    try {
+      const res = await fetchUserDetailStats(user.id);
+      if (res.success && res.stats) {
+        setUserStats(res.stats);
+      }
+    } catch (err) {
+      console.error("Failed to load user stats", err);
+    } finally {
+      setUserDrawer(prev => prev ? { ...prev, loading: false } : null);
+    }
+  };
+
+  const handleSuspendUser = async (userOrId) => {
+    const targetUser = typeof userOrId === "object" ? userOrId : users.find(u => u.id === userOrId);
+    const targetId = typeof userOrId === "object" ? userOrId.id : userOrId;
+
+    if (isProtectedAccount(targetUser || targetId)) {
+      showToast("Action Prohibited: Super Admin accounts cannot be suspended.", "error");
+      return;
+    }
+
+    const userName = targetUser?.display_name || targetUser?.email || "this user";
+
+    setConfirmModal({
+      title: `Suspend Account Access (${userName})`,
+      message: `Are you sure you want to suspend this user? They will be locked out from entering the website and will see a beautiful suspension notice when they try to enter. Their data (notes, AI conversations, planner items, profile) will remain 100% safe and intact, and you can unsuspend them at any time to restore full access.`,
+      dangerText: "Suspend Account (Keep Data Safe)",
+      actionFn: async () => {
+        const res = await suspendUserAction(targetId);
+        if (res.success) {
+          setUsers(prev => prev.map(u => u.id === targetId ? { ...u, is_suspended: true } : u));
+          if (userDrawer?.user?.id === targetId) setUserDrawer(prev => ({ ...prev, user: { ...prev.user, is_suspended: true } }));
+          showToast(res.message || "User account suspended. Data preserved safely.", "success");
+        } else {
+          showToast(res.error || "Failed to suspend user account", "error");
+        }
+      }
+    });
+  };
+
+  const handleUnsuspendUser = async (userOrId) => {
+    const targetId = typeof userOrId === "object" ? userOrId.id : userOrId;
     startTransition(async () => {
-      const res = await fetchUserDetailStats(u.id);
+      const res = await unsuspendUserAction(targetId);
       if (res.success) {
-        setUserDrawer({ profile: res.profile, userStats: res.userStats });
+        setUsers(prev => prev.map(u => u.id === targetId ? { ...u, is_suspended: false } : u));
+        if (userDrawer?.user?.id === targetId) setUserDrawer(prev => ({ ...prev, user: { ...prev.user, is_suspended: false } }));
+        showToast(res.message || "User account access restored.", "success");
       } else {
-        setUserDrawer({ profile: u, userStats: { postCount: 0, replyCount: 0, studyGroupCount: 0 } });
+        showToast(res.error || "Failed to restore user access", "error");
       }
     });
   };
 
-  const handleSuspendUser = (targetUser) => {
-    setConfirmModal({
-      title: `Suspend Account "${targetUser.display_name || targetUser.email}"?`,
-      message: "They will be immediately blocked from accessing protected application functionality on IB Nexus.",
-      dangerText: "Suspend Account",
-      actionFn: async () => {
-        const res = await suspendUserAction(targetUser.id);
-        if (res.success) {
-          showToast(res.message, "success");
-          setUsers(users.map(u => u.id === targetUser.id ? { ...u, is_restricted: true, is_suspended: true } : u));
-          if (userDrawer && userDrawer.profile.id === targetUser.id) {
-            setUserDrawer(prev => ({ ...prev, profile: { ...prev.profile, is_restricted: true, is_suspended: true } }));
-          }
-          fetchAdminOverviewStats().then(sRes => sRes.stats && setStats(sRes.stats));
-        } else {
-          showToast(res.error, "error");
-        }
-      }
-    });
+  const handleRestoreUser = async (userId) => {
+    return handleUnsuspendUser(userId);
   };
 
-  const handleRestoreUser = (targetUser) => {
-    setConfirmModal({
-      title: `Restore Access "${targetUser.display_name || targetUser.email}"?`,
-      message: "The user will regain standard application access to IB Nexus.",
-      dangerText: "Restore Access",
-      actionFn: async () => {
-        const res = await restoreUserAction(targetUser.id);
-        if (res.success) {
-          showToast(res.message, "success");
-          setUsers(users.map(u => u.id === targetUser.id ? { ...u, is_restricted: false, is_suspended: false } : u));
-          if (userDrawer && userDrawer.profile.id === targetUser.id) {
-            setUserDrawer(prev => ({ ...prev, profile: { ...prev.profile, is_restricted: false, is_suspended: false } }));
-          }
-          fetchAdminOverviewStats().then(sRes => sRes.stats && setStats(sRes.stats));
-        } else {
-          showToast(res.error, "error");
-        }
-      }
-    });
-  };
+  const handleToggleRestrictComments = async (userOrId) => {
+    const targetUser = typeof userOrId === "object" ? userOrId : users.find(u => u.id === userOrId);
+    const targetId = typeof userOrId === "object" ? userOrId.id : userOrId;
+    const isCurrentlyRestricted = Boolean(targetUser?.is_restricted);
 
-  // Community Moderation Actions
-  const handleSearchCommunity = async (e, overrideType = null, overrideStatus = null) => {
-    e?.preventDefault();
-    const typeToFetch = overrideType !== null ? overrideType : communityContentType;
-    const statusToFetch = overrideStatus !== null ? overrideStatus : communityStatusFilter;
+    if (isProtectedAccount(targetUser || targetId)) {
+      showToast("Action Prohibited: Super Admin accounts cannot be restricted.", "error");
+      return;
+    }
 
     startTransition(async () => {
-      const res = await fetchAdminCommunityItems({
-        search: communitySearch,
-        contentType: typeToFetch,
-        category: communityCategory,
-        statusFilter: statusToFetch,
-        limit: 100,
+      const res = isCurrentlyRestricted
+        ? await restoreUserCommunicationAction(targetId)
+        : await restrictUserCommunicationAction(targetId);
+
+      if (res.success) {
+        const newRestrictedVal = !isCurrentlyRestricted;
+        setUsers(prev => prev.map(u => u.id === targetId ? { ...u, is_restricted: newRestrictedVal } : u));
+        if (userDrawer?.user?.id === targetId) {
+          setUserDrawer(prev => ({ ...prev, user: { ...prev.user, is_restricted: newRestrictedVal } }));
+        }
+        showToast(res.message, "success");
+      } else {
+        showToast(res.error || "Failed to update comment permissions", "error");
+      }
+    });
+  };
+
+  const handleDeleteUserAccount = (user) => {
+    if (isProtectedAccount(user)) {
+      showToast("Action Prohibited: Super Admin accounts cannot be deleted.", "error");
+      return;
+    }
+
+    const userName = user.display_name || user.email || "this user";
+
+    setConfirmModal({
+      title: `Permanently Delete User Account (${userName})`,
+      message: `Are you sure you want to PERMANENTLY delete user account "${userName}"? ALL their data (notes, AI tutor chats, flashcards, planner schedules, and posts) will be permanently erased. If they log in or sign up again later, they will restart with a brand new, fresh account from scratch. THIS ACTION CANNOT BE UNDONE.`,
+      dangerText: "Permanently Delete & Wipe All Data",
+      actionFn: async () => {
+        const res = await deleteUserAccountAction(user.id);
+        if (res.success) {
+          setUsers(prev => prev.filter(u => u.id !== user.id));
+          if (userDrawer?.user?.id === user.id) setUserDrawer(null);
+          showToast(res.message || "User account and all data deleted permanently.", "success");
+        } else {
+          showToast(res.error || "Failed to delete user account", "error");
+        }
+      }
+    });
+  };
+
+  const handleEditUserClick = (u) => {
+    setUserSaveBanner(null);
+    setEditingUserModal(u);
+    setEditUserDisplayName(u.display_name || u.full_name || "");
+    setEditUserFullName(u.full_name || "");
+    setEditUserProgram(u.ib_program ? u.ib_program.toUpperCase() : "DP");
+    setEditUserExamSession(u.exam_session || "May 2026");
+    setEditUserIsAdmin(Boolean(u.is_admin));
+  };
+
+  const handleSaveUserEditSubmit = async (e) => {
+    e.preventDefault();
+    if (!editingUserModal) return;
+
+    if (isProtectedAccount(editingUserModal) && !editUserIsAdmin) {
+      showToast("Action Prohibited: Super Admin administrative privileges cannot be revoked.", "error");
+      return;
+    }
+
+    setIsSavingUserEdit(true);
+    setUserSaveBanner(null);
+
+    startTransition(async () => {
+      const res = await updateUserProfileByAdminAction({
+        userId: editingUserModal.id,
+        displayName: editUserDisplayName,
+        fullName: editUserFullName,
+        ibProgram: editUserProgram,
+        examSession: editUserExamSession,
+        isAdmin: editUserIsAdmin,
       });
-      if (res.items) setCommunityItems(res.items);
-    });
-  };
 
-  const handleInspectItem = (item) => {
-    setItemDrawer({ item, isEditing: false });
-  };
-
-  const handleApprovePost = (postId) => {
-    startTransition(async () => {
-      const res = await approvePostAction(postId);
+      setIsSavingUserEdit(false);
       if (res.success) {
-        showToast(res.message, "success");
-        setCommunityItems(prev => prev.map(i => i.id === postId ? { ...i, status: "approved" } : i));
-        if (itemDrawer && itemDrawer.item.id === postId) {
-          setItemDrawer(prev => ({ ...prev, item: { ...prev.item, status: "approved" } }));
+        setUsers(prev => prev.map(u => u.id === editingUserModal.id ? {
+          ...u,
+          display_name: editUserDisplayName,
+          full_name: editUserFullName,
+          ib_program: editUserProgram,
+          exam_session: editUserExamSession,
+          is_admin: editUserIsAdmin,
+        } : u));
+
+        if (userDrawer?.user?.id === editingUserModal.id) {
+          setUserDrawer(prev => ({
+            ...prev,
+            user: {
+              ...prev.user,
+              display_name: editUserDisplayName,
+              full_name: editUserFullName,
+              ib_program: editUserProgram,
+              exam_session: editUserExamSession,
+              is_admin: editUserIsAdmin,
+            }
+          }));
         }
-        fetchAdminOverviewStats().then(sRes => sRes.stats && setStats(sRes.stats));
+
+        const successText = `✨ User profile for "${editUserDisplayName || editingUserModal.email}" updated successfully!`;
+        setUserSaveBanner({
+          type: "success",
+          message: successText,
+        });
+        showToast(successText, "success");
+
+        setTimeout(() => {
+          setEditingUserModal(null);
+          setUserSaveBanner(null);
+        }, 1400);
       } else {
-        showToast(res.error, "error");
+        const errorText = res.error || "Failed to update user profile";
+        setUserSaveBanner({
+          type: "error",
+          message: errorText,
+        });
+        showToast(errorText, "error");
       }
     });
   };
 
-  const handleRejectPost = (postId) => {
-    startTransition(async () => {
-      const res = await rejectPostAction(postId);
-      if (res.success) {
-        showToast(res.message, "success");
-        setCommunityItems(prev => prev.map(i => i.id === postId ? { ...i, status: "rejected" } : i));
-        if (itemDrawer && itemDrawer.item.id === postId) {
-          setItemDrawer(prev => ({ ...prev, item: { ...prev.item, status: "rejected" } }));
+  // Community Content Actions
+  const handleOpenItemDrawer = async (item) => {
+    setItemDrawer({ item, isEditing: false, loadingReplies: true, replies: [] });
+    if (item.contentType !== "report" && item.contentType !== "study_group") {
+      try {
+        const res = await fetchPostDetailsAndRepliesAction(item.id);
+        if (res.success) {
+          setItemDrawer(prev => {
+            if (!prev || prev.item.id !== item.id) return prev;
+            return {
+              ...prev,
+              item: { ...prev.item, ...(res.post || {}) },
+              replies: res.replies || [],
+              loadingReplies: false,
+            };
+          });
+        } else {
+          setItemDrawer(prev => prev ? { ...prev, loadingReplies: false } : null);
         }
-        fetchAdminOverviewStats().then(sRes => sRes.stats && setStats(sRes.stats));
+      } catch (err) {
+        console.error("Failed to load post details and replies:", err);
+        setItemDrawer(prev => prev ? { ...prev, loadingReplies: false } : null);
+      }
+    } else {
+      setItemDrawer(prev => prev ? { ...prev, loadingReplies: false } : null);
+    }
+  };
+
+  const handleApprovePost = async (id) => {
+    startTransition(async () => {
+      const res = await approvePostAction(id);
+      if (res.success) {
+        setCommunityItems(prev => prev.filter(i => i.id !== id));
+        setItemDrawer(null);
+        showToast("Post approved and published to community page! Removed from moderation list.", "success");
       } else {
-        showToast(res.error, "error");
+        showToast(res.error || "Failed to approve post", "error");
+      }
+    });
+  };
+
+  const handleRejectPost = async (id) => {
+    startTransition(async () => {
+      const res = await rejectPostAction(id);
+      if (res.success) {
+        setCommunityItems(prev => prev.map(i => i.id === id ? { ...i, status: "rejected" } : i));
+        if (itemDrawer?.item?.id === id) setItemDrawer(prev => ({ ...prev, item: { ...prev.item, status: "rejected" } }));
+        showToast("Post rejected", "success");
+      } else {
+        showToast(res.error || "Failed to reject post", "error");
+      }
+    });
+  };
+
+  const handleSetPostStatus = async (id, status) => {
+    startTransition(async () => {
+      const res = await updatePostStatusAction(id, status);
+      if (res.success) {
+        if (status === "approved") {
+          setCommunityItems(prev => prev.filter(i => i.id !== id));
+          setItemDrawer(null);
+          showToast("Post approved and published to community page! Removed from moderation list.", "success");
+        } else {
+          setCommunityItems(prev => prev.map(i => i.id === id ? { ...i, status } : i));
+          if (itemDrawer?.item?.id === id) {
+            setItemDrawer(prev => ({ ...prev, item: { ...prev.item, status } }));
+          }
+          showToast(`Post status updated to ${status.toUpperCase()}`, "success");
+        }
+      } else {
+        showToast(res.error || "Failed to update post status", "error");
+      }
+    });
+  };
+
+  const handleDeleteReply = async (replyId) => {
+    setConfirmModal({
+      title: "Delete Reply",
+      message: "Are you sure you want to permanently delete this reply? This action cannot be undone.",
+      dangerText: "Delete Reply",
+      actionFn: async () => {
+        const res = await deleteReplyAction(replyId);
+        if (res.success) {
+          setItemDrawer(prev => prev ? {
+            ...prev,
+            replies: (prev.replies || []).filter(r => r.id !== replyId),
+            item: {
+              ...prev.item,
+              reply_count: Math.max(0, (prev.item.reply_count || 1) - 1)
+            }
+          } : null);
+          showToast("Reply deleted successfully", "success");
+        } else {
+          showToast(res.error || "Failed to delete reply", "error");
+        }
+      }
+    });
+  };
+
+  const handleApproveStudyGroup = async (id) => {
+    startTransition(async () => {
+      const res = await approveStudyGroupAction(id);
+      if (res.success) {
+        setCommunityItems(prev => prev.map(i => i.id === id ? { ...i, status: "active" } : i));
+        if (itemDrawer?.item?.id === id) setItemDrawer(prev => ({ ...prev, item: { ...prev.item, status: "active" } }));
+        showToast("Study group approved", "success");
+      } else {
+        showToast(res.error || "Failed to approve study group", "error");
+      }
+    });
+  };
+
+  const handleRejectStudyGroup = async (id) => {
+    startTransition(async () => {
+      const res = await rejectStudyGroupAction(id);
+      if (res.success) {
+        setCommunityItems(prev => prev.map(i => i.id === id ? { ...i, status: "rejected" } : i));
+        if (itemDrawer?.item?.id === id) setItemDrawer(prev => ({ ...prev, item: { ...prev.item, status: "rejected" } }));
+        showToast("Study group rejected", "success");
+      } else {
+        showToast(res.error || "Failed to reject study group", "error");
+      }
+    });
+  };
+
+  const handleDismissReport = async (id) => {
+    startTransition(async () => {
+      const res = await dismissReportAction(id);
+      if (res.success) {
+        setCommunityItems(prev => prev.filter(i => i.id !== id));
+        if (itemDrawer?.item?.id === id) setItemDrawer(null);
+        showToast("Report dismissed", "success");
+      } else {
+        showToast(res.error || "Failed to dismiss report", "error");
+      }
+    });
+  };
+
+  const handleDeleteCommunityItem = async (item) => {
+    setConfirmModal({
+      title: `Delete ${item.contentType || "Item"}`,
+      message: `Are you sure you want to permanently delete "${item.title || "this content"}"? This action cannot be undone.`,
+      dangerText: "Delete Permanently",
+      actionFn: async () => {
+        let res;
+        const type = (item.contentType || "").toLowerCase();
+        if (type === "discussion" || type === "question" || type === "post" || !type) {
+          res = await deleteDiscussionAction(item.id);
+        } else if (type === "study_group") {
+          res = await deleteLiveRoomAction(item.id);
+        } else {
+          res = await dismissReportAction(item.id);
+        }
+        if (res.success) {
+          setCommunityItems(prev => prev.filter(i => i.id !== item.id));
+          if (itemDrawer?.item?.id === item.id) setItemDrawer(null);
+          showToast("Item deleted permanently", "success");
+        } else {
+          showToast(res.error || "Failed to delete item", "error");
+        }
       }
     });
   };
 
   const handleSaveItemEdit = async (item, formData) => {
-    const title = formData.get("title");
-    const content = formData.get("content");
-    const category = formData.get("category");
-    const description = formData.get("description");
-    const status = formData.get("status");
-
     startTransition(async () => {
-      const res = await updateCommunityContentAction({
-        contentType: item.contentType,
-        id: item.id,
-        title,
-        content,
-        category,
-        description,
-        status,
-      });
+      const title = formData.get("title");
+      const category = formData.get("category");
+      const content = formData.get("content");
 
+      const res = await updateCommunityContentAction(item.id, { title, category, content });
       if (res.success) {
-        showToast(res.message, "success");
-        setItemDrawer(null);
-        handleSearchCommunity();
+        setCommunityItems(prev => prev.map(i => i.id === item.id ? { ...i, title, category, content } : i));
+        setItemDrawer(prev => prev ? { ...prev, item: { ...prev.item, title, category, content }, isEditing: false } : null);
+        showToast("Content updated successfully", "success");
       } else {
-        showToast(res.error, "error");
+        showToast(res.error || "Failed to update content", "error");
       }
     });
   };
 
-  const handleApproveStudyGroup = (groupId) => {
-    startTransition(async () => {
-      const res = await approveStudyGroupAction(groupId);
-      if (res.success) {
-        showToast(res.message, "success");
-        setCommunityItems(communityItems.map(i => i.id === groupId ? { ...i, status: "active" } : i));
-        if (itemDrawer && itemDrawer.item.id === groupId) setItemDrawer(null);
-      } else {
-        showToast(res.error, "error");
-      }
-    });
-  };
+  const handleSaveRoom = async (e) => {
+    e.preventDefault();
+    if (!roomModal) return;
+    const formData = new FormData(e.currentTarget);
+    const name = formData.get("name")?.trim();
+    const subject = formData.get("subject")?.trim();
+    const description = formData.get("description")?.trim() || "";
+    const max_participants = parseInt(formData.get("max_participants") || "50", 10);
+    const is_active = formData.get("is_active") === "on";
 
-  const handleRejectStudyGroup = (groupId) => {
-    startTransition(async () => {
-      const res = await rejectStudyGroupAction(groupId);
-      if (res.success) {
-        showToast(res.message, "success");
-        setCommunityItems(communityItems.map(i => i.id === groupId ? { ...i, status: "pending" } : i));
-        if (itemDrawer && itemDrawer.item.id === groupId) setItemDrawer(null);
-      } else {
-        showToast(res.error, "error");
-      }
-    });
-  };
+    if (!name || !subject) {
+      showToast("Room name and subject are required", "error");
+      return;
+    }
 
-  const handleDismissReport = (reportId) => {
     startTransition(async () => {
-      const res = await dismissReportAction(reportId);
-      if (res.success) {
-        showToast(res.message, "success");
-        setCommunityItems(communityItems.filter(i => i.id !== reportId));
-        if (itemDrawer && itemDrawer.item.id === reportId) setItemDrawer(null);
+      let res;
+      if (roomModal.mode === "create") {
+        res = await createLiveRoomAction({ name, subject, description, max_participants, is_active });
       } else {
-        showToast(res.error, "error");
+        res = await updateLiveRoomAction(roomModal.room.id, { name, subject, description, max_participants, is_active });
       }
-    });
-  };
-
-  const handleDeleteCommunityItem = (item) => {
-    setConfirmModal({
-      title: `Delete ${item.contentType.toUpperCase()} "${item.title}"?`,
-      message: "This item will be permanently removed from the database.",
-      dangerText: "Delete Content",
-      actionFn: async () => {
-        let res;
-        if (item.contentType === "reply") {
-          res = await deleteReplyAction(item.id);
-        } else {
-          res = await deleteDiscussionAction(item.id);
+      if (res.success) {
+        setRoomModal(null);
+        showToast(roomModal.mode === "create" ? "Live room created successfully" : "Live room updated", "success");
+        if (res.room) {
+          if (roomModal.mode === "create") {
+            setRooms(prev => [res.room, ...prev.filter(r => r.id !== res.room.id)]);
+          } else {
+            setRooms(prev => prev.map(r => r.id === roomModal.room.id ? { ...r, ...res.room } : r));
+          }
         }
-
-        if (res.success) {
-          showToast(res.message, "success");
-          setCommunityItems(communityItems.filter(i => i.id !== item.id));
-          if (itemDrawer && itemDrawer.item.id === item.id) setItemDrawer(null);
-        } else {
-          showToast(res.error, "error");
-        }
+        const fresh = await fetchAdminRooms();
+        if (fresh?.success && fresh.rooms) setRooms(fresh.rooms);
+      } else {
+        showToast(res.error || "Failed to save room", "error");
       }
     });
   };
 
-  // Live Room Actions
-  const handleDeleteRoom = (room) => {
-    setConfirmModal({
-      title: `Delete Live Room "${room.name}"?`,
-      message: "This room and its chat stream will be permanently deleted.",
-      dangerText: "Delete Room",
-      actionFn: async () => {
-        const res = await deleteLiveRoomAction(room.id);
-        if (res.success) {
-          showToast(res.message, "success");
-          setRooms(rooms.filter(r => r.id !== room.id));
-        } else {
-          showToast(res.error, "error");
-        }
-      }
-    });
-  };
+  // Live Room Handlers
+  const handleInspectRoom = async (room) => {
+    setChatDrawer({ room, messages: [], participants: [], totalMessagesCount: 0 });
+    setChatDrawerActiveTab("messages");
+    setChatDrawerSearch("");
+    setChatDrawerFilter("all");
 
-  const [chatDrawerSearch, setChatDrawerSearch] = useState("");
-  const [chatDrawerActiveTab, setChatDrawerActiveTab] = useState("messages"); // "messages" | "participants" | "details"
-
-  const handleOpenChatDrawer = async (room) => {
-    startTransition(async () => {
+    try {
       const res = await fetchRoomMessagesForModeration(room.id);
-      setChatDrawer({
-        room: res.room || room,
-        messages: res.messages || [],
-        participants: res.participants || [],
-        totalMessagesCount: res.totalMessagesCount || 0,
-        isEditingRoom: false
-      });
-      setChatDrawerSearch("");
-      setChatDrawerActiveTab("messages");
-    });
+      if (res.success) {
+        setChatDrawer(prev => prev ? {
+          ...prev,
+          messages: res.messages || [],
+          participants: res.participants || [],
+          totalMessagesCount: res.totalMessagesCount || (res.messages || []).length
+        } : null);
+      }
+    } catch (err) {
+      showToast("Error loading room moderation workspace", "error");
+    }
   };
 
-  const handleUpdateRoomStatus = async (newStatus) => {
+  const handleUpdateRoomStatus = async (targetStatus) => {
     if (!chatDrawer?.room?.id) return;
+    const isTargetActive = targetStatus === "Active";
     startTransition(async () => {
-      const res = await updateRoomStatusAction({ roomId: chatDrawer.room.id, status: newStatus });
+      const res = await updateRoomStatusAction(chatDrawer.room.id, isTargetActive);
       if (res.success) {
-        showToast(`Room status updated to ${newStatus}`, "success");
-        setChatDrawer(prev => prev ? { ...prev, room: res.room } : null);
-        setRooms(prev => prev.map(r => r.id === chatDrawer.room.id ? { ...r, is_active: res.room.is_active } : r));
+        setRooms(prev => prev.map(r => r.id === chatDrawer.room.id ? { ...r, is_active: isTargetActive } : r));
+        setChatDrawer(prev => prev ? { ...prev, room: { ...prev.room, is_active: isTargetActive } } : null);
+        showToast(res.message, "success");
       } else {
         showToast(res.error || "Failed to update room status", "error");
       }
     });
   };
 
-  const handleDeleteChatMessage = (messageId) => {
+  const handleToggleRoomStatus = () => {
+    if (!chatDrawer?.room?.id) return;
+    const isTargetActive = !chatDrawer.room?.is_active;
+    startTransition(async () => {
+      const res = await updateRoomStatusAction(chatDrawer.room.id, isTargetActive);
+      if (res.success) {
+        setRooms(prev => prev.map(r => r.id === chatDrawer.room.id ? { ...r, is_active: isTargetActive } : r));
+        setChatDrawer(prev => prev ? { ...prev, room: { ...prev.room, is_active: isTargetActive } } : null);
+        showToast(res.message || `Room marked ${isTargetActive ? "Active" : "Paused"}`, "success");
+      } else {
+        showToast(res.error || "Failed to update room status", "error");
+      }
+    });
+  };
+
+  const handleDeleteChatMessage = async (msgId) => {
+    if (!confirm("Are you sure you want to permanently delete this room message?")) return;
+    startTransition(async () => {
+      const res = await deleteChatMessageAction(msgId);
+      if (res.success) {
+        setChatDrawer(prev => prev ? {
+          ...prev,
+          messages: prev.messages.filter(m => m.id !== msgId)
+        } : null);
+        showToast("Message deleted from live room", "success");
+      } else {
+        showToast(res.error || "Failed to delete message", "error");
+      }
+    });
+  };
+
+  const handleDeleteRoom = async (room) => {
     setConfirmModal({
-      title: "Delete Chat Message?",
-      message: "This message will be removed from the live room and database.",
-      dangerText: "Delete Message",
+      title: "Delete Live Room",
+      message: `Are you sure you want to delete room "${room.name}"? All chat history and room settings will be deleted permanently.`,
+      dangerText: "Delete Live Room",
       actionFn: async () => {
-        const res = await deleteChatMessageAction(messageId);
+        const res = await deleteLiveRoomAction(room.id);
         if (res.success) {
+          setRooms(prev => prev.filter(r => r.id !== room.id));
+          if (chatDrawer?.room?.id === room.id) setChatDrawer(null);
           showToast(res.message, "success");
-          if (chatDrawer) {
-            setChatDrawer(prev => ({
-              ...prev,
-              messages: prev.messages.filter(m => m.id !== messageId)
-            }));
-          }
         } else {
-          showToast(res.error, "error");
+          showToast(res.error || "Failed to delete room", "error");
         }
       }
     });
@@ -521,7 +1092,12 @@ export default function AdminClient({
         showToast(adminChatIsNotice ? "Official Notice posted to live room." : "Moderator message sent.", "success");
         const refreshed = await fetchRoomMessagesForModeration(chatDrawer.room.id);
         if (refreshed.success) {
-          setChatDrawer(prev => prev ? { ...prev, messages: refreshed.messages } : null);
+          setChatDrawer(prev => prev ? {
+            ...prev,
+            messages: refreshed.messages || [],
+            participants: refreshed.participants || prev.participants || [],
+            totalMessagesCount: refreshed.totalMessagesCount || (refreshed.messages || []).length
+          } : null);
         }
       } else {
         showToast(res.error || "Failed to post moderator message.", "error");
@@ -530,6 +1106,29 @@ export default function AdminClient({
       showToast(err.message || "Error posting message.", "error");
     } finally {
       setAdminChatSending(false);
+    }
+  };
+
+  const handleRefreshChatDrawer = async () => {
+    if (!chatDrawer?.room?.id || refreshingChat) return;
+    setRefreshingChat(true);
+    try {
+      const refreshed = await fetchRoomMessagesForModeration(chatDrawer.room.id);
+      if (refreshed.success) {
+        setChatDrawer(prev => prev ? {
+          ...prev,
+          messages: refreshed.messages || [],
+          participants: refreshed.participants || prev.participants || [],
+          totalMessagesCount: refreshed.totalMessagesCount || (refreshed.messages || []).length
+        } : null);
+        showToast("Room chat refreshed", "success");
+      } else {
+        showToast("Failed to refresh chat messages", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Error refreshing chat", "error");
+    } finally {
+      setRefreshingChat(false);
     }
   };
 
@@ -542,7 +1141,6 @@ export default function AdminClient({
     });
   };
 
-  // Delete single audit log entry
   const handleDeleteSingleLog = async (logId) => {
     startTransition(async () => {
       const res = await deleteSingleAuditLogAction(logId);
@@ -557,7 +1155,6 @@ export default function AdminClient({
     });
   };
 
-  // Clear all audit logs
   const handleClearAllLogs = async () => {
     startTransition(async () => {
       const res = await clearAllAuditLogsAction();
@@ -612,18 +1209,21 @@ export default function AdminClient({
         if (subjectModal.mode === "create") {
           await addGlobalSubjectAction(program, category, name, available_levels);
           showToast(`Added ${name} to ${program.toUpperCase()} catalog`, "success");
+          setSubjects(prev => [{ id: "temp-" + Date.now(), program, category, name, available_levels }, ...prev]);
         } else {
           await editGlobalSubjectAction(subjectModal.subject.id, program, category, name, available_levels);
           showToast(`Updated ${name}`, "success");
+          setSubjects(prev => prev.map(s => s.id === subjectModal.subject.id ? { ...s, program, category, name, available_levels } : s));
         }
         setSubjectModal(null);
         const fresh = await fetchGlobalSubjects();
-        setSubjects(fresh);
+        if (Array.isArray(fresh)) setSubjects(fresh);
       } catch (err) {
         showToast(err.message || "Failed to save subject", "error");
       }
     });
   };
+  const handleSaveSubject = handleSaveSubjectSubmit;
 
   const handleDeleteSubjectClick = async (id, name) => {
     if (!confirm(`Are you sure you want to delete "${name}" from the subject catalog?`)) return;
@@ -646,13 +1246,26 @@ export default function AdminClient({
     setWebsiteLockConfirmModal(null);
     startTransition(async () => {
       const res = await updateWebsiteLockStatusAction({
-        isLocked: targetLockedState,
-        lockMessage: lockMessageInput,
+        is_locked: targetLockedState,
+        lock_message: lockMessageInput,
       });
       setIsUpdatingLock(false);
       if (res.success) {
         setWebsiteLockSettings(res.settings);
-        showToast(res.message, "success");
+        const currentEmail = adminUser?.email?.trim().toLowerCase();
+        const isSuper = Boolean(superAdminEmail && currentEmail === superAdminEmail);
+
+        if (targetLockedState) {
+          if (!isSuper) {
+            // Normal admin: immediately throw out to lock screen
+            window.location.href = "/";
+            return;
+          } else {
+            showToast("Website is now LOCKED. Super Admin skeleton access active.", "success");
+          }
+        } else {
+          showToast(res.message || "Website UNLOCKED for all users.", "success");
+        }
       } else {
         showToast(res.error || "Failed to update website status", "error");
       }
@@ -663,8 +1276,8 @@ export default function AdminClient({
     setIsUpdatingLock(true);
     startTransition(async () => {
       const res = await updateWebsiteLockStatusAction({
-        isLocked: websiteLockSettings.is_locked,
-        lockMessage: lockMessageInput,
+        is_locked: websiteLockSettings.is_locked,
+        lock_message: lockMessageInput,
       });
       setIsUpdatingLock(false);
       if (res.success) {
@@ -700,7 +1313,7 @@ export default function AdminClient({
           prev.map(m => (m.model_id === modelId ? { ...m, is_paused: !currentPaused } : m))
         );
       } else {
-        showToast(res.error || "Failed to toggle pause state", "error");
+        showToast(res.error || "Failed to update model pause status", "error");
       }
     });
   };
@@ -714,7 +1327,7 @@ export default function AdminClient({
           prev.map(m => (m.model_id === modelId ? { ...m, is_hidden: !currentHidden } : m))
         );
       } else {
-        showToast(res.error || "Failed to toggle visibility state", "error");
+        showToast(res.error || "Failed to update model visibility", "error");
       }
     });
   };
@@ -728,24 +1341,25 @@ export default function AdminClient({
           prev.map(m => (m.model_id === modelId ? { ...m, enabled: !currentEnabled } : m))
         );
       } else {
-        showToast(res.error || "Failed to toggle enabled state", "error");
+        showToast(res.error || "Failed to update model state", "error");
       }
     });
   };
 
-  const handleOpenEditModelModal = (model) => {
-    setEditingModelModal(model);
-    setEditDisplayName(model.display_name || model.displayName || "");
-    setEditDescription(model.description || "");
-    setEditAllowedRoles(model.allowed_roles || model.allowedRoles || "all");
-    setEditMaxTokens(model.max_tokens || model.maxTokens || 2048);
-    setEditTemperature(model.temperature !== undefined && model.temperature !== null ? model.temperature : 0.7);
-    setEditFallbackModelId(model.fallback_model_id || model.fallbackModelId || "gemini-3.6-flash");
+  const handleOpenEditModelModal = (m) => {
+    setEditingModelModal(m);
+    setEditDisplayName(m.display_name || m.model_id);
+    setEditDescription(m.description || "");
+    setEditAllowedRoles(m.allowed_roles || m.allowedRoles || "all");
+    setEditMaxTokens(m.max_tokens || m.maxTokens || 2048);
+    setEditTemperature(m.temperature || 0.7);
+    setEditFallbackModelId(m.fallback_model_id || m.fallbackModelId || "gemini-3.6-flash");
   };
 
-  const handleSaveModelMetadata = async (e) => {
+  const handleSaveModelMetadataSubmit = async (e) => {
     e.preventDefault();
     if (!editingModelModal) return;
+
     setIsSubmittingModelEdit(true);
 
     try {
@@ -791,17 +1405,8 @@ export default function AdminClient({
     }
   };
 
-  const tabs = [
-    { id: "overview", label: "Overview", icon: ShieldAlert },
-    { id: "users", label: "Users", icon: Users, badge: getMetricNumber(stats?.totalUsers, users.length) },
-    { id: "community", label: "Community Moderation", icon: MessageSquare, badge: pendingTotal > 0 ? `${pendingTotal} Pending` : communityItems.length },
-    { id: "rooms", label: "Live Rooms", icon: Radio, badge: getMetricNumber(stats?.totalRooms, rooms.length) },
-    { id: "courses", label: "Course Catalog", icon: BookOpen, badge: subjects.length },
-    { id: "models", label: "AI Models", icon: Cpu, badge: modelConfigs.length },
-    { id: "aicore", label: "Nexus AI Core", icon: Sparkles },
-    { id: "website", label: "Website Access", icon: websiteLockSettings.is_locked ? Lock : Globe, badge: websiteLockSettings.is_locked ? "LOCKED" : "OPEN" },
-    { id: "logs", label: "Activity Audit Log", icon: History },
-  ];
+  // Derived Navigation Group
+  const currentGroup = findGroupForSection(activeTab);
 
   const filteredModels = modelConfigs.filter((m) => {
     if (modelProviderFilter !== "all") {
@@ -816,14 +1421,60 @@ export default function AdminClient({
     return true;
   });
 
-  // Filter community items by status locally if selected
   const filteredCommunityItems = communityItems.filter(item => {
+    // Approved posts are removed permanently from moderation list
+    if (item.status === "approved" || item.status === "active") return false;
     if (communityStatusFilter === "all") return true;
     if (communityStatusFilter === "pending") return item.status === "pending";
-    if (communityStatusFilter === "approved") return item.status === "approved" || item.status === "active";
     if (communityStatusFilter === "rejected") return item.status === "rejected";
     return true;
   });
+
+  // Base Feedback Lists
+  const baseNegativeFeedback = searchedNegativeFeedback !== null ? searchedNegativeFeedback : aiFeedback.filter(f => f.rating === 'negative');
+  const basePositiveFeedback = searchedPositiveFeedback !== null ? searchedPositiveFeedback : aiFeedback.filter(f => f.rating === 'positive');
+
+  const filteredAiFeedback = baseNegativeFeedback.filter(f => {
+    if (feedbackSearch.trim()) {
+      const q = feedbackSearch.toLowerCase();
+      const matchesPrompt = f.prompt?.toLowerCase().includes(q);
+      const matchesAiResponse = f.ai_response?.toLowerCase().includes(q);
+      const matchesComment = f.comment?.toLowerCase().includes(q);
+      const matchesCategory = f.category?.toLowerCase().includes(q);
+      const matchesUser = f.users?.email?.toLowerCase().includes(q) || f.users?.raw_user_meta_data?.display_name?.toLowerCase().includes(q) || f.users?.raw_user_meta_data?.full_name?.toLowerCase().includes(q);
+      if (!matchesPrompt && !matchesAiResponse && !matchesComment && !matchesCategory && !matchesUser) return false;
+    }
+
+    if (feedbackStatusFilter === "reported") {
+      if (f.admin_status !== "reported" && f.admin_status !== "new" && f.admin_status !== null) return false;
+    } else if (feedbackStatusFilter === "under_review") {
+      if (f.admin_status !== "under_review") return false;
+    } else if (feedbackStatusFilter === "resolved") {
+      if (f.admin_status !== "resolved") return false;
+    } else if (feedbackStatusFilter === "unresolved") {
+      if (f.admin_status === "resolved") return false;
+    }
+
+    return true;
+  });
+
+  const positiveItems = basePositiveFeedback.filter(f => {
+    if (feedbackSearch.trim()) {
+      const q = feedbackSearch.toLowerCase();
+      const matchesPrompt = f.prompt?.toLowerCase().includes(q);
+      const matchesAiResponse = f.ai_response?.toLowerCase().includes(q);
+      const matchesComment = f.comment?.toLowerCase().includes(q);
+      const matchesUser = f.users?.email?.toLowerCase().includes(q) || f.users?.raw_user_meta_data?.display_name?.toLowerCase().includes(q) || f.users?.raw_user_meta_data?.full_name?.toLowerCase().includes(q);
+      if (!matchesPrompt && !matchesAiResponse && !matchesComment && !matchesUser) return false;
+    }
+    return true;
+  });
+
+  const visibleNegIds = filteredAiFeedback.map(f => f.id);
+  const allVisibleNegSelected = visibleNegIds.length > 0 && visibleNegIds.every(id => selectedNegativeIds.includes(id));
+
+  const visiblePosIds = positiveItems.map(f => f.id);
+  const allVisiblePosSelected = visiblePosIds.length > 0 && visiblePosIds.every(id => selectedPositiveIds.includes(id));
 
   const overviewMetrics = [
     { label: "Total Users", metric: stats?.totalUsers, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
@@ -837,8 +1488,163 @@ export default function AdminClient({
     { label: "Live Rooms", metric: stats?.totalRooms, color: "text-teal-400", bg: "bg-teal-500/10 border-teal-500/20" },
   ];
 
+  const renderActiveFilterChips = (activeFilters, type) => {
+    if (!activeFilters) return null;
+    const chips = [];
+    const pushChip = (key, label, value) => {
+      if (value && value !== "all") {
+        chips.push({
+          key, label, value,
+          remove: () => {
+            if (type === 'negative') {
+              const next = { ...advancedFiltersNeg, [key]: key === 'modelId' || key === 'provider' || key === 'negativeStatus' || key === 'negativeReason' ? 'all' : '' };
+              setAdvancedFiltersNeg(next);
+              setTimeout(() => handleAdvancedSearch('negative'), 50);
+            } else {
+              const next = { ...advancedFiltersPos, [key]: key === 'modelId' || key === 'provider' ? 'all' : '' };
+              setAdvancedFiltersPos(next);
+              setTimeout(() => handleAdvancedSearch('positive'), 50);
+            }
+          }
+        });
+      }
+    };
+    pushChip('email', 'Email', activeFilters.email);
+    pushChip('name', 'Name', activeFilters.name);
+    pushChip('dateFrom', 'From', activeFilters.dateFrom);
+    pushChip('dateTo', 'To', activeFilters.dateTo);
+    pushChip('topic', 'Topic', activeFilters.topic);
+    pushChip('issueKeywords', 'Keyword', activeFilters.issueKeywords);
+    pushChip('userPrompt', 'Prompt', activeFilters.userPrompt);
+    pushChip('aiResponse', 'Response', activeFilters.aiResponse);
+    pushChip('modelId', 'Model', activeFilters.modelId);
+    pushChip('provider', 'Provider', activeFilters.provider);
+    if (type === 'negative') {
+      pushChip('negativeStatus', 'Status', activeFilters.negativeStatus);
+      pushChip('negativeReason', 'Reason', activeFilters.negativeReason);
+    }
+    
+    if (chips.length === 0) return null;
+
+    return (
+      <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-[var(--border)]">
+        <span className="text-xs font-bold text-[var(--muted)]">{chips.length} active filter{chips.length > 1 ? 's' : ''}:</span>
+        {chips.map(c => (
+          <span key={c.key} className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg text-xs font-semibold">
+            <span><span className="opacity-60">{c.label}:</span> {c.value}</span>
+            <button onClick={c.remove} className="hover:bg-indigo-500/20 p-0.5 rounded transition-colors"><X size={12} /></button>
+          </span>
+        ))}
+        <button onClick={() => handleClearSearch(type)} className="text-xs font-bold text-[var(--muted)] hover:text-[var(--foreground)] ml-2 transition-colors">
+          Clear Filters
+        </button>
+      </div>
+    );
+  };
+
+  const renderAdvancedSearchPanel = (type) => {
+    const isNeg = type === "negative";
+    const show = isNeg ? showAdvancedSearchNeg : showAdvancedSearchPos;
+    const filters = isNeg ? advancedFiltersNeg : advancedFiltersPos;
+    const setFilters = isNeg ? setAdvancedFiltersNeg : setAdvancedFiltersPos;
+    const isSearching = isNeg ? isSearchingNeg : isSearchingPos;
+    const activeFilters = isNeg ? activeFiltersNeg : activeFiltersPos;
+
+    if (!show) return null;
+
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -10, height: 0 }}
+        animate={{ opacity: 1, y: 0, height: "auto" }}
+        exit={{ opacity: 0, y: -10, height: 0 }}
+        className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-5 mb-6 shadow-sm overflow-hidden"
+      >
+        <div className="flex flex-col gap-1 mb-5">
+          <h3 className="text-sm font-bold text-[var(--foreground)] flex items-center gap-2">
+            <Search size={14} className="text-[var(--muted)]" />
+            Find Feedback
+          </h3>
+          <p className="text-xs text-[var(--muted)]">Search and combine filters to locate specific feedback records.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">User</h4>
+            <input type="text" placeholder="Email (e.g. user@gmail.com)" value={filters.email} onChange={e => setFilters({...filters, email: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+            <input type="text" placeholder="User Name" value={filters.name} onChange={e => setFilters({...filters, name: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Time</h4>
+            <div className="flex items-center gap-2">
+              <input type="date" value={filters.dateFrom} onChange={e => setFilters({...filters, dateFrom: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+              <span className="text-[var(--muted)] text-xs">to</span>
+              <input type="date" value={filters.dateTo} onChange={e => setFilters({...filters, dateTo: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Content</h4>
+            <input type="text" placeholder="Topic / Subject" value={filters.topic} onChange={e => setFilters({...filters, topic: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+            <input type="text" placeholder="Issue Keywords" value={filters.issueKeywords} onChange={e => setFilters({...filters, issueKeywords: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+            <input type="text" placeholder="User Question / Prompt" value={filters.userPrompt} onChange={e => setFilters({...filters, userPrompt: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+            <input type="text" placeholder="AI Response" value={filters.aiResponse} onChange={e => setFilters({...filters, aiResponse: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]" />
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">AI & Status</h4>
+            <select value={filters.modelId} onChange={e => setFilters({...filters, modelId: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]">
+              <option value="all">Any Model</option>
+              {modelConfigs.map(m => <option key={m.model_id} value={m.model_id}>{m.display_name || m.model_id}</option>)}
+            </select>
+            <select value={filters.provider} onChange={e => setFilters({...filters, provider: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]">
+              <option value="all">Any Provider</option>
+              <option value="google">Google</option>
+              <option value="groq">Groq</option>
+              <option value="together">Together AI</option>
+            </select>
+            {isNeg && (
+              <>
+                <select value={filters.negativeStatus} onChange={e => setFilters({...filters, negativeStatus: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]">
+                  <option value="all">Any Status</option>
+                  <option value="reported">Reported by User</option>
+                  <option value="under_review">Under Review</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+                <select value={filters.negativeReason} onChange={e => setFilters({...filters, negativeReason: e.target.value})} className="w-full h-9 px-3 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs text-[var(--foreground)]">
+                  <option value="all">Any Reason</option>
+                  <option value="inaccurate">Inaccurate / Wrong</option>
+                  <option value="unhelpful">Unhelpful</option>
+                  <option value="harmful">Harmful / Inappropriate</option>
+                  <option value="formatting">Formatting Issue</option>
+                </select>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-[var(--border)]">
+          <button onClick={() => handleClearSearch(type)} className="text-xs font-bold text-[var(--muted)] hover:text-[var(--foreground)] transition-colors">
+            Reset Filters
+          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => (isNeg ? setShowAdvancedSearchNeg(false) : setShowAdvancedSearchPos(false))} className="px-3 py-1.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-xs font-semibold text-[var(--foreground)]">
+              Cancel
+            </button>
+            <button onClick={() => handleAdvancedSearch(type)} disabled={isSearching} className="px-4 py-1.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold flex items-center gap-2 transition-colors disabled:opacity-50 shadow-md">
+              {isSearching ? <RefreshCw size={12} className="animate-spin" /> : <Search size={12} />}
+              Apply Filters
+            </button>
+          </div>
+        </div>
+
+        {renderActiveFilterChips(activeFilters, type)}
+      </motion.div>
+    );
+  };
+
   return (
-    <div className="min-h-screen p-4 sm:p-6 lg:p-8 space-y-8 max-w-[1400px] mx-auto">
+    <div className={`min-h-screen p-4 sm:p-6 lg:p-8 space-y-8 max-w-[1400px] mx-auto transition-all duration-300 ${refreshState === 'refreshing' ? 'opacity-40 blur-[2px] pointer-events-none' : 'opacity-100 blur-0'}`}>
       
       {/* Toast Notification */}
       <AnimatePresence>
@@ -876,7 +1682,7 @@ export default function AdminClient({
               </span>
             </div>
             <p className="text-sm text-[var(--muted)] mt-1">
-              Website moderation, community content approval, live subject rooms, user suspension, and administrative audit.
+              Unified intelligence administration, content moderation, live subject rooms, user controls, and audit logs.
             </p>
           </div>
         </div>
@@ -900,59 +1706,113 @@ export default function AdminClient({
               <RefreshCw size={18} className={refreshState === "refreshing" ? "animate-spin text-[var(--accent)]" : ""} />
             )}
             <span>
-              {refreshState === "refreshing" ? "Refreshing Data..." : refreshState === "success" ? "Data Updated!" : "Refresh All Data"}
+              {refreshState === "refreshing" ? "Refreshing Data..." : refreshState === "success" ? "Data Updated!" : "Refresh View"}
             </span>
           </button>
         </div>
       </div>
 
-      {/* Tab Navigation Rail */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-[var(--border)] hide-scrollbar">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2.5 px-4.5 py-3 rounded-xl text-sm font-semibold whitespace-nowrap transition-all duration-200 relative ${
-                isActive
-                  ? "text-white bg-[var(--accent)] shadow-lg shadow-[var(--accent)]/20"
-                  : "text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)]"
-              }`}
-            >
-              <Icon size={18} />
-              <span>{tab.label}</span>
-              {tab.badge !== undefined && (
-                <span
-                  className={`px-2 py-0.5 text-xs font-bold rounded-full ${
-                    isActive ? "bg-white/20 text-white" : "bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]"
+      {/* Domain Navigation Rails */}
+      <div className="space-y-3">
+        {/* Level 1: Authoritative Domain Group Navigation */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b border-[var(--border)] hide-scrollbar">
+          {ADMIN_INFORMATION_ARCHITECTURE.map((group) => {
+            const GroupIcon = group.icon;
+            const isGroupActive = currentGroup.id === group.id;
+
+            let groupBadge = undefined;
+            if (group.id === "ai_group") {
+              const negCount = aiFeedback.filter(f => f.rating === 'negative' && f.admin_status !== 'resolved').length;
+              if (negCount > 0) groupBadge = `${negCount} Alerts`;
+            } else if (group.id === "users_access_group") {
+              groupBadge = getMetricNumber(stats?.totalUsers, users.length);
+            } else if (group.id === "community_live_group") {
+              if (pendingTotal > 0) groupBadge = `${pendingTotal} Pending`;
+            }
+
+            return (
+              <button
+                key={group.id}
+                onClick={() => setActiveTab(group.sections[0].id)}
+                className={`flex items-center gap-2.5 px-4.5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all duration-200 relative ${
+                  isGroupActive
+                    ? "text-white bg-[var(--accent)] shadow-lg shadow-[var(--accent)]/20"
+                    : "text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)] border border-[var(--border)]"
+                }`}
+              >
+                <GroupIcon size={18} />
+                <span>{group.label}</span>
+                {groupBadge !== undefined && (
+                  <span
+                    className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+                      isGroupActive ? "bg-white/20 text-white" : "bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]"
+                    }`}
+                  >
+                    {groupBadge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Level 2: Section Sub-Navigation Rail (Active when group contains multiple sections) */}
+        {currentGroup.sections.length > 1 && (
+          <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] overflow-x-auto hide-scrollbar">
+            {currentGroup.sections.map((section) => {
+              const SectionIcon = section.icon;
+              const isSectionActive = activeTab === section.id;
+              let sectionBadge = undefined;
+
+              if (section.id === "models") sectionBadge = modelConfigs.length;
+              if (section.id === "feedback") {
+                const count = aiFeedback.filter(f => f.rating === 'negative' && f.admin_status !== 'resolved').length;
+                if (count > 0) sectionBadge = count;
+              }
+              if (section.id === "website") sectionBadge = websiteLockSettings.is_locked ? "LOCKED" : "OPEN";
+              if (section.id === "community") if (pendingTotal > 0) sectionBadge = `${pendingTotal} Pending`;
+              if (section.id === "rooms") sectionBadge = getMetricNumber(stats?.totalRooms, rooms.length);
+
+              return (
+                <button
+                  key={section.id}
+                  onClick={() => setActiveTab(section.id)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                    isSectionActive
+                      ? "bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] shadow-sm"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)]"
                   }`}
                 >
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
+                  <SectionIcon size={16} className={isSectionActive ? "text-indigo-400" : ""} />
+                  <span>{section.label}</span>
+                  {sectionBadge !== undefined && (
+                    <span className={`px-2 py-0.5 text-[10px] font-extrabold rounded-full ${
+                      isSectionActive ? "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20" : "bg-[var(--card)] text-[var(--muted)] border border-[var(--border)]"
+                    }`}>
+                      {sectionBadge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* TAB 1: OVERVIEW */}
+      {/* SECTION: OVERVIEW */}
       {activeTab === "overview" && (
         <div className="space-y-8">
-          {/* Live Metrics Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-4">
+          <div suppressHydrationWarning className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-9 gap-4">
             {overviewMetrics.map((m, i) => (
-              <div key={i} className={`p-4.5 rounded-2xl border ${m.bg} backdrop-blur-sm space-y-1`}>
+              <div suppressHydrationWarning key={i} className={`p-4.5 rounded-2xl border ${m.bg} backdrop-blur-sm space-y-1`}>
                 <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">{m.label}</span>
-                <div className={`text-2xl font-extrabold ${m.color}`}>
+                <div suppressHydrationWarning className={`text-2xl font-extrabold ${m.color}`}>
                   {renderStatCount(m.metric, refreshState === "refreshing")}
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Shortcuts & Audit Preview */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-4">
               <h2 className="text-lg font-bold text-[var(--foreground)] flex items-center gap-2">
@@ -981,6 +1841,28 @@ export default function AdminClient({
                   <ArrowRight size={16} className="text-[var(--muted)] group-hover:translate-x-1 transition-transform" />
                 </button>
                 <button
+                  onClick={() => setActiveTab("resources_moderation")}
+                  className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <FileText size={18} className="text-amber-400" />
+                    <span className="text-sm font-semibold text-[var(--foreground)]">Moderate Resource Submissions</span>
+                  </div>
+                  <ArrowRight size={16} className="text-[var(--muted)] group-hover:translate-x-1 transition-transform" />
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab("feedback");
+                  }}
+                  className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <MessageCircle size={18} className="text-emerald-400" />
+                    <span className="text-sm font-semibold text-[var(--foreground)]">Review AI Feedback & Quality</span>
+                  </div>
+                  <ArrowRight size={16} className="text-[var(--muted)] group-hover:translate-x-1 transition-transform" />
+                </button>
+                <button
                   onClick={() => {
                     setActiveTab("rooms");
                     setRoomModal({ mode: "create" });
@@ -1003,7 +1885,7 @@ export default function AdminClient({
                   <span>Recent Moderation Audit Trail</span>
                 </h2>
                 <button onClick={() => setActiveTab("logs")} className="text-xs font-semibold text-[var(--accent)] hover:underline">
-                  View Full Audit Log →
+                  View Full Audit Log &rarr;
                 </button>
               </div>
 
@@ -1020,7 +1902,7 @@ export default function AdminClient({
                           <p className="text-[var(--muted)] mt-0.5">By {log.actor_email || "Admin"}</p>
                         </div>
                       </div>
-                      <span className="text-[var(--muted)] font-mono shrink-0">
+                      <span suppressHydrationWarning className="text-[var(--muted)] font-mono shrink-0">
                         {new Date(log.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
@@ -1031,12 +1913,730 @@ export default function AdminClient({
           </div>
         </div>
       )}
+      {/* SECTION: CONTACT INBOX */}
+      {activeTab === "contact_inbox" && (
+        <ContactInboxTab 
+          initialMessages={contactMessages} 
+        />
+      )}
 
-      {/* TAB 2: USERS */}
+      {/* SECTION: AI FEEDBACK */}
+      {activeTab === "feedback" && (
+        <div className="space-y-6">
+          {/* Header & Sub-Tabs */}
+          <div className="bg-[var(--card)] p-6 rounded-3xl border border-[var(--border)] shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-black tracking-tight text-[var(--foreground)]">AI Feedback & Response Quality</h2>
+                <p className="text-sm text-[var(--muted)] max-w-2xl mt-1 leading-relaxed">
+                  Review authentic student ratings and exact message pairs to monitor Nexus AI output quality.
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-2 border-b border-[var(--border)] pb-0">
+                <button
+                  onClick={() => setActiveFeedbackTab("negative")}
+                  className={`px-4 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+                    activeFeedbackTab === "negative"
+                      ? "border-indigo-500 text-indigo-400"
+                      : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  <ThumbsDown size={16} />
+                  <span>Negative Feedback</span>
+                  {aiFeedback.filter(f => f.rating === 'negative').length > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-extrabold rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                      {aiFeedback.filter(f => f.rating === 'negative').length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveFeedbackTab("positive")}
+                  className={`px-4 py-3 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${
+                    activeFeedbackTab === "positive"
+                      ? "border-emerald-500 text-emerald-400"
+                      : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  <ThumbsUp size={16} />
+                  <span>Positive Feedback</span>
+                  {aiFeedback.filter(f => f.rating === 'positive').length > 0 && (
+                    <span className="px-2 py-0.5 text-xs font-extrabold rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      {aiFeedback.filter(f => f.rating === 'positive').length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* NEGATIVE FEEDBACK SUB-TAB */}
+            {activeFeedbackTab === "negative" && (
+              <div className="space-y-6 pt-2">
+                {/* Search & Filter Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--surface)] border border-[var(--border)] p-3 rounded-2xl">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
+                      <input
+                        type="text"
+                        placeholder="Search feedback..."
+                        value={feedbackSearch}
+                        onChange={(e) => setFeedbackSearch(e.target.value)}
+                        className="w-[240px] h-10 pl-9 pr-4 rounded-xl bg-[var(--card)] border border-[var(--border)] focus:border-indigo-500/50 outline-none text-xs font-medium text-[var(--foreground)]"
+                      />
+                    </div>
+                    <select
+                      value={feedbackStatusFilter}
+                      onChange={(e) => setFeedbackStatusFilter(e.target.value)}
+                      className="h-10 px-3.5 rounded-xl bg-[var(--card)] border border-[var(--border)] outline-none text-xs font-semibold text-[var(--foreground)] cursor-pointer"
+                    >
+                      <option value="all">All Statuses</option>
+                      <option value="reported">Reported by User</option>
+                      <option value="under_review">Under Review</option>
+                      <option value="resolved">Resolved</option>
+                      <option value="unresolved">Unresolved (Reported + Review)</option>
+                    </select>
+                    <button
+                      onClick={() => setShowAdvancedSearchNeg(prev => !prev)}
+                      className={`h-10 px-4 rounded-xl font-bold text-xs transition-colors border flex items-center gap-2 ${
+                        showAdvancedSearchNeg || activeFiltersNeg ? 'bg-indigo-500 text-white border-indigo-500 shadow-md' : 'bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--surface-hover)] border-[var(--border)]'
+                      }`}
+                    >
+                      <Search size={14} />
+                      Find Feedback
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {filteredAiFeedback.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => {
+                            if (isSelectModeNeg) {
+                              setIsSelectModeNeg(false);
+                              clearSelectedNegative();
+                            } else {
+                              setIsSelectModeNeg(true);
+                            }
+                          }}
+                          className={`h-10 px-4 rounded-xl font-bold text-xs border transition-colors ${
+                            isSelectModeNeg ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-[var(--card)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-hover)]'
+                          }`}
+                        >
+                          {isSelectModeNeg ? "Cancel Selection" : "Select"}
+                        </button>
+                        {isSelectModeNeg && (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectAllNegative(visibleNegIds)}
+                            className="h-10 px-3.5 rounded-xl font-bold text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-colors flex items-center gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={allVisibleNegSelected}
+                              onChange={() => {}}
+                              className="rounded border-[var(--border)] accent-indigo-500 cursor-pointer"
+                            />
+                            <span>{allVisibleNegSelected ? "Deselect All" : "Select All Visible"}</span>
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    {isSelectModeNeg && selectedNegativeIds.length > 0 && (
+                      <button
+                        onClick={() => setConfirmDeleteFeedback({ type: 'selected_neg' })}
+                        className="h-10 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-colors shadow-lg shadow-rose-600/20 flex items-center gap-2"
+                      >
+                        <Trash2 size={14} />
+                        Delete Selected ({selectedNegativeIds.length})
+                      </button>
+                    )}
+
+                    {aiFeedback.filter(f => f.rating === 'negative').length > 0 && !isSelectModeNeg && (
+                      <button
+                        onClick={() => setConfirmDeleteFeedback({ type: 'all_negative' })}
+                        className="h-10 px-4 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 hover:text-rose-400 font-bold text-xs transition-colors border border-rose-500/20 flex items-center gap-2"
+                      >
+                        <Trash2 size={14} />
+                        Delete All Negative
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {renderAdvancedSearchPanel("negative")}
+
+                {/* Negative Feedback Grid / List */}
+                {filteredAiFeedback.length === 0 ? (
+                  <div className="py-16 text-center bg-[var(--surface)] border border-[var(--border)] rounded-2xl space-y-2">
+                    <ThumbsDown className="w-10 h-10 text-[var(--muted)]/40 mx-auto" />
+                    <p className="text-sm font-semibold text-[var(--muted)]">No negative feedback records found.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    {filteredAiFeedback.map((fb) => {
+                      const isSelected = selectedNegativeIds.includes(fb.id);
+                      const isExpanded = expandedNegFeedbackIds.includes(fb.id);
+                      const meta = fb.users?.raw_user_meta_data || {};
+                      const displayName = meta.display_name || meta.full_name || "Student";
+                      const progBadge = meta.ib_program ? `${meta.ib_program}${meta.exam_session ? ` · ${meta.exam_session}` : ''}` : null;
+                      const dateStr = new Date(fb.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                      const timeStr = new Date(fb.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
+                      const promptPreview = (fb.prompt || "No prompt recorded").replace(/\n+/g, ' ');
+                      const responsePreview = (fb.ai_response || fb.ai_messages?.content || "No AI response recorded").replace(/\n+/g, ' ');
+                      const avatarUrl = meta.avatar_url || fb.user_avatar || fb.avatar_url;
+
+                      if (isExpanded) {
+                        return (
+                          <div
+                            key={fb.id}
+                            className={`p-6 rounded-3xl border transition-all space-y-4 ${
+                              isSelected
+                                ? 'bg-indigo-500/5 border-indigo-500/40 shadow-md'
+                                : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--border-hover)]'
+                            }`}
+                          >
+                            {/* USER IDENTITY HEADER */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
+                              <div className="flex items-center gap-3">
+                                {isSelectModeNeg && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => handleToggleSelectNegative(fb.id)}
+                                    className="rounded border-[var(--border)] accent-indigo-500 cursor-pointer w-4 h-4"
+                                  />
+                                )}
+                                {renderUserAvatar(avatarUrl, displayName)}
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-extrabold text-sm text-[var(--foreground)]">
+                                      {displayName}
+                                    </span>
+                                    {progBadge && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                        {progBadge}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-[var(--muted)]">{fb.users?.email}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 text-xs font-mono text-[var(--muted)]">
+                                <span>{dateStr} · {timeStr}</span>
+                                <button
+                                  onClick={() => toggleExpandNegativeFeedback(fb.id)}
+                                  className="px-3 py-1 rounded-xl text-xs font-semibold bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors flex items-center gap-1.5"
+                                >
+                                  <EyeOff size={14} /> Hide Details
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteFeedback({ type: 'single', id: fb.id })}
+                                  className="p-1.5 rounded-xl hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400 transition-colors"
+                                  title="Delete report"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 1. USER QUESTION / PROMPT */}
+                            <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-[var(--muted)]">USER QUESTION / PROMPT</span>
+                              <p className="text-xs font-medium text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">
+                                "{fb.prompt || "No prompt recorded"}"
+                              </p>
+                            </div>
+
+                            {/* 2. AI RESPONSE */}
+                            <div className="p-3.5 rounded-2xl bg-rose-500/5 border border-rose-500/20 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-rose-400">AI RESPONSE</span>
+                                {(fb.model_display_name || fb.model_id) && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                                    {fb.model_display_name || fb.model_id}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-medium text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">
+                                "{fb.ai_response || fb.ai_messages?.content || "No AI response recorded"}"
+                              </p>
+                            </div>
+
+                            {/* 3. FEEDBACK REASON */}
+                            <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">FEEDBACK REASON</span>
+                              <p className="text-xs font-bold text-[var(--foreground)]">
+                                {fb.category || "No category specified"}
+                              </p>
+                            </div>
+
+                            {/* 4. USER COMMENT (Only if one actually exists) */}
+                            {fb.comment && fb.comment.trim().length > 0 && (
+                              <div className="p-3.5 rounded-2xl bg-indigo-500/5 border border-indigo-500/15 space-y-1">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400">USER COMMENT</span>
+                                <p className="text-xs font-medium text-[var(--foreground)] italic leading-relaxed">
+                                  "{fb.comment.trim()}"
+                                </p>
+                              </div>
+                            )}
+
+                            {/* 5. STATUS & ADMIN NOTE ACTIONS */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-[var(--border)] text-xs">
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-black uppercase text-[var(--muted)] tracking-wider">Status:</span>
+                                <select
+                                  value={fb.admin_status || "reported"}
+                                  onChange={(e) => handleUpdateFeedbackStatus(fb.id, e.target.value)}
+                                  className={`px-3 py-1 rounded-xl text-xs font-black border outline-none cursor-pointer ${
+                                    fb.admin_status === "resolved"
+                                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                      : fb.admin_status === "under_review"
+                                      ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                      : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                  }`}
+                                >
+                                  <option value="reported">Reported by User</option>
+                                  <option value="under_review">Under Review</option>
+                                  <option value="resolved">Resolved</option>
+                                </select>
+                              </div>
+
+                              <button
+                                onClick={() => {
+                                  setEditingNoteModal(fb);
+                                  setNoteInputText(fb.admin_note || "");
+                                }}
+                                className="text-xs font-bold text-indigo-400 hover:underline"
+                              >
+                                {fb.admin_note ? `Note: ${fb.admin_note}` : "+ Add Admin Note"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      {/* MINIMIZED CARD VIEW */}
+                      return (
+                        <div
+                          key={fb.id}
+                          className={`p-4 rounded-2xl border transition-all space-y-2.5 ${
+                            isSelected
+                              ? 'bg-indigo-500/5 border-indigo-500/40 shadow-sm'
+                              : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--border-hover)]'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            {/* USER DP + NAME + PROGRAMME + DATE/TIME */}
+                            <div className="flex items-center gap-3 min-w-0">
+                              {isSelectModeNeg && (
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleSelectNegative(fb.id)}
+                                  className="rounded border-[var(--border)] accent-indigo-500 cursor-pointer w-4 h-4 shrink-0"
+                                />
+                              )}
+                              {renderUserAvatar(avatarUrl, displayName)}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-extrabold text-sm text-[var(--foreground)] truncate">
+                                    {displayName}
+                                  </span>
+                                  {progBadge && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+                                      {progBadge}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-[var(--muted)] font-mono block truncate">
+                                  {dateStr} · {timeStr}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* ACTIONS: VIEW DETAILS + DELETE */}
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                              <button
+                                onClick={() => toggleExpandNegativeFeedback(fb.id)}
+                                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors flex items-center gap-1.5"
+                              >
+                                <Eye size={14} /> View Details
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteFeedback({ type: 'single', id: fb.id })}
+                                className="p-1.5 rounded-xl hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400 transition-colors"
+                                title="Delete report"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* SHORT PREVIEWS: USER QUESTION & AI RESPONSE */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs pt-1">
+                            <div className="flex items-center gap-1.5 min-w-0 bg-[var(--surface)] px-3 py-1.5 rounded-xl border border-[var(--border)]">
+                              <span className="text-[10px] font-black uppercase text-[var(--muted)] shrink-0">Q:</span>
+                              <span className="text-[var(--foreground)] text-xs truncate italic">
+                                "{promptPreview}"
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 min-w-0 bg-rose-500/5 px-3 py-1.5 rounded-xl border border-rose-500/15">
+                              <span className="text-[10px] font-black uppercase text-rose-400 shrink-0">AI:</span>
+                              <span className="text-[var(--foreground)] text-xs truncate italic">
+                                "{responsePreview}"
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* FOOTER BADGES: REASON, MODEL & STATUS */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-2.5 py-0.5 rounded-lg text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                Reason: {fb.category || "General"}
+                              </span>
+                              {(fb.model_display_name || fb.model_id) && (
+                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-mono bg-rose-500/10 text-rose-300 border border-rose-500/20">
+                                  {fb.model_display_name || fb.model_id}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-black border ${
+                                fb.admin_status === "resolved"
+                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                                  : fb.admin_status === "under_review"
+                                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                                  : "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                              }`}>
+                                {fb.admin_status === "resolved" ? "Resolved" : fb.admin_status === "under_review" ? "Under Review" : "Reported"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* POSITIVE FEEDBACK SUB-TAB */}
+            {activeFeedbackTab === "positive" && (
+              <div className="space-y-6 pt-2">
+                {/* Search & Filter Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-[var(--surface)] border border-[var(--border)] p-3 rounded-2xl">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={16} />
+                      <input
+                        type="text"
+                        placeholder="Search positive signals..."
+                        value={feedbackSearch}
+                        onChange={(e) => setFeedbackSearch(e.target.value)}
+                        className="w-[240px] h-10 pl-9 pr-4 rounded-xl bg-[var(--card)] border border-[var(--border)] focus:border-indigo-500/50 outline-none text-xs font-medium text-[var(--foreground)]"
+                      />
+                    </div>
+                    <button
+                      onClick={() => setShowAdvancedSearchPos(prev => !prev)}
+                      className={`h-10 px-4 rounded-xl font-bold text-xs transition-colors border flex items-center gap-2 ${
+                        showAdvancedSearchPos || activeFiltersPos ? 'bg-indigo-500 text-white border-indigo-500 shadow-md' : 'bg-[var(--card)] text-[var(--foreground)] hover:bg-[var(--surface-hover)] border-[var(--border)]'
+                      }`}
+                    >
+                      <Search size={14} />
+                      Find Feedback
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {positiveItems.length > 0 && (
+                      <>
+                        <button
+                          onClick={() => {
+                            if (isSelectModePos) {
+                              setIsSelectModePos(false);
+                              clearSelectedPositive();
+                            } else {
+                              setIsSelectModePos(true);
+                            }
+                          }}
+                          className={`h-10 px-4 rounded-xl font-bold text-xs border transition-colors ${
+                            isSelectModePos ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : 'bg-[var(--card)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-hover)]'
+                          }`}
+                        >
+                          {isSelectModePos ? "Cancel Selection" : "Select"}
+                        </button>
+                        {isSelectModePos && (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectAllPositive(visiblePosIds)}
+                            className="h-10 px-3.5 rounded-xl font-bold text-xs text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 transition-colors flex items-center gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={allVisiblePosSelected}
+                              onChange={() => {}}
+                              className="rounded border-[var(--border)] accent-indigo-500 cursor-pointer"
+                            />
+                            <span>{allVisiblePosSelected ? "Deselect All" : "Select All Visible"}</span>
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    {isSelectModePos && selectedPositiveIds.length > 0 && (
+                      <button
+                        onClick={() => setConfirmDeleteFeedback({ type: 'selected_pos' })}
+                        className="h-10 px-4 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-colors shadow-lg shadow-rose-600/20 flex items-center gap-2"
+                      >
+                        <Trash2 size={14} />
+                        Delete Selected ({selectedPositiveIds.length})
+                      </button>
+                    )}
+
+                    {aiFeedback.filter(f => f.rating === 'positive').length > 0 && !isSelectModePos && (
+                      <button
+                        onClick={() => setConfirmDeleteFeedback({ type: 'all_positive' })}
+                        className="h-10 px-4 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 hover:text-rose-400 font-bold text-xs transition-colors border border-rose-500/20 flex items-center gap-2"
+                      >
+                        <Trash2 size={14} />
+                        Delete All Positive
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {renderAdvancedSearchPanel("positive")}
+
+                {/* Positive Signals Grid */}
+                {positiveItems.length === 0 ? (
+                  <div className="py-16 text-center bg-[var(--surface)] border border-[var(--border)] rounded-2xl space-y-2">
+                    <ThumbsUp className="w-10 h-10 text-[var(--muted)]/40 mx-auto" />
+                    <p className="text-sm font-semibold text-[var(--muted)]">No positive feedback signals recorded.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    {positiveItems.map((fb) => {
+                      const isSelectedPos = selectedPositiveIds.includes(fb.id);
+                      const isExpanded = expandedPosFeedbackIds.includes(fb.id);
+                      const meta = fb.users?.raw_user_meta_data || {};
+                      const displayName = meta.display_name || meta.full_name || "Student";
+                      const progBadge = meta.ib_program ? `${meta.ib_program}${meta.exam_session ? ` · ${meta.exam_session}` : ''}` : null;
+                      const dateStr = new Date(fb.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                      const timeStr = new Date(fb.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+
+                      const promptPreview = (fb.prompt || "No prompt recorded").replace(/\n+/g, ' ');
+                      const responsePreview = (fb.ai_response || fb.ai_messages?.content || "No AI response recorded").replace(/\n+/g, ' ');
+                      const avatarUrl = meta.avatar_url || fb.user_avatar || fb.avatar_url;
+
+                      if (isExpanded) {
+                        return (
+                          <div
+                            key={fb.id}
+                            className={`p-6 rounded-3xl border transition-all space-y-4 ${
+                              isSelectedPos
+                                ? 'bg-indigo-500/5 border-indigo-500/40 shadow-md'
+                                : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--border-hover)]'
+                            }`}
+                          >
+                            {/* USER IDENTITY HEADER */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[var(--border)] pb-3">
+                              <div className="flex items-center gap-3">
+                                {isSelectModePos && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelectedPos}
+                                    onChange={() => handleToggleSelectPositive(fb.id)}
+                                    className="rounded border-[var(--border)] accent-indigo-500 cursor-pointer w-4 h-4"
+                                  />
+                                )}
+                                {renderUserAvatar(avatarUrl, displayName)}
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-extrabold text-sm text-[var(--foreground)]">
+                                      {displayName}
+                                    </span>
+                                    {progBadge && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                        {progBadge}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-[var(--muted)]">{fb.users?.email}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3 text-xs font-mono text-[var(--muted)]">
+                                <span>{dateStr} · {timeStr}</span>
+                                <button
+                                  onClick={() => toggleExpandPositiveFeedback(fb.id)}
+                                  className="px-3 py-1 rounded-xl text-xs font-semibold bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors flex items-center gap-1.5"
+                                >
+                                  <EyeOff size={14} /> Hide Details
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDeleteFeedback({ type: 'single', id: fb.id })}
+                                  className="p-1.5 rounded-xl hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400 transition-colors"
+                                  title="Delete positive report"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* USER QUESTION / PROMPT */}
+                            <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-[var(--muted)]">USER QUESTION / PROMPT</span>
+                              <p className="text-xs font-medium text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">
+                                "{fb.prompt || "No prompt recorded"}"
+                              </p>
+                            </div>
+
+                            {/* AI RESPONSE */}
+                            <div className="p-3.5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400">AI RESPONSE</span>
+                                {(fb.model_display_name || fb.model_id) && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                                    {fb.model_display_name || fb.model_id}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs font-medium text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">
+                                "{fb.ai_response || fb.ai_messages?.content || "No AI response recorded"}"
+                              </p>
+                            </div>
+
+                            {/* FOOTER BADGES */}
+                            <div className="flex items-center justify-between pt-1 text-xs">
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-black bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <ThumbsUp size={14} /> Liked Output
+                              </span>
+                              {fb.comment && (
+                                <span className="text-xs text-[var(--muted)] italic">
+                                  User Comment: "{fb.comment}"
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      {/* MINIMIZED CARD VIEW */}
+                      return (
+                        <div
+                          key={fb.id}
+                          className={`p-4 rounded-2xl border transition-all space-y-2.5 ${
+                            isSelectedPos
+                              ? 'bg-indigo-500/5 border-indigo-500/40 shadow-sm'
+                              : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--border-hover)]'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            {/* USER DP + NAME + PROGRAMME + DATE/TIME */}
+                            <div className="flex items-center gap-3 min-w-0">
+                              {isSelectModePos && (
+                                <input
+                                  type="checkbox"
+                                  checked={isSelectedPos}
+                                  onChange={() => handleToggleSelectPositive(fb.id)}
+                                  className="rounded border-[var(--border)] accent-indigo-500 cursor-pointer w-4 h-4 shrink-0"
+                                />
+                              )}
+                              {renderUserAvatar(avatarUrl, displayName)}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-extrabold text-sm text-[var(--foreground)] truncate">
+                                    {displayName}
+                                  </span>
+                                  {progBadge && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shrink-0">
+                                      {progBadge}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[11px] text-[var(--muted)] font-mono block truncate">
+                                  {dateStr} · {timeStr}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* ACTIONS: VIEW DETAILS + DELETE */}
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                              <button
+                                onClick={() => toggleExpandPositiveFeedback(fb.id)}
+                                className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors flex items-center gap-1.5"
+                              >
+                                <Eye size={14} /> View Details
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteFeedback({ type: 'single', id: fb.id })}
+                                className="p-1.5 rounded-xl hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400 transition-colors"
+                                title="Delete positive report"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* SHORT PREVIEWS: USER QUESTION & AI RESPONSE */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs pt-1">
+                            <div className="flex items-center gap-1.5 min-w-0 bg-[var(--surface)] px-3 py-1.5 rounded-xl border border-[var(--border)]">
+                              <span className="text-[10px] font-black uppercase text-[var(--muted)] shrink-0">Q:</span>
+                              <span className="text-[var(--foreground)] text-xs truncate italic">
+                                "{promptPreview}"
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 min-w-0 bg-indigo-500/5 px-3 py-1.5 rounded-xl border border-indigo-500/15">
+                              <span className="text-[10px] font-black uppercase text-indigo-400 shrink-0">AI:</span>
+                              <span className="text-[var(--foreground)] text-xs truncate italic">
+                                "{responsePreview}"
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* FOOTER BADGES: MODEL & LIKED STATUS */}
+                          <div className="flex items-center justify-between pt-1 text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                <ThumbsUp size={12} /> Liked
+                              </span>
+                              {(fb.model_display_name || fb.model_id) && (
+                                <span className="px-2 py-0.5 rounded-lg text-[10px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                                  {fb.model_display_name || fb.model_id}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION: USERS */}
       {activeTab === "users" && (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <form onSubmit={(e) => { e.preventDefault(); startTransition(async () => { const res = await fetchAdminUsers({ search: userSearch, statusFilter: userStatusFilter }); if (res.users) setUsers(res.users); }); }} className="flex items-center gap-2 w-full sm:w-auto flex-1 max-w-lg">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                startTransition(async () => {
+                  const res = await fetchAdminUsers({ search: userSearch, statusFilter: userStatusFilter, programFilter: userProgramFilter });
+                  if (res.users) setUsers(res.users);
+                });
+              }}
+              className="flex items-center gap-2 w-full sm:w-auto flex-1 max-w-lg"
+            >
               <div className="relative flex-1">
                 <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
                 <input
@@ -1052,22 +2652,40 @@ export default function AdminClient({
               </button>
             </form>
 
-            <select
-              value={userStatusFilter}
-              onChange={(e) => {
-                setUserStatusFilter(e.target.value);
-                startTransition(async () => {
-                  const res = await fetchAdminUsers({ search: userSearch, statusFilter: e.target.value });
-                  if (res.users) setUsers(res.users);
-                });
-              }}
-              className="px-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm font-medium text-[var(--foreground)]"
-            >
-              <option value="all">All Account Statuses</option>
-              <option value="active">Active Only</option>
-              <option value="suspended">Suspended Only</option>
-              <option value="admin">Admins Only</option>
-            </select>
+            <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto">
+              <select
+                value={userProgramFilter}
+                onChange={(e) => {
+                  setUserProgramFilter(e.target.value);
+                  startTransition(async () => {
+                    const res = await fetchAdminUsers({ search: userSearch, statusFilter: userStatusFilter, programFilter: e.target.value });
+                    if (res.users) setUsers(res.users);
+                  });
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-xs font-bold text-[var(--foreground)] cursor-pointer"
+              >
+                <option value="all">All Programs</option>
+                <option value="dp">DP Program</option>
+                <option value="myp">MYP Program</option>
+              </select>
+
+              <select
+                value={userStatusFilter}
+                onChange={(e) => {
+                  setUserStatusFilter(e.target.value);
+                  startTransition(async () => {
+                    const res = await fetchAdminUsers({ search: userSearch, statusFilter: e.target.value, programFilter: userProgramFilter });
+                    if (res.users) setUsers(res.users);
+                  });
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-xs font-bold text-[var(--foreground)] cursor-pointer"
+              >
+                <option value="all">All Account Statuses</option>
+                <option value="active">Active Only</option>
+                <option value="suspended">Suspended Only</option>
+                <option value="admin">Admins Only</option>
+              </select>
+            </div>
           </div>
 
           <div className="rounded-3xl bg-[var(--card)] border border-[var(--border)] overflow-hidden shadow-sm">
@@ -1075,82 +2693,139 @@ export default function AdminClient({
               <table className="w-full text-left text-sm">
                 <thead className="bg-[var(--surface)] text-[var(--muted)] font-semibold border-b border-[var(--border)]">
                   <tr>
-                    <th className="p-4 pl-6">User</th>
-                    <th className="p-4">Program</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4">Admin</th>
+                    <th className="p-4 pl-6">User / Account</th>
+                    <th className="p-4">Program / Session</th>
+                    <th className="p-4">Access Status</th>
+                    <th className="p-4">Role</th>
                     <th className="p-4 pr-6 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border)]">
                   {users.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-12 text-center text-[var(--muted)]">No users found.</td>
+                      <td colSpan={5} className="py-12 text-center text-[var(--muted)] text-xs">No users found.</td>
                     </tr>
                   ) : (
                     users.map((u) => (
                       <tr key={u.id} className="hover:bg-[var(--surface-hover)] transition-colors">
                         <td className="p-4 pl-6">
                           <div className="flex items-center gap-3 cursor-pointer" onClick={() => handleInspectUser(u)}>
-                            <div className="w-9 h-9 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] font-bold flex items-center justify-center text-sm uppercase shrink-0">
-                              {(u.display_name || u.email || "U")[0]}
-                            </div>
+                            {renderUserAvatar(u.avatar_url, u.display_name || u.full_name)}
                             <div>
-                              <p className="font-bold text-[var(--foreground)] hover:underline">{u.display_name || u.full_name || "User"}</p>
-                              <p className="text-xs text-[var(--muted)]">{u.email}</p>
+                              <p className="font-bold text-[var(--foreground)] hover:underline flex items-center gap-1.5">
+                                <span>{u.display_name || u.full_name || "User"}</span>
+                                {u.is_suspended ? (
+                                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                    Suspended
+                                  </span>
+                                ) : u.is_restricted ? (
+                                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                    Comments Muted
+                                  </span>
+                                ) : null}
+                              </p>
+                              <p className="text-xs text-[var(--muted)] font-mono">{u.email}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="p-4 text-xs font-semibold uppercase text-[var(--muted)]">{u.ib_program || "N/A"}</td>
+                        <td className="p-4 font-semibold text-xs text-[var(--muted)]">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                            {u.ib_program ? u.ib_program.toUpperCase() : "DP"}
+                          </span>
+                          {u.exam_session && <span className="block text-[11px] text-[var(--muted)] mt-1 font-mono">{u.exam_session}</span>}
+                        </td>
                         <td className="p-4">
-                          {(u.is_restricted || u.is_suspended) ? (
-                            <span className="px-2.5 py-1 text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-full inline-flex items-center gap-1">
-                              <UserX size={12} /> Suspended
+                          {u.is_suspended ? (
+                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 inline-flex items-center gap-1">
+                              <ShieldAlert size={12} /> Suspended
+                            </span>
+                          ) : u.is_restricted ? (
+                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30 inline-flex items-center gap-1">
+                              <Lock size={12} /> Comments Muted
                             </span>
                           ) : (
-                            <span className="px-2.5 py-1 text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full inline-flex items-center gap-1">
-                              <UserCheck size={12} /> Active
+                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 inline-flex items-center gap-1">
+                              <ShieldCheck size={12} /> Full Access
                             </span>
                           )}
                         </td>
                         <td className="p-4">
-                          {u.is_admin && (
-                            <span className="px-2 py-0.5 text-[11px] font-extrabold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded">
-                              ADMIN
-                            </span>
+                          {u.is_admin ? (
+                            (superAdminEmail && u.email?.trim().toLowerCase() === superAdminEmail) ? (
+                              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-fuchsia-500/15 text-fuchsia-300 border border-fuchsia-500/30">
+                                Super Admin
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                                Administrator
+                              </span>
+                            )
+                          ) : (
+                            <span className="text-xs text-[var(--muted)]">Student</span>
                           )}
                         </td>
-                        <td className="p-4 pr-6 text-right space-x-2">
+                        <td className="p-4 pr-6 text-right space-x-1.5 shrink-0">
                           <button
                             onClick={() => handleInspectUser(u)}
-                            className="px-3 py-1.5 rounded-lg bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--foreground)] border border-[var(--border)] text-xs font-bold transition-all inline-flex items-center gap-1"
+                            className="px-2.5 py-1.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] hover:bg-[var(--surface-hover)] text-xs font-bold border border-[var(--border)] transition-colors inline-flex items-center gap-1"
+                            title="Inspect User Details & Data Stats"
                           >
-                            <Eye size={14} /> Inspect
+                            <Eye size={13} /> Inspect
                           </button>
 
-                          {u.id === adminUser.id ? (
-                            <span className="px-2.5 py-1 text-xs font-bold text-[var(--muted)] bg-[var(--surface)] border border-[var(--border)] rounded-lg">
-                              Self (You)
-                            </span>
-                          ) : u.is_admin ? (
-                            <span className="px-2.5 py-1 text-xs font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 rounded-lg">
-                              Protected Admin
-                            </span>
-                          ) : (u.is_restricted || u.is_suspended) ? (
+                          <button
+                            onClick={() => handleEditUserClick(u)}
+                            className="px-2.5 py-1.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] hover:bg-[var(--surface-hover)] text-xs font-bold border border-[var(--border)] transition-colors inline-flex items-center gap-1"
+                            title="Edit User Profile & Permissions"
+                          >
+                            <Edit3 size={13} /> Edit
+                          </button>
+
+                          {u.is_suspended ? (
                             <button
-                              onClick={() => handleRestoreUser(u)}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-bold transition-all inline-flex items-center gap-1"
+                              onClick={() => handleUnsuspendUser(u)}
+                              className="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/20 transition-colors inline-flex items-center gap-1"
+                              title="Unsuspend user and restore full website access"
                             >
-                              <UserCheck size={14} /> Restore
+                              <ShieldCheck size={13} /> Unsuspend
                             </button>
                           ) : (
                             <button
                               onClick={() => handleSuspendUser(u)}
-                              className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold transition-all inline-flex items-center gap-1"
+                              className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors inline-flex items-center gap-1 ${
+                                isProtectedAccount(u)
+                                  ? "bg-slate-500/10 hover:bg-slate-500/20 text-slate-300 border-slate-500/30 cursor-pointer"
+                                  : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border-rose-500/20"
+                              }`}
+                              title={
+                                isProtectedAccount(u)
+                                  ? "Super Admin Protected — Account cannot be suspended"
+                                  : "Suspend User (Locks website access; all data preserved safely)"
+                              }
                             >
-                              <UserX size={14} /> Suspend
+                              {isProtectedAccount(u) ? <ShieldAlert size={13} className="text-amber-400" /> : <Lock size={13} />}
+                              Suspend
+                              {isProtectedAccount(u) && (
+                                <span className="text-[9px] uppercase font-mono px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-extrabold">Protected</span>
+                              )}
                             </button>
                           )}
+
+                          <button
+                            onClick={() => handleDeleteUserAccount(u)}
+                            className={`p-1.5 rounded-xl transition-colors inline-flex items-center justify-center ${
+                              isProtectedAccount(u)
+                                ? "hover:bg-slate-500/10 text-slate-400 cursor-pointer"
+                                : "hover:bg-rose-500/10 text-rose-400"
+                            }`}
+                            title={
+                              isProtectedAccount(u)
+                                ? "Super Admin Protected — Account cannot be deleted"
+                                : "Permanently Delete User Account & Wipe All Data"
+                            }
+                          >
+                            <Trash2 size={15} />
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -1162,669 +2837,93 @@ export default function AdminClient({
         </div>
       )}
 
-      {/* TAB 3: COMMUNITY MODERATION (With Post Approval Controls) */}
+      {/* SECTION: COMMUNITY MODERATION */}
       {activeTab === "community" && (
         <div className="space-y-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <form onSubmit={handleSearchCommunity} className="flex items-center gap-2 w-full md:w-auto flex-1 max-w-lg">
-              <div className="relative flex-1">
-                <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-                <input
-                  type="text"
-                  placeholder="Search community items by title, author, or content..."
-                  value={communitySearch}
-                  onChange={(e) => setCommunitySearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--accent)]"
-                />
-              </div>
-              <button type="submit" className="px-4 py-2.5 rounded-xl bg-[var(--accent)] text-white text-sm font-semibold hover:opacity-90 transition-opacity">
-                Filter
-              </button>
-            </form>
-
-            <div className="flex items-center gap-2 w-full md:w-auto">
-              <select
-                value={communityContentType}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setCommunityContentType(val);
-                  handleSearchCommunity(null, val, communityStatusFilter);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm font-medium text-[var(--foreground)]"
-              >
-                <option value="all">All Content Types</option>
-                <option value="discussion">Discussions</option>
-                <option value="question">Questions</option>
-                <option value="study_group">Study Group Requests</option>
-                <option value="report">User Reports / Flags</option>
-              </select>
-
-              <select
-                value={communityStatusFilter}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setCommunityStatusFilter(val);
-                  handleSearchCommunity(null, communityContentType, val);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm font-medium text-[var(--foreground)]"
-              >
-                <option value="all">All Moderation Statuses</option>
-                <option value="pending">Pending Approval Only</option>
-                <option value="approved">Approved Only</option>
-                <option value="rejected">Rejected Only</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            {filteredCommunityItems.length === 0 ? (
-              <div className="p-12 text-center rounded-3xl bg-[var(--card)] border border-[var(--border)] text-[var(--muted)]">
-                No community items found for the selected filter.
-              </div>
-            ) : (
-              filteredCommunityItems.map((item) => {
-                const isQuestion = item.contentType === "question";
-                const isStudyGroup = item.contentType === "study_group";
-                const isReport = item.contentType === "report";
-                const isPendingApproval = item.status === "pending";
-                const isApproved = item.status === "approved" || item.status === "active";
-                const isRejected = item.status === "rejected";
-
-                return (
-                  <div key={item.id} className={`p-6 rounded-3xl bg-[var(--card)] border space-y-4 shadow-sm transition-all ${
-                    isPendingApproval ? "border-amber-500/40 bg-amber-500/5" : "border-[var(--border)] hover:border-[var(--accent)]/30"
-                  }`}>
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="space-y-2 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          {/* Type Badge */}
-                          {isQuestion && (
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 inline-flex items-center gap-1">
-                              <HelpCircle size={12} /> Question
-                            </span>
-                          )}
-                          {isStudyGroup && (
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20 inline-flex items-center gap-1">
-                              <Users2 size={12} /> Study Group Request
-                            </span>
-                          )}
-                          {isReport && (
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 inline-flex items-center gap-1">
-                              <Flag size={12} /> User Report
-                            </span>
-                          )}
-                          {!isQuestion && !isStudyGroup && !isReport && (
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 inline-flex items-center gap-1">
-                              <MessageSquare size={12} /> Discussion
-                            </span>
-                          )}
-
-                          {/* Approval Status Badge */}
-                          {isPendingApproval && (
-                            <span className="px-2.5 py-0.5 text-xs font-extrabold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-                              PENDING APPROVAL
-                            </span>
-                          )}
-                          {isApproved && (
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                              APPROVED
-                            </span>
-                          )}
-                          {isRejected && (
-                            <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                              REJECTED
-                            </span>
-                          )}
-
-                          <span className="text-xs font-semibold text-[var(--muted)]">{item.category}</span>
-                          <span className="text-xs text-[var(--muted)]">•</span>
-                          <span className="text-xs font-medium text-[var(--muted)]">By {item.author_name}</span>
-                          <span className="text-xs text-[var(--muted)]">•</span>
-                          <span className="text-xs font-mono text-[var(--muted)]">{new Date(item.created_at).toLocaleDateString()}</span>
-                        </div>
-
-                        <h3 className="text-lg font-bold text-[var(--foreground)]">{item.title}</h3>
-                        <p className="text-sm text-[var(--muted)] line-clamp-2">{item.content}</p>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                        {/* Approval / Rejection Quick Action Buttons */}
-                        {(item.contentType === "discussion" || item.contentType === "question") && (
-                          <>
-                            {isPendingApproval || isRejected ? (
-                              <button
-                                onClick={() => handleApprovePost(item.id)}
-                                className="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                              >
-                                <CheckCircle2 size={14} />
-                                <span>Approve Post</span>
-                              </button>
-                            ) : null}
-
-                            {isPendingApproval || isApproved ? (
-                              <button
-                                onClick={() => handleRejectPost(item.id)}
-                                className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                              >
-                                <XCircle size={14} />
-                                <span>Reject</span>
-                              </button>
-                            ) : null}
-                          </>
-                        )}
-
-                        {item.contentType === "study_group" && (
-                          <>
-                            {isPendingApproval ? (
-                              <button
-                                onClick={() => handleApproveStudyGroup(item.id)}
-                                className="px-3.5 py-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                              >
-                                <CheckCircle2 size={14} />
-                                <span>Approve Group</span>
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => handleRejectStudyGroup(item.id)}
-                                className="px-3.5 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                              >
-                                <XCircle size={14} />
-                                <span>Disable Group</span>
-                              </button>
-                            )}
-                          </>
-                        )}
-
-                        {item.contentType === "report" && (
-                          <button
-                            onClick={() => handleDismissReport(item.id)}
-                            className="px-3.5 py-2 rounded-xl bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-500/40 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                          >
-                            <CheckCircle2 size={14} />
-                            <span>Dismiss Report</span>
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => handleInspectItem(item)}
-                          className="px-3.5 py-2 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--foreground)] border border-[var(--border)] text-xs font-bold transition-all flex items-center gap-1.5"
-                        >
-                          <Eye size={14} />
-                          <span>Inspect & Edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteCommunityItem(item)}
-                          className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all"
-                          title="Delete Item"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: LIVE ROOMS */}
-      {activeTab === "rooms" && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-extrabold text-[var(--foreground)]">Active Live Subject Rooms</h2>
-            <button
-              onClick={() => setRoomModal({ mode: "create" })}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--accent)] text-white text-sm font-semibold hover:opacity-90 transition-opacity"
-            >
-              <Plus size={18} />
-              <span>Create Room</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rooms.map((room) => (
-              <div key={room.id} className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-4 flex flex-col justify-between shadow-sm">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                      {room.subject}
-                    </span>
-                    <span className={`px-2 py-0.5 text-[11px] font-bold rounded ${room.is_active !== false ? "bg-emerald-500/10 text-emerald-400" : "bg-zinc-500/10 text-zinc-400"}`}>
-                      {room.is_active !== false ? "ACTIVE" : "DISABLED"}
-                    </span>
-                  </div>
-                  <h3 className="text-xl font-bold text-[var(--foreground)]">{room.name}</h3>
-                  <p className="text-sm text-[var(--muted)] line-clamp-2">{room.description || "Discuss HL/SL concepts and exam preparation."}</p>
-                </div>
-
-                <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between">
-                  <button
-                    onClick={() => handleOpenChatDrawer(room)}
-                    className="flex items-center gap-1.5 text-xs font-bold text-[var(--accent)] hover:underline"
-                  >
-                    <MessageCircle size={14} />
-                    <span>Moderate Chat</span>
-                  </button>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setRoomModal({ mode: "edit", room })}
-                      className="p-2 rounded-lg bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--foreground)] border border-[var(--border)] transition-all"
-                      title="Edit Room"
-                    >
-                      <Edit3 size={16} />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteRoom(room)}
-                      className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all"
-                      title="Delete Room"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: COURSE CATALOG MANAGER (MYP 5 & DP 2) */}
-      {activeTab === "courses" && (
-        <div className="space-y-6">
-          {/* Header Bar */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 w-full sm:w-auto flex-1 max-w-lg">
               <div className="relative flex-1">
                 <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
                 <input
                   type="text"
-                  placeholder="Search course title or subject group..."
-                  value={subjectSearch}
-                  onChange={(e) => setSubjectSearch(e.target.value)}
+                  placeholder="Search community posts & discussions..."
+                  value={communitySearch}
+                  onChange={(e) => setCommunitySearch(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto">
               <select
-                value={subjectProgramFilter}
-                onChange={(e) => setSubjectProgramFilter(e.target.value)}
-                className="px-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm font-semibold text-[var(--foreground)]"
+                value={communityContentType}
+                onChange={(e) => setCommunityContentType(e.target.value)}
+                className="px-3.5 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm font-medium text-[var(--foreground)]"
               >
-                <option value="all">All Programmes</option>
-                <option value="dp">DP 2 Catalog</option>
-                <option value="myp">MYP 5 Catalog</option>
+                <option value="all">All Content Types</option>
+                <option value="discussion">Discussions</option>
+                <option value="question">Questions</option>
+                <option value="study_group">Study Groups</option>
+                <option value="report">User Reports</option>
+              </select>
+
+              <select
+                value={communityStatusFilter}
+                onChange={(e) => setCommunityStatusFilter(e.target.value)}
+                className="px-3.5 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm font-medium text-[var(--foreground)]"
+              >
+                <option value="all">All Moderation Items</option>
+                <option value="pending">Pending Approval</option>
+                <option value="rejected">Rejected</option>
               </select>
             </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <button
-                onClick={handleSeedCatalog}
-                disabled={isSeedingSubjects}
-                className="px-4 py-2.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 font-bold text-xs flex items-center gap-2 transition-all shadow-sm"
-              >
-                {isSeedingSubjects ? <RefreshCw size={14} className="animate-spin text-purple-400" /> : <Sparkles size={14} className="text-purple-400" />}
-                <span>Sync / Seed Official Catalogs</span>
-              </button>
-
-              <button
-                onClick={() => setSubjectModal({ mode: "create" })}
-                className="px-4.5 py-2.5 rounded-xl bg-[var(--accent)] text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-[var(--accent)]/30 transition-all hover:brightness-110"
-              >
-                <Plus size={16} />
-                <span>Add New Course</span>
-              </button>
-            </div>
           </div>
 
-          {/* Program Track Badges Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className={`p-5 rounded-2xl border transition-all cursor-pointer ${
-              subjectProgramFilter === "dp" ? "bg-indigo-500/15 border-indigo-500/40" : "bg-[var(--card)] border-[var(--border)]"
-            }`} onClick={() => setSubjectProgramFilter(f => f === "dp" ? "all" : "dp")}>
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase tracking-wider">
-                    DP 2 Curriculum Track
-                  </span>
-                  <h3 className="text-xl font-black text-[var(--foreground)] mt-2">Diploma Programme Catalog</h3>
-                  <p className="text-xs text-[var(--muted)] mt-1">6 Official Subject Groups + DP Core (TOK, EE, CAS) with SL/HL level constraints.</p>
-                </div>
-                <span className="text-2xl font-black text-indigo-400">{subjects.filter(s => s.program === "dp").length}</span>
-              </div>
-            </div>
-
-            <div className={`p-5 rounded-2xl border transition-all cursor-pointer ${
-              subjectProgramFilter === "myp" ? "bg-emerald-500/15 border-emerald-500/40" : "bg-[var(--card)] border-[var(--border)]"
-            }`} onClick={() => setSubjectProgramFilter(f => f === "myp" ? "all" : "myp")}>
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
-                    MYP 5 Curriculum Track
-                  </span>
-                  <h3 className="text-xl font-black text-[var(--foreground)] mt-2">Middle Years Programme Catalog</h3>
-                  <p className="text-xs text-[var(--muted)] mt-1">8 Official Subject Groups (Language Lit, Acquisition, Humanities, Sciences, Math, Arts, PHE, Design).</p>
-                </div>
-                <span className="text-2xl font-black text-emerald-400">{subjects.filter(s => s.program === "myp").length}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Subjects Table / List */}
-          <div className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
-              <div>
-                <h3 className="text-lg font-extrabold text-[var(--foreground)]">Registered IB Course Catalog</h3>
-                <p className="text-xs text-[var(--muted)]">Manage course titles, categories, and available SL/HL levels.</p>
-              </div>
-              <span className="text-xs font-semibold text-[var(--muted)]">Showing {
-                subjects.filter(s => {
-                  if (subjectProgramFilter !== "all" && s.program !== subjectProgramFilter) return false;
-                  if (subjectSearch.trim()) {
-                    const q = subjectSearch.toLowerCase();
-                    return s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q);
-                  }
-                  return true;
-                }).length
-              } courses</span>
-            </div>
-
-            {subjects.length === 0 ? (
-              <div className="py-16 text-center space-y-3">
-                <BookOpen size={40} className="mx-auto text-[var(--muted)] opacity-50" />
-                <p className="text-base font-bold text-[var(--foreground)]">No course subjects found in database</p>
-                <p className="text-xs text-[var(--muted)] max-w-md mx-auto">Click "Sync / Seed Official Catalogs" to seed the official MYP 5 and DP 2 subject list into the system.</p>
-                <button onClick={handleSeedCatalog} disabled={isSeedingSubjects} className="px-4 py-2 rounded-xl bg-[var(--accent)] text-white text-xs font-bold shadow-md">
-                  Seed Catalogs Now
-                </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredCommunityItems.length === 0 ? (
+              <div className="col-span-full py-16 text-center text-sm text-[var(--muted)] bg-[var(--card)] border border-[var(--border)] rounded-3xl">
+                No community content matching selected filters.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {subjects
-                  .filter(s => {
-                    if (subjectProgramFilter !== "all" && s.program !== subjectProgramFilter) return false;
-                    if (subjectSearch.trim()) {
-                      const q = subjectSearch.toLowerCase();
-                      return s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q);
-                    }
-                    return true;
-                  })
-                  .map(s => {
-                    let parsedLevels = null;
-                    if (s.available_levels) {
-                      try {
-                        parsedLevels = typeof s.available_levels === 'string' ? JSON.parse(s.available_levels) : s.available_levels;
-                      } catch (e) {
-                        parsedLevels = null;
-                      }
-                    }
-
-                    return (
-                      <div key={s.id} className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--accent)]/40 transition-all flex flex-col justify-between space-y-3 group">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                              s.program === "myp" ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30" : "bg-indigo-500/15 text-indigo-300 border border-indigo-500/30"
-                            }`}>
-                              {s.program === "myp" ? "MYP 5" : "DP 2"}
-                            </span>
-
-                            {s.program === "dp" ? (
-                              parsedLevels && Array.isArray(parsedLevels) ? (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[var(--card)] text-[var(--muted)] border border-[var(--border)]">
-                                  {parsedLevels.join(" / ")}
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                                  DP Core (N/A)
-                                </span>
-                              )
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[var(--card)] text-[var(--muted)] border border-[var(--border)]">
-                                Group Level
-                              </span>
-                            )}
-                          </div>
-
-                          <h4 className="text-base font-extrabold text-[var(--foreground)] group-hover:text-[var(--accent)] transition-colors">{s.name}</h4>
-                          <p className="text-xs text-[var(--muted)] line-clamp-1">{s.category}</p>
-                        </div>
-
-                        <div className="pt-3 border-t border-[var(--border)]/60 flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => setSubjectModal({ mode: "edit", subject: s })}
-                            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
-                            title="Edit course details"
-                          >
-                            <Edit3 size={15} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSubjectClick(s.id, s.name)}
-                            className="p-1.5 rounded-lg hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400 transition-colors"
-                            title="Delete course"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      {/* TAB: AI TRAINING */}
-      {activeTab === "ai" && (
-        <AiCoreTab />
-      )}
-      {/* TAB: WEBSITE ACCESS CONTROL */}
-      {activeTab === "website" && (
-        <div className="space-y-6">
-          {/* Main Status Header Card */}
-          <div className={`p-6 sm:p-8 rounded-3xl border shadow-xl backdrop-blur-xl relative overflow-hidden space-y-6 transition-all duration-300 ${
-            websiteLockSettings.is_locked
-              ? "bg-amber-950/20 border-amber-500/30 text-amber-100"
-              : "bg-emerald-950/20 border-emerald-500/30 text-emerald-100"
-          }`}>
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="flex items-center gap-5">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner shrink-0 ${
-                  websiteLockSettings.is_locked
-                    ? "bg-amber-500/20 border border-amber-500/40 text-amber-400"
-                    : "bg-emerald-500/20 border border-emerald-500/40 text-emerald-400"
-                }`}>
-                  {websiteLockSettings.is_locked ? <Lock size={32} /> : <Globe size={32} />}
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className={`px-3 py-1 text-xs font-black tracking-widest uppercase rounded-full border ${
-                      websiteLockSettings.is_locked
-                        ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
-                        : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                    }`}>
-                      {websiteLockSettings.is_locked ? "🔴 WEBSITE LOCKED" : "🟢 WEBSITE OPEN"}
-                    </span>
-                    <span className="text-xs font-mono text-[var(--muted)] uppercase">
-                      {websiteLockSettings.is_locked ? "System Preservation Mode" : "Normal Access Mode"}
-                    </span>
-                  </div>
-                  <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-[var(--foreground)]">
-                    {websiteLockSettings.is_locked ? "IB Nexus Access Locked for Normal Users" : "IB Nexus Open to All Users"}
-                  </h2>
-                  <p className="text-xs sm:text-sm text-[var(--muted)]">
-                    {websiteLockSettings.is_locked
-                      ? "Normal users opening the website will see the 3D book preservation screen. Admin access remains active."
-                      : "All registered users can access their dashboard, study tools, community, and active modules normally."}
-                  </p>
-                </div>
-              </div>
-
-              {/* Action Button */}
-              <div className="shrink-0">
-                {websiteLockSettings.is_locked ? (
-                  <button
-                    onClick={() => setWebsiteLockConfirmModal("unlock")}
-                    disabled={isUpdatingLock}
-                    className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2.5 transition-all"
-                  >
-                    {isUpdatingLock ? <RefreshCw size={18} className="animate-spin" /> : <Unlock size={18} />}
-                    <span>{isUpdatingLock ? "Reopening..." : "Reopen Website"}</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setWebsiteLockConfirmModal("lock")}
-                    disabled={isUpdatingLock}
-                    className="w-full sm:w-auto px-6 py-3.5 rounded-2xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-sm shadow-xl shadow-rose-500/20 flex items-center justify-center gap-2.5 transition-all"
-                  >
-                    {isUpdatingLock ? <RefreshCw size={18} className="animate-spin" /> : <Lock size={18} />}
-                    <span>{isUpdatingLock ? "Locking..." : "Lock Website"}</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Metadata Footprint */}
-            <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-4 text-xs text-[var(--muted)]">
-              <div className="flex items-center gap-2">
-                <Clock size={14} className="text-[var(--accent)]" />
-                <span>Last Changed: {websiteLockSettings.updated_at ? new Date(websiteLockSettings.updated_at).toLocaleString() : "Initial setup"}</span>
-              </div>
-              {websiteLockSettings.updated_by && (
-                <div className="flex items-center gap-2">
-                  <UserCheck size={14} className="text-emerald-400" />
-                  <span>Changed By: <strong className="text-[var(--foreground)]">{websiteLockSettings.updated_by}</strong></span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Custom Lock Message Control Box */}
-          <div className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-xl space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20">
-                <MessageSquare size={20} />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-[var(--foreground)]">User-Facing Lock Screen Notice</h3>
-                <p className="text-xs text-[var(--muted)]">Optional announcement displayed to normal users on the preservation screen</p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <textarea
-                rows={3}
-                value={lockMessageInput}
-                onChange={(e) => setLockMessageInput(e.target.value)}
-                placeholder="e.g. IB Nexus is temporarily unavailable while we prepare system upgrades. All your notes, flashcards, and data are safe."
-                className="w-full p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--accent)] transition-all resize-none"
-              />
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-[var(--muted)]">Notice is safely formatted and sanitized.</span>
-                <button
-                  onClick={handleSaveLockMessage}
-                  disabled={isUpdatingLock}
-                  className="px-5 py-2.5 rounded-xl bg-[var(--accent)] hover:bg-[var(--accent)]/90 text-white font-bold text-xs shadow-lg shadow-[var(--accent)]/20 flex items-center gap-2 transition-all"
+              filteredCommunityItems.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => handleOpenItemDrawer(item)}
+                  className="p-5 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-4 flex flex-col justify-between hover:border-[var(--accent)] hover:shadow-lg transition-all cursor-pointer group"
                 >
-                  {isUpdatingLock ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-                  <span>Save Notice</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Website Allowlist Section inside Website Access Tab */}
-      {activeTab === "website" && (
-        <div className="mt-6 p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-xl space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
-              <Users2 size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-[var(--foreground)]">Allowed Google Accounts</h3>
-              <p className="text-xs text-[var(--muted)]">These Google accounts bypass the lock screen and can enter the website normally.</p>
-            </div>
-          </div>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const trimmed = newAllowlistEmail.trim();
-              if (!trimmed || isAddingAllowlist) return;
-
-              setIsAddingAllowlist(true);
-              const res = await addGoogleAccountToAllowlist(trimmed);
-              setIsAddingAllowlist(false);
-
-              if (res.success && res.account) {
-                setAllowlist((prev) => [res.account, ...prev.filter((a) => a.id !== res.account.id)]);
-                setNewAllowlistEmail("");
-                showToast("Google account added to allowlist.", "success");
-              } else {
-                showToast(res.error || "Could not save the account. Please try again.", "error");
-              }
-            }}
-            className="flex items-center gap-3"
-          >
-            <input
-              type="email"
-              value={newAllowlistEmail}
-              onChange={(e) => setNewAllowlistEmail(e.target.value)}
-              placeholder="student@gmail.com"
-              disabled={isAddingAllowlist}
-              className="flex-1 p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-blue-500 transition-all disabled:opacity-50"
-            />
-            <button
-              type="submit"
-              disabled={isAddingAllowlist || !newAllowlistEmail.trim()}
-              className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-blue-500/20 flex items-center gap-2 transition-all"
-            >
-              {isAddingAllowlist ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={14} />}
-              <span>Add Account</span>
-            </button>
-          </form>
-
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
-            {allowlist.length === 0 ? (
-              <div className="text-center py-6 text-sm text-[var(--muted)] border border-dashed border-[var(--border)] rounded-xl">
-                No accounts allowed yet.<br />Admin accounts are always allowed.
-              </div>
-            ) : (
-              allowlist.map((acc) => (
-                <div key={acc.id} className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--surface)] border border-[var(--border-subtle)] hover:border-[var(--border)] transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                      <Globe size={14} />
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        item.contentType === "report" ? "bg-rose-500/10 text-rose-400 border border-rose-500/20" : "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                      }`}>
+                        {item.contentType || "Post"}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        item.status === "pending" ? "bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse" : item.status === "approved" || item.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"
+                      }`}>
+                        {item.status ? item.status.toUpperCase() : "ACTIVE"}
+                      </span>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-[var(--foreground)]">{acc.email}</span>
-                      <span className="text-[10px] text-[var(--muted)] capitalize">Provider: {acc.provider || "google"}</span>
+
+                    <div>
+                      <h3 className="font-extrabold text-base text-[var(--foreground)] line-clamp-2 group-hover:text-indigo-400 transition-colors">{item.title}</h3>
+                      <p className="text-xs text-[var(--muted)] mt-1 line-clamp-3 leading-relaxed">{item.content}</p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    disabled={removingAllowlistId === acc.id}
-                    onClick={async () => {
-                      if (confirm(`Remove ${acc.email} from the allowlist?`)) {
-                        setRemovingAllowlistId(acc.id);
-                        const res = await removeGoogleAccountFromAllowlist(acc.id, acc.email);
-                        setRemovingAllowlistId(null);
-                        if (res.success) {
-                          setAllowlist((prev) => prev.filter((a) => a.id !== acc.id));
-                          showToast("Google account removed from allowlist.", "success");
-                        } else {
-                          showToast(res.error || "Could not remove account. Please try again.", "error");
-                        }
-                      }
-                    }}
-                    className="px-3 py-1.5 text-xs font-semibold text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-all flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    {removingAllowlistId === acc.id ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                    <span>Remove</span>
-                  </button>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-[var(--border)] text-xs">
+                    <span className="text-[var(--muted)] font-semibold">By {item.author_name || "User"}</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenItemDrawer(item);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-[var(--surface)] group-hover:bg-[var(--accent)] group-hover:text-white hover:bg-[var(--surface-hover)] text-[var(--foreground)] font-bold border border-[var(--border)] flex items-center gap-1 transition-all"
+                    >
+                      <span>Moderate</span>
+                      <ArrowRight size={14} />
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -1832,576 +2931,1403 @@ export default function AdminClient({
         </div>
       )}
 
-      {/* TAB: ACTIVITY LOG AUDIT */}
-      {activeTab === "logs" && (
+      {/* SECTION: LIVE ROOMS */}
+      {activeTab === "rooms" && (
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <form onSubmit={handleSearchLogs} className="flex items-center gap-2 w-full sm:w-auto flex-1 max-w-lg">
-              <div className="relative flex-1">
-                <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-                <input
-                  type="text"
-                  placeholder="Search logs by action, details, actor email..."
-                  value={logSearch}
-                  onChange={(e) => setLogSearch(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-[var(--accent)]"
-                />
-              </div>
-              <button type="submit" className="px-4 py-2.5 rounded-xl bg-[var(--accent)] text-white text-sm font-semibold hover:opacity-90 transition-opacity">
-                Search
-              </button>
-            </form>
-
-            <select
-              value={logCategoryFilter}
-              onChange={(e) => {
-                setLogCategoryFilter(e.target.value);
-                startTransition(async () => {
-                  const res = await fetchAdminActivityLogs({ search: logSearch, categoryFilter: e.target.value });
-                  if (res.logs) setLogs(res.logs);
-                });
-              }}
-              className="px-4 py-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] text-sm font-medium text-[var(--foreground)]"
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-[var(--foreground)]">Live Subject Rooms</h2>
+              <p className="text-sm text-[var(--muted)] mt-0.5">Manage virtual rooms for IB subject collaboration and moderation.</p>
+            </div>
+            <button
+              onClick={() => setRoomModal({ mode: "create" })}
+              className="px-4 py-2.5 rounded-xl bg-[var(--accent)] text-white text-sm font-bold shadow-lg shadow-[var(--accent)]/20 flex items-center gap-2 hover:opacity-90 transition-opacity"
             >
-              <option value="all">All Event Categories</option>
-              <option value="user">User Actions</option>
-              <option value="post">Posts & Moderation</option>
-              <option value="discussion">Discussions</option>
-              <option value="study_group">Study Groups</option>
-              <option value="room">Live Rooms</option>
-            </select>
+              <Plus size={18} />
+              <span>Create Live Room</span>
+            </button>
           </div>
 
-          <div className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-[var(--border)]">
-              <div>
-                <h2 className="text-xl font-extrabold text-[var(--foreground)]">System Administrative Audit Trail</h2>
-                <p className="text-xs text-[var(--muted)]">Inspect, filter, or permanently delete system activity audit records.</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {rooms.length === 0 ? (
+              <div className="col-span-full py-16 text-center text-sm text-[var(--muted)] bg-[var(--card)] border border-[var(--border)] rounded-3xl">
+                No live rooms created yet.
               </div>
-              {logs.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmClearLogsModal(true)}
-                  className="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0"
-                >
-                  <Trash2 size={14} /> Clear All Logs Permanently
-                </button>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              {logs.length === 0 ? (
-                <div className="py-12 text-center text-[var(--muted)]">No audit activity recorded.</div>
-              ) : (
-                logs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="p-4 rounded-2xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm transition-colors group"
-                  >
-                    <div
-                      onClick={() => setLogDetailModal(log)}
-                      className="space-y-1 flex-1 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-[var(--foreground)] uppercase text-[10px] tracking-wider px-2 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded">
-                          {log.action}
-                        </span>
-                        <span className="text-xs font-semibold text-[var(--muted)]">Target: {log.target_type} ({log.target_id || "N/A"})</span>
-                      </div>
-                      <p className="text-sm font-medium text-[var(--foreground)]">{log.details}</p>
+            ) : (
+              rooms.map((room) => (
+                <div key={room.id} className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-4 flex flex-col justify-between hover:border-[var(--border-hover)] transition-all">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                        {room.subject || "General"}
+                      </span>
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${room.is_active !== false ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
+                        {room.is_active !== false ? "ACTIVE" : "PAUSED"}
+                      </span>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right text-xs text-[var(--muted)] font-mono">
-                        <p>{log.actor_email || "Admin"}</p>
-                        <p>{new Date(log.created_at).toLocaleString()}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setConfirmDeleteLogModal(log);
-                        }}
-                        className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all text-xs font-semibold flex items-center gap-1 opacity-80 group-hover:opacity-100"
-                        title="Delete log entry permanently"
-                      >
-                        <Trash2 size={14} />
+                    <div>
+                      <h3 className="font-extrabold text-lg text-[var(--foreground)]">{room.name}</h3>
+                      <p className="text-xs text-[var(--muted)] mt-1 line-clamp-2 leading-relaxed">{room.description || "No description."}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-[var(--border)]">
+                    <button
+                      onClick={() => handleInspectRoom(room)}
+                      className="px-4 py-2 rounded-xl bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 text-xs font-bold border border-indigo-500/20 flex items-center gap-1.5"
+                    >
+                      <ShieldCheck size={15} />
+                      <span>Moderate Chat</span>
+                    </button>
+
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setRoomModal({ mode: "edit", room })} className="p-2 rounded-xl hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)]">
+                        <Edit3 size={16} />
+                      </button>
+                      <button onClick={() => handleDeleteRoom(room)} className="p-2 rounded-xl hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400">
+                        <Trash2 size={16} />
                       </button>
                     </div>
                   </div>
-                ))
-              )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION: COURSE CATALOG */}
+      {activeTab === "courses" && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-[var(--foreground)]">Course & Subject Catalog</h2>
+              <p className="text-sm text-[var(--muted)] mt-0.5">Manage official IB DP and MYP subjects and academic curriculum rules.</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleSeedCatalog}
+                disabled={isSeedingSubjects}
+                className="px-4 py-2.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-xs font-bold text-[var(--foreground)] flex items-center gap-2"
+              >
+                {isSeedingSubjects ? <RefreshCw size={14} className="animate-spin" /> : <BookOpen size={14} />}
+                <span>Sync Official Catalog</span>
+              </button>
+
+              <button
+                onClick={() => setSubjectModal({ mode: "create", program: "dp" })}
+                className="px-4 py-2.5 rounded-xl bg-[var(--accent)] text-white text-xs font-bold shadow-lg shadow-[var(--accent)]/20 flex items-center gap-2"
+              >
+                <Plus size={16} />
+                <span>Add Subject</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {subjects.length === 0 ? (
+              <div className="col-span-full py-16 text-center text-sm text-[var(--muted)] bg-[var(--card)] border border-[var(--border)] rounded-3xl">
+                No subjects registered in catalog.
+              </div>
+            ) : (
+              subjects.map((sub) => (
+                <div key={sub.id} className="p-5 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-3 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                        {sub.program ? sub.program.toUpperCase() : "DP"}
+                      </span>
+                      <span className="text-xs font-bold text-[var(--muted)]">{sub.category}</span>
+                    </div>
+
+                    <h3 className="font-extrabold text-base text-[var(--foreground)]">{sub.name}</h3>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-[var(--border)] text-xs">
+                    <span className="font-mono text-[var(--muted)]">
+                      {sub.available_levels ? JSON.parse(typeof sub.available_levels === 'string' ? sub.available_levels : JSON.stringify(sub.available_levels)).join('/') : 'SL/HL'}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setSubjectModal({ mode: "edit", subject: sub, program: sub.program || "dp" })} className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)]">
+                        <Edit3 size={15} />
+                      </button>
+                      <button onClick={() => handleDeleteSubjectClick(sub.id, sub.name)} className="p-1.5 rounded-lg hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION: RESOURCE SUBMISSIONS MODERATION */}
+      {activeTab === "resources_moderation" && (
+        <ResourceSubmissionsTab />
+      )}
+
+      {/* SECTION: CENTRAL ADMIN REQUESTS */}
+      {activeTab === "admin_requests" && (
+        <AdminRequestsTab />
+      )}
+
+      {/* SECTION: AI MODELS */}
+      {activeTab === "models" && (
+        <AiModelsTab initialModelConfigs={modelConfigs} />
+      )}
+
+      {/* SECTION: NEXUS AI CORE */}
+      {activeTab === "aicore" && (
+        <AiCoreTab initialCoreVersions={initialCoreVersions} />
+      )}
+
+      {/* SECTION: WEBSITE ACCESS */}
+      {activeTab === "website" && (
+        <div className="space-y-6">
+          <div className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[var(--border)] pb-6">
+              <div>
+                <h2 className="text-xl font-bold text-[var(--foreground)]">Website Access Lock</h2>
+                <p className="text-sm text-[var(--muted)] mt-1">Restrict platform access to designated email allowlists during maintenance or private launch.</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className={`px-3 py-1 rounded-full text-xs font-black border ${websiteLockSettings.is_locked ? "bg-rose-500/15 text-rose-400 border-rose-500/30" : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"}`}>
+                  {websiteLockSettings.is_locked ? "WEBSITE LOCKED" : "WEBSITE OPEN"}
+                </span>
+
+                {websiteLockSettings.is_locked ? (
+                  <button
+                    onClick={() => handleToggleWebsiteLock(false)}
+                    disabled={isUpdatingLock}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-lg shadow-emerald-600/30"
+                  >
+                    Unlock Website
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleToggleWebsiteLock(true)}
+                    disabled={isUpdatingLock}
+                    className="px-4 py-2 rounded-xl bg-rose-600 text-white font-bold text-xs shadow-lg shadow-rose-600/30"
+                  >
+                    Lock Website
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <label className="block text-xs font-bold uppercase text-[var(--muted)]">Lock Notice Banner</label>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={lockMessageInput}
+                  onChange={(e) => setLockMessageInput(e.target.value)}
+                  placeholder="e.g. Platform is undergoing scheduled maintenance..."
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]"
+                />
+                <button
+                  onClick={handleSaveLockMessage}
+                  disabled={isUpdatingLock}
+                  className="px-4 py-2.5 rounded-xl bg-[var(--accent)] text-white font-bold text-xs shadow-md"
+                >
+                  Save Notice
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-6">
+            <h3 className="text-lg font-bold text-[var(--foreground)]">Google Account Access Allowlist</h3>
+
+            <form onSubmit={handleAddAllowlist} className="flex gap-3 max-w-lg">
+              <input
+                type="email"
+                value={newAllowlistEmail}
+                onChange={(e) => setNewAllowlistEmail(e.target.value)}
+                placeholder="Enter Google account email..."
+                className="flex-1 px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]"
+              />
+              <button
+                type="submit"
+                disabled={isAddingAllowlist}
+                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shrink-0"
+              >
+                Add Email
+              </button>
+            </form>
+
+            <div className="rounded-2xl border border-[var(--border)] overflow-hidden">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-[var(--surface)] text-[var(--muted)] font-semibold border-b border-[var(--border)]">
+                  <tr>
+                    <th className="p-3 pl-4">Allowed Email</th>
+                    <th className="p-3 pr-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--border)]">
+                  {allowlist.length === 0 ? (
+                    <tr>
+                      <td colSpan={2} className="p-4 text-center text-xs text-[var(--muted)]">No emails on allowlist.</td>
+                    </tr>
+                  ) : (
+                    allowlist.map((item) => (
+                      <tr key={item.id}>
+                        <td className="p-3 pl-4 font-semibold text-[var(--foreground)] flex items-center gap-2">
+                          <span>{item.email}</span>
+                          {isTargetSuperAdmin(item.email) && (
+                            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">
+                              Super Admin (Protected)
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 pr-4 text-right">
+                          <button
+                            onClick={() => handleRemoveAllowlist(item.id, item.email)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              isTargetSuperAdmin(item.email)
+                                ? "hover:bg-slate-500/10 text-slate-400 cursor-pointer"
+                                : "hover:bg-rose-500/10 text-rose-400"
+                            }`}
+                            title={
+                              isTargetSuperAdmin(item.email)
+                                ? "Super Admin Protected — Email cannot be removed from allowlist"
+                                : "Remove from allowlist"
+                            }
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB: AI MODELS MANAGEMENT */}
-      {activeTab === "models" && (
+      {/* SECTION: AUDIT LOGS */}
+      {activeTab === "logs" && (
         <div className="space-y-6">
-          {/* Models Header & Default Selection */}
-          <div className="p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4 relative overflow-hidden">
-            <div className="flex items-center gap-4 z-10">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex items-center justify-center shadow-inner">
-                <Cpu size={24} />
-              </div>
-              <div>
-                <h2 className="text-xl font-extrabold text-[var(--foreground)] tracking-tight">
-                  AI Model Management
-                </h2>
-                <p className="text-xs text-[var(--muted)] mt-0.5">
-                  Control active models, default selection, user display names, descriptions, and temporary pause/hidden states.
-                </p>
-              </div>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-[var(--foreground)]">Activity Moderation Audit Trail</h2>
+              <p className="text-sm text-[var(--muted)] mt-0.5">Full historical audit record of all administrator and moderator actions.</p>
             </div>
 
-            {/* Default Model Quick Bar */}
-            <div className="flex items-center gap-3 p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] z-10">
-              <Star size={16} className="text-amber-400 fill-amber-400" />
-              <span className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">Default Model:</span>
-              <select
-                value={modelConfigs.find(m => m.is_default || m.isDefault)?.model_id || modelConfigs.find(m => m.is_default || m.isDefault)?.id || ""}
-                onChange={(e) => handleSetDefaultModel(e.target.value)}
-                className="bg-[var(--card)] text-[var(--foreground)] text-xs font-bold px-3 py-1.5 rounded-xl border border-[var(--border)] focus:outline-none focus:border-indigo-500 cursor-pointer"
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setConfirmClearLogsModal(true)}
+                className="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold border border-rose-500/20"
               >
-                {modelConfigs
-                  .filter(m => m.enabled !== false && !m.is_paused && !m.is_hidden)
-                  .map(m => {
-                    const id = m.model_id || m.id;
-                    const name = m.display_name || m.displayName || id;
-                    const pName =
-                      m.provider === "google"
-                        ? "Google Gemini"
-                        : m.provider === "openai"
-                        ? "OpenAI"
-                        : m.provider === "groq"
-                        ? "Groq (LPU)"
-                        : m.provider === "together"
-                        ? "Together AI"
-                        : m.provider === "remote_qwen" || m.provider === "ollama"
-                        ? "Remote Qwen"
-                        : m.provider;
-                    return (
-                      <option key={id} value={id}>
-                        {name} — {pName}
-                      </option>
-                    );
-                  })}
-              </select>
+                Clear Audit Trail
+              </button>
             </div>
           </div>
 
-          {/* Filter & Search Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-2xl bg-[var(--card)] border border-[var(--border)]">
-            <div className="flex items-center gap-3 flex-wrap">
-              <Filter size={16} className="text-[var(--muted)]" />
-              <span className="text-xs font-bold text-[var(--muted)] uppercase tracking-wider">Filters:</span>
-              
-              {/* Provider Filter */}
-              <select
-                value={modelProviderFilter}
-                onChange={(e) => setModelProviderFilter(e.target.value)}
-                className="bg-[var(--surface)] text-[var(--foreground)] text-xs font-semibold px-3 py-1.5 rounded-xl border border-[var(--border)]"
-              >
-                <option value="all">All Providers</option>
-                <option value="google">Google Gemini</option>
-                <option value="openai">OpenAI</option>
-                <option value="groq">Groq (LPU)</option>
-                <option value="together">Together AI</option>
-                <option value="remote_qwen">Remote Qwen</option>
-              </select>
-
-
-              {/* Status Filter */}
-              <select
-                value={modelStatusFilter}
-                onChange={(e) => setModelStatusFilter(e.target.value)}
-                className="bg-[var(--surface)] text-[var(--foreground)] text-xs font-semibold px-3 py-1.5 rounded-xl border border-[var(--border)]"
-              >
-                <option value="all">All Statuses</option>
-                <option value="default">Default Model</option>
-                <option value="active">Active & Available</option>
-                <option value="paused">Paused</option>
-                <option value="hidden">Hidden</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </div>
-
-            <span className="text-xs font-semibold text-[var(--muted)] font-mono">
-              Showing {filteredModels.length} of {modelConfigs.length} models
-            </span>
+          <div className="rounded-3xl bg-[var(--card)] border border-[var(--border)] overflow-hidden shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[var(--surface)] text-[var(--muted)] font-semibold border-b border-[var(--border)]">
+                <tr>
+                  <th className="p-4 pl-6">Action / Event</th>
+                  <th className="p-4">Actor</th>
+                  <th className="p-4">Timestamp</th>
+                  <th className="p-4 pr-6 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]">
+                {logs.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="py-12 text-center text-[var(--muted)]">No audit entries.</td>
+                  </tr>
+                ) : (
+                  logs.map((log) => (
+                    <tr key={log.id} className="hover:bg-[var(--surface-hover)] transition-colors">
+                      <td className="p-4 pl-6 font-semibold text-[var(--foreground)]">
+                        {log.details || log.action}
+                      </td>
+                      <td className="p-4 text-xs text-[var(--muted)]">
+                        {log.actor_email || "Admin"}
+                      </td>
+                      <td className="p-4 font-mono text-xs text-[var(--muted)]">
+                        {new Date(log.created_at).toLocaleString()}
+                      </td>
+                      <td className="p-4 pr-6 text-right">
+                        <button
+                          onClick={() => setLogDetailModal(log)}
+                          className="px-3 py-1.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--foreground)] text-xs font-bold border border-[var(--border)]"
+                        >
+                          View Details
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
+        </div>
+      )}
 
-          {/* Models Grid */}
-          {filteredModels.length === 0 ? (
-            <div className="p-12 text-center rounded-3xl bg-[var(--card)] border border-[var(--border)] space-y-3">
-              <Cpu size={36} className="mx-auto text-[var(--muted)] opacity-50" />
-              <h3 className="text-base font-bold text-[var(--foreground)]">No AI Models Match Filter</h3>
-              <p className="text-xs text-[var(--muted)]">Try selecting different provider or status filter options.</p>
+      {/* MODAL: EDIT MODEL CONFIG */}
+      <AnimatePresence>
+        {editingModelModal && (
+          <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain flex items-center justify-center p-4 sm:p-6">
+            <div onClick={() => setEditingModelModal(null)} className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
+            <div className="relative w-full max-w-lg my-auto max-h-[90vh] overflow-y-auto p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-6 z-10">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-extrabold text-[var(--foreground)]">Configure AI Model Parameters</h3>
+                <button type="button" onClick={() => setEditingModelModal(null)} className="p-1 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)]"><X size={20} /></button>
+              </div>
+
+              <form onSubmit={handleSaveModelMetadataSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
+                    Display Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editDisplayName}
+                    onChange={(e) => setEditDisplayName(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm border border-[var(--border)] focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
+                    Description
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm border border-[var(--border)] focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
+                  <button type="button" onClick={() => setEditingModelModal(null)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isSubmittingModelEdit} className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+                    {isSubmittingModelEdit && <RefreshCw size={14} className="animate-spin" />}
+                    <span>Save Model Details</span>
+                  </button>
+                </div>
+              </form>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredModels.map((model) => {
-                const providerLabel =
-                  model.provider === "google"
-                    ? "GOOGLE GEMINI"
-                    : model.provider === "groq"
-                    ? "GROQ (LPU)"
-                    : model.provider === "together"
-                    ? "TOGETHER AI"
-                    : model.provider === "remote_qwen" || model.provider === "ollama"
-                    ? "LOCAL / QWEN"
-                    : model.provider.toUpperCase();
+          </div>
+        )}
+      </AnimatePresence>
 
-                return (
-                  <div
-                    key={model.model_id}
-                    className={`p-6 rounded-3xl bg-[var(--card)] border transition-all duration-200 flex flex-col justify-between space-y-4 ${
-                      model.is_default
-                        ? "border-amber-500/50 shadow-lg shadow-amber-500/10"
-                        : model.is_paused
-                        ? "border-amber-500/30 bg-amber-500/5"
-                        : model.is_hidden
-                        ? "border-purple-500/30 opacity-80"
-                        : !model.enabled
-                        ? "border-rose-500/30 opacity-60"
-                        : "border-[var(--border)] hover:border-indigo-500/30"
-                    }`}
-                  >
-                    <div className="space-y-3">
-                      {/* Card Top Badges */}
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                          {providerLabel}
-                        </span>
+      {/* MODAL: EDIT ADMIN NOTE ON FEEDBACK */}
+      <AnimatePresence>
+        {editingNoteModal && (
+          <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain flex items-center justify-center p-4 sm:p-6">
+            <div onClick={() => setEditingNoteModal(null)} className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
+            <div className="relative w-full max-w-md my-auto max-h-[90vh] overflow-y-auto p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-4 z-10">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-[var(--foreground)]">Admin Feedback Internal Note</h3>
+                <button type="button" onClick={() => setEditingNoteModal(null)} className="p-1 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)]"><X size={18} /></button>
+              </div>
 
-                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                          {model.is_default && (
-                            <span className="flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                              <Star size={10} className="fill-amber-300" /> Default
-                            </span>
-                          )}
-                          {model.is_paused && (
-                            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                              <Pause size={10} /> Paused
-                            </span>
-                          )}
-                          {model.is_hidden && (
-                            <span className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                              <EyeOff size={10} /> Hidden
-                            </span>
-                          )}
-                          {!model.enabled && (
-                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                              Disabled
-                            </span>
-                          )}
-                        </div>
-                      </div>
+              <textarea
+                rows={4}
+                value={noteInputText}
+                onChange={(e) => setNoteInputText(e.target.value)}
+                placeholder="Add internal notes for moderators/admins regarding this report..."
+                className="w-full p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--foreground)] focus:outline-none focus:border-indigo-500"
+              />
 
-                      {/* Display Name & Model ID */}
-                      <div>
-                        <h3 className="text-lg font-extrabold text-[var(--foreground)] tracking-tight">
-                          {model.display_name}
-                        </h3>
-                        <span className="text-[11px] font-mono text-[var(--muted)] block mt-0.5">
-                          API Model ID: {model.model_id}
-                        </span>
-                      </div>
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setEditingNoteModal(null)} className="px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-xs font-semibold">
+                  Cancel
+                </button>
+                <button type="button" onClick={handleSaveAdminNote} disabled={isPending} className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-bold shadow-md">
+                  Save Note
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
 
-                      {/* Description */}
-                      <p className="text-xs text-[var(--muted)] leading-relaxed line-clamp-3">
-                        {model.description || "No description configured."}
+      {/* MODAL: GENERIC CONFIRMATION */}
+      <AnimatePresence>
+        {confirmModal && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 sm:p-6">
+            <div onClick={() => setConfirmModal(null)} className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
+            <div className="relative w-full max-w-md max-h-[90vh] overflow-y-auto p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-6 z-10">
+              <div className="flex items-center gap-3 text-rose-400">
+                <AlertTriangle size={24} />
+                <h3 className="text-lg font-extrabold text-[var(--foreground)]">{confirmModal.title}</h3>
+              </div>
+              <p className="text-xs text-[var(--muted)] leading-relaxed">
+                {confirmModal.message}
+              </p>
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border)]">
+                <button type="button" onClick={() => setConfirmModal(null)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-xs font-semibold">
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const fn = confirmModal.actionFn;
+                    setConfirmModal(null);
+                    if (fn) await fn();
+                  }}
+                  disabled={isPending}
+                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-lg shadow-rose-600/30"
+                >
+                  {confirmModal.dangerText || "Confirm"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: USER INSPECTION DRAWER */}
+      <AnimatePresence>
+        {userDrawer && (
+          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setUserDrawer(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-xl p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-6 z-10 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
+                <div className="flex items-center gap-3">
+                  {renderUserAvatar(userDrawer.user?.avatar_url, userDrawer.user?.display_name || userDrawer.user?.full_name)}
+                  <div>
+                    <h3 className="text-lg font-extrabold text-[var(--foreground)]">
+                      {userDrawer.user?.display_name || userDrawer.user?.full_name || "User Inspection"}
+                    </h3>
+                    <p className="text-xs text-[var(--muted)] font-mono">{userDrawer.user?.email}</p>
+                  </div>
+                </div>
+                <button onClick={() => setUserDrawer(null)} className="p-1.5 hover:bg-[var(--surface)] rounded-xl text-[var(--muted)] hover:text-[var(--foreground)]">
+                  <X size={20} />
+                </button>
+              </div>
+
+              {userDrawer.loading ? (
+                <div className="py-12 text-center text-xs text-[var(--muted)] space-y-2">
+                  <RefreshCw size={24} className="animate-spin mx-auto text-indigo-400" />
+                  <p>Loading full user analytics & data stats...</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* USER BADGES & METADATA GRID */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[var(--muted)]">Status</span>
+                      <p className="font-bold">
+                        {userDrawer.user?.is_suspended ? (
+                          <span className="text-rose-400">Suspended</span>
+                        ) : userDrawer.user?.is_restricted ? (
+                          <span className="text-amber-400">Comments Muted</span>
+                        ) : (
+                          <span className="text-emerald-400">Active</span>
+                        )}
                       </p>
                     </div>
 
-                    {/* Controls & Actions */}
-                    <div className="pt-4 border-t border-[var(--border)] space-y-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Pause / Resume Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleTogglePauseModel(model.model_id, model.is_paused)}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all ${
-                            model.is_paused
-                              ? "bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30"
-                              : "bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
-                          }`}
-                        >
-                          {model.is_paused ? <Play size={12} /> : <Pause size={12} />}
-                          <span>{model.is_paused ? "Resume" : "Pause"}</span>
-                        </button>
+                    <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[var(--muted)]">Program</span>
+                      <p className="font-bold text-indigo-400">
+                        {userDrawer.user?.ib_program ? userDrawer.user.ib_program.toUpperCase() : "DP"}
+                      </p>
+                    </div>
 
-                        {/* Hide / Unhide Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleHideModel(model.model_id, model.is_hidden)}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all ${
-                            model.is_hidden
-                              ? "bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30"
-                              : "bg-[var(--surface)] text-[var(--foreground)] border-[var(--border)] hover:bg-[var(--surface-hover)]"
-                          }`}
-                        >
-                          {model.is_hidden ? <Eye size={12} /> : <EyeOff size={12} />}
-                          <span>{model.is_hidden ? "Unhide" : "Hide"}</span>
-                        </button>
+                    <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[var(--muted)]">Role</span>
+                      <p className="font-bold text-purple-400">
+                        {userDrawer.user?.is_admin ? (superAdminEmail && userDrawer.user?.email?.trim().toLowerCase() === superAdminEmail ? "Super Admin" : "Admin") : "Student"}
+                      </p>
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[var(--muted)]">Exam Session</span>
+                      <p className="font-bold text-[var(--foreground)] truncate">
+                        {userDrawer.user?.exam_session || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* PLATFORM USAGE STATS */}
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black uppercase tracking-wider text-[var(--muted)]">Platform Usage & Activity Stats</h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                      <div className="p-3.5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20">
+                        <span className="text-xl font-black text-indigo-400 block">{userStats?.notesCount || 0}</span>
+                        <span className="text-[10px] font-extrabold uppercase text-[var(--muted)]">Notes Created</span>
                       </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Enable / Disable Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleToggleEnableModel(model.model_id, model.enabled)}
-                          className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 border transition-all ${
-                            !model.enabled
-                              ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30"
-                              : "bg-rose-500/10 text-rose-300 border-rose-500/20 hover:bg-rose-500/20"
-                          }`}
-                        >
-                          <Power size={12} />
-                          <span>{model.enabled ? "Disable" : "Enable"}</span>
-                        </button>
-
-                        {/* Edit Metadata Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditModelModal(model)}
-                          className="px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-all"
-                        >
-                          <Edit3 size={12} />
-                          <span>Edit</span>
-                        </button>
+                      <div className="p-3.5 rounded-2xl bg-purple-500/5 border border-purple-500/20">
+                        <span className="text-xl font-black text-purple-400 block">{userStats?.conversationsCount || 0}</span>
+                        <span className="text-[10px] font-extrabold uppercase text-[var(--muted)]">AI Chats</span>
                       </div>
+                      <div className="p-3.5 rounded-2xl bg-emerald-500/5 border border-emerald-500/20">
+                        <span className="text-xl font-black text-emerald-400 block">{userStats?.communityPostsCount || 0}</span>
+                        <span className="text-[10px] font-extrabold uppercase text-[var(--muted)]">Posts</span>
+                      </div>
+                      <div className="p-3.5 rounded-2xl bg-amber-500/5 border border-amber-500/20">
+                        <span className="text-xl font-black text-amber-400 block">{userStats?.aiFeedbackCount || 0}</span>
+                        <span className="text-[10px] font-extrabold uppercase text-[var(--muted)]">Feedback</span>
+                      </div>
+                    </div>
+                  </div>
 
-                      {/* Set as Default Button */}
-                      {!model.is_default && (
+                  {/* USER DATES & TIMESTAMPS */}
+                  <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-2 text-xs font-mono text-[var(--muted)]">
+                    <div className="flex justify-between">
+                      <span>User ID:</span>
+                      <span className="text-[var(--foreground)] select-all">{userDrawer.user?.id}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Joined Date:</span>
+                      <span className="text-[var(--foreground)]">{userDrawer.user?.created_at ? new Date(userDrawer.user.created_at).toLocaleString() : "N/A"}</span>
+                    </div>
+                    {userDrawer.user?.last_sign_in_at && (
+                      <div className="flex justify-between">
+                        <span>Last Sign In:</span>
+                        <span className="text-[var(--foreground)]">{new Date(userDrawer.user.last_sign_in_at).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* DRAWER ACTION CONTROLS */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[var(--border)]">
+                    <button
+                      onClick={() => handleEditUserClick(userDrawer.user)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 border border-indigo-500/20 transition-colors flex items-center gap-1.5"
+                    >
+                      <Edit3 size={14} /> Edit Profile & Role
+                    </button>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {userDrawer.user?.is_suspended ? (
                         <button
-                          type="button"
-                          disabled={!model.enabled || model.is_paused || model.is_hidden}
-                          onClick={() => handleSetDefaultModel(model.model_id)}
-                          className="w-full mt-2 px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-40 disabled:pointer-events-none transition-all"
+                          onClick={() => handleUnsuspendUser(userDrawer.user)}
+                          className="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20 transition-colors flex items-center gap-1.5"
+                          title="Restore website access (user data safely preserved)"
                         >
-                          <Star size={12} />
-                          <span>Set as Default Model</span>
+                          <ShieldCheck size={14} /> Unsuspend Account
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleSuspendUser(userDrawer.user)}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+                            isProtectedAccount(userDrawer.user)
+                              ? "bg-slate-500/10 hover:bg-slate-500/20 text-slate-300 border-slate-500/30 cursor-pointer"
+                              : "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border-rose-500/20"
+                          }`}
+                          title={
+                            isProtectedAccount(userDrawer.user)
+                              ? "Super Admin Protected — Account cannot be suspended"
+                              : "Suspend Account (Locks website access; all data preserved safely)"
+                          }
+                        >
+                          {isProtectedAccount(userDrawer.user) ? <ShieldAlert size={14} className="text-amber-400" /> : <Lock size={14} />}
+                          Suspend Account
+                          {isProtectedAccount(userDrawer.user) && (
+                            <span className="text-[9px] uppercase font-mono px-1 py-0.5 rounded bg-amber-500/20 text-amber-300 font-extrabold">Protected</span>
+                          )}
                         </button>
                       )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* DRAWER 1: USER DETAIL & INSPECTION */}
-      <AnimatePresence>
-        {userDrawer && (
-          <div className="fixed inset-0 z-[300] flex justify-end">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setUserDrawer(null)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", bounce: 0, duration: 0.4 }} className="relative w-full max-w-md bg-[var(--card)] border-l border-[var(--border)] shadow-2xl h-full flex flex-col z-10">
-              <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
-                <h3 className="text-lg font-bold text-[var(--foreground)]">User Account Inspector</h3>
-                <button onClick={() => setUserDrawer(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]"><X size={20} /></button>
-              </div>
+                      <button
+                        onClick={() => handleToggleRestrictComments(userDrawer.user)}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+                          userDrawer.user?.is_restricted
+                            ? "bg-amber-500/10 text-amber-300 border-amber-500/20 hover:bg-amber-500/20"
+                            : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] border-[var(--border)]"
+                        }`}
+                        title="Toggle comment and forum message restrictions"
+                      >
+                        <MessageSquare size={13} />
+                        {userDrawer.user?.is_restricted ? "Unmute Comments" : "Mute Comments"}
+                      </button>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                <div className="flex items-center gap-4 p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)]">
-                  <div className="w-14 h-14 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] font-extrabold flex items-center justify-center text-xl uppercase">
-                    {(userDrawer.profile?.display_name || userDrawer.profile?.email || "U")[0]}
-                  </div>
-                  <div>
-                    <h4 className="font-extrabold text-lg text-[var(--foreground)]">{userDrawer.profile?.display_name || userDrawer.profile?.full_name || "User"}</h4>
-                    <p className="text-xs text-[var(--muted)]">{userDrawer.profile?.email}</p>
-                    <div className="mt-1 flex items-center gap-2">
-                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[var(--card)] text-[var(--muted)] border border-[var(--border)]">
-                        {userDrawer.profile?.ib_program || "DP Candidate"}
-                      </span>
+                      <button
+                        onClick={() => handleDeleteUserAccount(userDrawer.user)}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+                          isProtectedAccount(userDrawer.user)
+                            ? "bg-slate-500/10 hover:bg-slate-500/20 text-slate-400 border-slate-500/20 cursor-pointer"
+                            : "bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border-rose-500/20"
+                        }`}
+                        title={
+                          isProtectedAccount(userDrawer.user)
+                            ? "Super Admin Protected — Account cannot be deleted"
+                            : "Permanently Delete User Account & Wipe All Data"
+                        }
+                      >
+                        <Trash2 size={14} /> Delete Account
+                      </button>
                     </div>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center">
-                    <span className="text-[10px] font-bold uppercase text-[var(--muted)]">Posts</span>
-                    <p className="text-lg font-extrabold text-[var(--foreground)]">{userDrawer.userStats?.postCount || 0}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center">
-                    <span className="text-[10px] font-bold uppercase text-[var(--muted)]">Replies</span>
-                    <p className="text-lg font-extrabold text-[var(--foreground)]">{userDrawer.userStats?.replyCount || 0}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-center">
-                    <span className="text-[10px] font-bold uppercase text-[var(--muted)]">Groups</span>
-                    <p className="text-lg font-extrabold text-[var(--foreground)]">{userDrawer.userStats?.studyGroupCount || 0}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3 pt-4 border-t border-[var(--border)]">
-                  <h5 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Account Actions</h5>
-                  {userDrawer.profile?.is_suspended ? (
-                    <button
-                      onClick={() => handleRestoreUser(userDrawer.profile)}
-                      className="w-full py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 font-bold text-sm transition-all flex items-center justify-center gap-2"
-                    >
-                      <UserCheck size={16} /> Restore Account Access
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => handleSuspendUser(userDrawer.profile)}
-                      className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 font-bold text-sm transition-all flex items-center justify-center gap-2"
-                    >
-                      <UserX size={16} /> Suspend Account
-                    </button>
-                  )}
-                </div>
-              </div>
+              )}
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* DRAWER 2: COMMUNITY CONTENT INSPECTION & MODERATION */}
+      {/* MODAL: EDIT USER PROFILE BY ADMIN */}
       <AnimatePresence>
-        {itemDrawer && (
-          <div className="fixed inset-0 z-[300] flex justify-end">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setItemDrawer(null)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", bounce: 0, duration: 0.4 }} className="relative w-full max-w-xl bg-[var(--card)] border-l border-[var(--border)] shadow-2xl h-full flex flex-col z-10">
-              <div className="p-6 border-b border-[var(--border)] flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Content Inspector</span>
-                  <h3 className="text-lg font-bold text-[var(--foreground)]">{itemDrawer.item.contentType.toUpperCase()}</h3>
-                </div>
-                <button onClick={() => setItemDrawer(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]"><X size={20} /></button>
+        {editingUserModal && (
+          <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain flex items-center justify-center p-4 sm:p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingUserModal(null)} className="fixed inset-0 bg-black/70 backdrop-blur-sm" />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-lg p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-5 z-10 my-auto">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+                <h3 className="text-lg font-extrabold text-[var(--foreground)]">Edit User Account & Permissions</h3>
+                <button onClick={() => setEditingUserModal(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]"><X size={18} /></button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {!itemDrawer.isEditing ? (
-                  <div className="space-y-6">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                          {itemDrawer.item.category}
+              <form onSubmit={handleSaveUserEditSubmit} className="space-y-4 text-xs">
+                {userSaveBanner && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className={`p-3.5 rounded-2xl border flex items-start gap-3 text-xs font-medium leading-relaxed ${
+                      userSaveBanner.type === "success"
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                        : "bg-rose-500/10 border-rose-500/30 text-rose-300"
+                    }`}
+                  >
+                    {userSaveBanner.type === "success" ? (
+                      <CheckCircle2 size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <p className="font-bold text-xs mb-0.5">
+                        {userSaveBanner.type === "success" ? "User Profile Updated" : "Update Failed"}
+                      </p>
+                      <p>{userSaveBanner.message}</p>
+                    </div>
+                  </motion.div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--muted)] uppercase tracking-wider mb-1">Email (Read-only)</label>
+                  <input type="text" disabled value={editingUserModal.email || ""} className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)] cursor-not-allowed" />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Display Name</label>
+                    <input type="text" required value={editUserDisplayName} onChange={(e) => setEditUserDisplayName(e.target.value)} className="w-full px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Full Name</label>
+                    <input type="text" value={editUserFullName} onChange={(e) => setEditUserFullName(e.target.value)} className="w-full px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">IB Program</label>
+                    <select value={editUserProgram} onChange={(e) => setEditUserProgram(e.target.value)} className="w-full px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 cursor-pointer">
+                      <option value="DP">DP (Diploma Programme)</option>
+                      <option value="MYP">MYP (Middle Years Programme)</option>
+                      <option value="None">Unassigned / None</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Exam Session</label>
+                    <input type="text" placeholder="e.g. May 2026" value={editUserExamSession} onChange={(e) => setEditUserExamSession(e.target.value)} className="w-full px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500" />
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editUserIsAdmin}
+                      onChange={(e) => {
+                        if (isProtectedAccount(editingUserModal) && !e.target.checked) {
+                          showToast("Action Prohibited: Super Admin administrative privileges cannot be revoked.", "error");
+                          return;
+                        }
+                        setEditUserIsAdmin(e.target.checked);
+                      }}
+                      className="rounded border-[var(--border)] accent-indigo-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span className="font-extrabold text-sm text-[var(--foreground)]">Grant Designated Admin Privileges</span>
+                    {isProtectedAccount(editingUserModal) && (
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold">
+                        Super Admin Locked
+                      </span>
+                    )}
+                  </label>
+                  <p className="text-[11px] text-[var(--muted)] leading-relaxed">
+                    {isProtectedAccount(editingUserModal)
+                      ? "This is the Super Admin account. Administrative privileges are permanent and cannot be modified or revoked."
+                      : "Admins can manage platform users, moderation flags, AI core constitution, model parameter configs, and live room controls."}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
+                  <button type="button" onClick={() => setEditingUserModal(null)} className="px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isSavingUserEdit || isPending} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md flex items-center gap-2">
+                    {isSavingUserEdit && <RefreshCw size={14} className="animate-spin" />}
+                    <span>Save User Profile</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: COMMUNITY ITEM & POST INSPECTION / MODERATION DRAWER */}
+      <AnimatePresence>
+        {itemDrawer && (
+          <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain flex items-center justify-center p-4 sm:p-6">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setItemDrawer(null)}
+              className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-3xl my-auto p-6 sm:p-8 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-6 z-10 max-h-[90vh] overflow-y-auto"
+            >
+              {/* HEADER WITH BADGES & CLOSE */}
+              <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] pb-4">
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                      itemDrawer.item.contentType === "report"
+                        ? "bg-rose-500/10 text-rose-400 border border-rose-500/25"
+                        : itemDrawer.item.contentType === "question"
+                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/25"
+                        : "bg-indigo-500/10 text-indigo-400 border border-indigo-500/25"
+                    }`}>
+                      {itemDrawer.item.contentType ? itemDrawer.item.contentType.toUpperCase() : "POST"}
+                    </span>
+
+                    <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold flex items-center gap-1.5 ${
+                      itemDrawer.item.status === "pending"
+                        ? "bg-amber-500/15 text-amber-400 border border-amber-500/30 animate-pulse"
+                        : itemDrawer.item.status === "approved" || itemDrawer.item.status === "active"
+                        ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                        : "bg-rose-500/15 text-rose-400 border border-rose-500/30"
+                    }`}>
+                      {itemDrawer.item.status === "approved" || itemDrawer.item.status === "active" ? (
+                        <CheckCircle2 size={13} />
+                      ) : itemDrawer.item.status === "pending" ? (
+                        <Clock size={13} />
+                      ) : (
+                        <XCircle size={13} />
+                      )}
+                      <span>{itemDrawer.item.status ? itemDrawer.item.status.toUpperCase() : "ACTIVE"}</span>
+                    </span>
+
+                    {itemDrawer.item.category && (
+                      <span className="px-3 py-1 rounded-full text-[11px] font-bold bg-[var(--surface)] text-[var(--muted)] border border-[var(--border)]">
+                        {itemDrawer.item.category}
+                      </span>
+                    )}
+
+                    {itemDrawer.item.is_answered && (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        SOLVED
+                      </span>
+                    )}
+                  </div>
+
+                  <h2 className="text-xl sm:text-2xl font-black text-[var(--foreground)] tracking-tight break-words">
+                    {itemDrawer.item.title || "Untitled Community Item"}
+                  </h2>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {itemDrawer.item.contentType !== "report" && itemDrawer.item.contentType !== "study_group" && (
+                    <Link
+                      href={`/dashboard/community/${itemDrawer.item.id}`}
+                      target="_blank"
+                      className="p-2 hover:bg-[var(--surface)] rounded-xl text-[var(--muted)] hover:text-[var(--foreground)] transition-colors flex items-center gap-1 text-xs font-semibold"
+                      title="Open full page in community"
+                    >
+                      <ExternalLink size={17} />
+                      <span className="hidden sm:inline">Live Post</span>
+                    </Link>
+                  )}
+                  <button
+                    onClick={() => setItemDrawer(null)}
+                    className="p-2 hover:bg-[var(--surface)] rounded-xl text-[var(--muted)] hover:text-[var(--foreground)] transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              {/* AUTHOR & METADATA BAR */}
+              <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex flex-wrap items-center justify-between gap-4 text-xs">
+                <div className="flex items-center gap-3">
+                  {renderUserAvatar(itemDrawer.item.author_avatar, itemDrawer.item.author_name)}
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-extrabold text-[var(--foreground)] text-sm">
+                        {itemDrawer.item.author_name || "Community Author"}
+                      </span>
+                      {itemDrawer.item.author_role && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500/10 text-indigo-400">
+                          {itemDrawer.item.author_role}
                         </span>
+                      )}
+                    </div>
+                    <span className="text-[var(--muted)] font-mono text-[11px]">
+                      {itemDrawer.item.created_at ? new Date(itemDrawer.item.created_at).toLocaleString() : "Date unknown"}
+                    </span>
+                  </div>
+                </div>
 
-                        {itemDrawer.item.status === "pending" && (
-                          <span className="px-2.5 py-1 text-xs font-extrabold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                            PENDING APPROVAL
-                          </span>
-                        )}
-                        {(itemDrawer.item.status === "approved" || itemDrawer.item.status === "active") && (
-                          <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            APPROVED
-                          </span>
-                        )}
-                        {itemDrawer.item.status === "rejected" && (
-                          <span className="px-2.5 py-1 text-xs font-bold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                            REJECTED
-                          </span>
-                        )}
+                {/* METRICS */}
+                <div className="flex items-center gap-4 text-xs font-semibold text-[var(--muted)]">
+                  <div className="flex items-center gap-1.5">
+                    <ThumbsUp size={14} className="text-indigo-400" />
+                    <span>{itemDrawer.item.helpful_count || 0} Upvotes</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <MessageSquare size={14} className="text-purple-400" />
+                    <span>{itemDrawer.item.reply_count || itemDrawer.replies?.length || 0} Replies</span>
+                  </div>
+                  {itemDrawer.item.view_count !== undefined && (
+                    <div className="flex items-center gap-1.5">
+                      <Eye size={14} className="text-emerald-400" />
+                      <span>{itemDrawer.item.view_count || 0} Views</span>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                        <span className="text-xs font-semibold text-[var(--muted)]">Author: {itemDrawer.item.author_name}</span>
+              {/* POST BODY / EDIT FORM */}
+              {itemDrawer.isEditing ? (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.currentTarget);
+                    handleSaveItemEdit(itemDrawer.item, formData);
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-[var(--muted)]">Title</label>
+                    <input
+                      name="title"
+                      defaultValue={itemDrawer.item.title}
+                      required
+                      className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 text-sm font-semibold"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-[var(--muted)]">Category / Subject</label>
+                    <input
+                      name="category"
+                      defaultValue={itemDrawer.item.category || "General"}
+                      required
+                      className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold uppercase text-[var(--muted)]">Post Content / Details</label>
+                    <textarea
+                      name="content"
+                      defaultValue={itemDrawer.item.content}
+                      rows={6}
+                      required
+                      className="w-full px-4 py-3 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 text-sm leading-relaxed"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setItemDrawer(prev => ({ ...prev, isEditing: false }))}
+                      className="px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-xs font-bold hover:bg-[var(--surface-hover)]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isPending}
+                      className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md flex items-center gap-1.5"
+                    >
+                      <Save size={14} />
+                      <span>Save Changes</span>
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="space-y-6">
+                  {/* FULL POST CONTENT TEXT */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-[var(--muted)]">
+                        Post Content & Body Details
+                      </span>
+                      <button
+                        onClick={() => setItemDrawer(prev => ({ ...prev, isEditing: true }))}
+                        className="text-xs font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                      >
+                        <Edit3 size={13} />
+                        <span>Edit Content</span>
+                      </button>
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] leading-relaxed whitespace-pre-wrap select-text font-normal max-h-72 overflow-y-auto">
+                      {itemDrawer.item.content || <span className="italic text-[var(--muted)]">No content text provided.</span>}
+                    </div>
+                  </div>
+
+                  {/* REPORT DETAILS IF REPORT */}
+                  {itemDrawer.item.contentType === "report" && (
+                    <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/25 space-y-2">
+                      <span className="text-xs font-black uppercase text-rose-400">Report Details</span>
+                      <p className="text-xs text-[var(--foreground)]">Reason: {itemDrawer.item.reason || itemDrawer.item.details || "No explanation provided"}</p>
+                      <p className="text-[11px] text-[var(--muted)] font-mono">Reported Item ID: {itemDrawer.item.target_id || itemDrawer.item.id}</p>
+                    </div>
+                  )}
+
+                  {/* COMMENTS / REPLIES SECTION */}
+                  <div className="space-y-3 pt-2 border-t border-[var(--border)]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare size={16} className="text-indigo-400" />
+                        <h4 className="text-sm font-extrabold text-[var(--foreground)]">
+                          Discussion Comments & Replies ({itemDrawer.replies?.length || 0})
+                        </h4>
                       </div>
-                      <h2 className="text-xl font-extrabold text-[var(--foreground)]">{itemDrawer.item.title}</h2>
+                      {itemDrawer.loadingReplies && (
+                        <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                          <RefreshCw size={13} className="animate-spin text-indigo-400" />
+                          <span>Loading replies...</span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="p-4 rounded-2xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] leading-relaxed whitespace-pre-wrap">
-                      {itemDrawer.item.content}
-                    </div>
-
-                    {itemDrawer.item.replies && itemDrawer.item.replies.length > 0 && (
-                      <div className="space-y-3 pt-4 border-t border-[var(--border)]">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Replies ({itemDrawer.item.replies.length})</h4>
-                        {itemDrawer.item.replies.map(r => (
-                          <div key={r.id} className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs flex justify-between items-start">
-                            <div>
-                              <span className="font-bold text-[var(--foreground)]">{r.author_name}: </span>
-                              <span className="text-[var(--muted)]">{r.content}</span>
+                    {itemDrawer.loadingReplies ? (
+                      <div className="py-6 text-center text-xs text-[var(--muted)] bg-[var(--surface)] rounded-2xl border border-[var(--border)]">
+                        <RefreshCw size={18} className="animate-spin mx-auto text-indigo-400 mb-2" />
+                        Loading replies from community database...
+                      </div>
+                    ) : !itemDrawer.replies || itemDrawer.replies.length === 0 ? (
+                      <div className="py-6 text-center text-xs text-[var(--muted)] bg-[var(--surface)] rounded-2xl border border-[var(--border)]">
+                        No replies or answers on this post yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                        {itemDrawer.replies.map((reply) => (
+                          <div
+                            key={reply.id}
+                            className="p-3.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] space-y-1.5 group hover:border-[var(--border-hover)] transition-all"
+                          >
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-[var(--foreground)]">
+                                {reply.author_name || "Community Member"}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-[var(--muted)] font-mono">
+                                  {reply.created_at ? new Date(reply.created_at).toLocaleDateString() : ""}
+                                </span>
+                                <button
+                                  onClick={() => handleDeleteReply(reply.id)}
+                                  className="p-1 hover:bg-rose-500/10 text-[var(--muted)] hover:text-rose-400 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
+                                  title="Delete this reply"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
                             </div>
+                            <p className="text-xs text-[var(--foreground)] whitespace-pre-wrap leading-relaxed">
+                              {reply.content}
+                            </p>
                           </div>
                         ))}
                       </div>
                     )}
+                  </div>
 
-                    <div className="flex items-center gap-2 pt-6 border-t border-[var(--border)] flex-wrap">
-                      {/* Discussion / Question Approval Controls */}
-                      {(itemDrawer.item.contentType === "discussion" || itemDrawer.item.contentType === "question") && (
-                        <>
-                          {itemDrawer.item.status !== "approved" && (
-                            <button
-                              onClick={() => handleApprovePost(itemDrawer.item.id)}
-                              className="py-2.5 px-4 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-sm flex items-center gap-1.5"
-                            >
-                              <CheckCircle2 size={16} /> Approve Post
-                            </button>
-                          )}
-                          {itemDrawer.item.status !== "rejected" && (
-                            <button
-                              onClick={() => handleRejectPost(itemDrawer.item.id)}
-                              className="py-2.5 px-4 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 font-bold text-sm flex items-center gap-1.5"
-                            >
-                              <XCircle size={16} /> Reject Post
-                            </button>
-                          )}
-                        </>
-                      )}
-
-                      <button
-                        onClick={() => setItemDrawer(prev => ({ ...prev, isEditing: true }))}
-                        className="py-2.5 px-4 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--foreground)] border border-[var(--border)] font-bold text-sm flex items-center gap-1.5"
-                      >
-                        <Edit3 size={16} /> Edit
-                      </button>
-
-                      {itemDrawer.item.contentType === "study_group" && (
-                        itemDrawer.item.status === "active" ? (
-                          <button onClick={() => handleRejectStudyGroup(itemDrawer.item.id)} className="py-2.5 px-4 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold text-sm">
-                            Reject
-                          </button>
-                        ) : (
-                          <button onClick={() => handleApproveStudyGroup(itemDrawer.item.id)} className="py-2.5 px-4 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-sm">
-                            Approve
-                          </button>
-                        )
-                      )}
-
-                      {itemDrawer.item.contentType === "report" && (
-                        <button onClick={() => handleDismissReport(itemDrawer.item.id)} className="py-2.5 px-4 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-sm">
-                          Dismiss Report
+                  {/* MODERATION ACTION CONTROLS */}
+                  <div className="pt-4 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
+                    {/* LEFT: STATUS CONTROLS */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {/* APPROVE / ACCEPT BUTTON */}
+                      {itemDrawer.item.status === "approved" ? (
+                        <button
+                          onClick={() => {
+                            setCommunityItems(prev => prev.filter(i => i.id !== itemDrawer.item.id));
+                            setItemDrawer(null);
+                            showToast("Post is approved and live in community. Removed from moderation list.", "success");
+                          }}
+                          className="px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all cursor-pointer"
+                          title="Post is approved and live on the community page. Click to dismiss from moderation list."
+                        >
+                          <CheckCircle2 size={15} />
+                          <span>Post Approved (Dismiss from List)</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleSetPostStatus(itemDrawer.item.id, "approved")}
+                          disabled={isPending}
+                          className="px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md transition-all bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/25 active:scale-95"
+                        >
+                          <CheckCircle2 size={15} />
+                          <span>Approve & Accept</span>
                         </button>
                       )}
 
-                      <button onClick={() => handleDeleteCommunityItem(itemDrawer.item)} className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold text-sm ml-auto">
-                        <Trash2 size={18} />
+                      {/* REJECT BUTTON */}
+                      <button
+                        onClick={() => handleSetPostStatus(itemDrawer.item.id, "rejected")}
+                        disabled={isPending || itemDrawer.item.status === "rejected"}
+                        className={`px-4 py-2.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all ${
+                          itemDrawer.item.status === "rejected"
+                            ? "bg-rose-500/20 text-rose-300 border border-rose-500/30 cursor-default"
+                            : "bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 active:scale-95"
+                        }`}
+                      >
+                        <XCircle size={15} />
+                        <span>{itemDrawer.item.status === "rejected" ? "Post Rejected" : "Reject Post"}</span>
                       </button>
+
+                      {/* DISMISS / RESET TO PENDING */}
+                      <button
+                        onClick={() => handleSetPostStatus(itemDrawer.item.id, "pending")}
+                        disabled={isPending || itemDrawer.item.status === "pending"}
+                        className={`px-3.5 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
+                          itemDrawer.item.status === "pending"
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30 cursor-default"
+                            : "bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)] active:scale-95"
+                        }`}
+                        title="Mark as pending moderation"
+                      >
+                        <Clock size={14} />
+                        <span>{itemDrawer.item.status === "pending" ? "Pending" : "Set to Pending"}</span>
+                      </button>
+
+                      {/* DISMISS REPORT IF REPORT */}
+                      {itemDrawer.item.contentType === "report" && (
+                        <button
+                          onClick={() => handleDismissReport(itemDrawer.item.id)}
+                          disabled={isPending}
+                          className="px-3.5 py-2.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 text-xs font-bold"
+                        >
+                          Dismiss Report
+                        </button>
+                      )}
+                    </div>
+
+                    {/* RIGHT: DELETE PERMANENTLY */}
+                    <button
+                      onClick={() => handleDeleteCommunityItem(itemDrawer.item)}
+                      disabled={isPending}
+                      className="px-4 py-2.5 rounded-xl bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 hover:text-rose-300 border border-rose-600/25 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95"
+                    >
+                      <Trash2 size={14} />
+                      <span>Delete Post</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: CREATE / EDIT LIVE SUBJECT ROOM */}
+      <AnimatePresence>
+        {roomModal && (
+          <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain flex items-center justify-center p-4 sm:p-6">
+            <div onClick={() => setRoomModal(null)} className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
+            <div className="relative w-full max-w-lg my-auto max-h-[90vh] overflow-y-auto p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-5 z-10">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+                <h3 className="text-lg font-extrabold text-[var(--foreground)]">
+                  {roomModal.mode === "create" ? "Create Live Subject Room" : "Edit Live Room"}
+                </h3>
+                <button type="button" onClick={() => setRoomModal(null)} className="p-1 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)]"><X size={18} /></button>
+              </div>
+
+              <form onSubmit={handleSaveRoom} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Room Name</label>
+                  <input
+                    name="name"
+                    required
+                    defaultValue={roomModal.room?.name || ""}
+                    placeholder="e.g. Physics HL Mechanics Review"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 text-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Subject</label>
+                    <input
+                      name="subject"
+                      required
+                      defaultValue={roomModal.room?.subject || ""}
+                      placeholder="e.g. Physics"
+                      className="w-full px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Max Participants</label>
+                    <input
+                      name="max_participants"
+                      type="number"
+                      min="2"
+                      max="200"
+                      defaultValue={roomModal.room?.max_participants || 50}
+                      className="w-full px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Topic / Description</label>
+                  <textarea
+                    name="description"
+                    rows={3}
+                    defaultValue={roomModal.room?.description || ""}
+                    placeholder="Describe what students will be studying or discussing in this live room..."
+                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 leading-relaxed"
+                  />
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-indigo-500/5 border border-indigo-500/20">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="is_active"
+                      defaultChecked={roomModal.room ? (roomModal.room.is_active ?? true) : true}
+                      className="rounded border-[var(--border)] accent-indigo-500 w-4 h-4"
+                    />
+                    <span className="font-bold text-xs text-[var(--foreground)]">Room is Active & Joinable</span>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
+                  <button type="button" onClick={() => setRoomModal(null)} className="px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isPending} className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md">
+                    {roomModal.mode === "create" ? "Create Room" : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: ADD / EDIT SUBJECT IN CATALOG */}
+      <AnimatePresence>
+        {subjectModal && (
+          <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain flex items-center justify-center p-4 sm:p-6">
+            <div onClick={() => setSubjectModal(null)} className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
+            <div className="relative w-full max-w-lg my-auto max-h-[90vh] overflow-y-auto p-7 rounded-3xl bg-white/5 dark:bg-black/40 backdrop-blur-3xl border border-indigo-500/20 shadow-[0_0_50px_-12px_rgba(99,102,241,0.25)] space-y-6 z-10">
+              <div className="flex items-center justify-between pb-4 border-b border-white/10 dark:border-white/5">
+                <h3 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-400">
+                  {subjectModal.mode === "create" ? "Add Subject to Catalog" : "Edit Subject"}
+                </h3>
+                <button type="button" onClick={() => setSubjectModal(null)} className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-[var(--muted)] hover:text-white transition-all"><X size={18} /></button>
+              </div>
+
+              <form onSubmit={handleSaveSubjectSubmit} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Subject Name</label>
+                  <input
+                    name="name"
+                    required
+                    defaultValue={subjectModal.subject?.name || ""}
+                    placeholder="e.g. Physics"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 text-sm"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">IB Program</label>
+                    <select
+                      name="program"
+                      value={subjectModal.program || "dp"}
+                      onChange={(e) => setSubjectModal({ ...subjectModal, program: e.target.value })}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 transition-all font-medium"
+                    >
+                      <option value="dp">Diploma Programme (DP)</option>
+                      <option value="myp">Middle Years (MYP)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1">Category / Group</label>
+                    <select
+                      name="category"
+                      required
+                      defaultValue={subjectModal.subject?.category || (subjectModal.program === "myp" ? "Language and Literature" : "Group 1: Studies in Language & Literature")}
+                      className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] focus:outline-none focus:border-indigo-500 font-medium cursor-pointer transition-all"
+                    >
+                      {subjectModal.program !== "myp" && (
+                        <optgroup label="Diploma Programme (DP)">
+                          <option value="Group 1: Studies in Language & Literature">Group 1: Studies in Language & Literature</option>
+                          <option value="Group 2: Language Acquisition">Group 2: Language Acquisition</option>
+                          <option value="Group 1 & 2: Languages">Group 1 & 2: Languages</option>
+                          <option value="Group 3: Individuals & Societies">Group 3: Individuals & Societies</option>
+                          <option value="Group 4: Sciences">Group 4: Sciences</option>
+                          <option value="Group 5: Mathematics">Group 5: Mathematics</option>
+                          <option value="Group 6: The Arts">Group 6: The Arts</option>
+                          <option value="Core Requirements">Core Requirements (TOK / EE)</option>
+                        </optgroup>
+                      )}
+                      {subjectModal.program === "myp" && (
+                        <optgroup label="Middle Years Programme (MYP)">
+                          <option value="Language and Literature">Language and Literature</option>
+                          <option value="Language Acquisition">Language Acquisition</option>
+                          <option value="Individuals and Societies">Individuals and Societies</option>
+                          <option value="Sciences">Sciences</option>
+                          <option value="Mathematics">Mathematics</option>
+                          <option value="Arts">Arts</option>
+                          <option value="Design">Design</option>
+                          <option value="Physical and Health Education">Physical and Health Education</option>
+                          <option value="MYP Core / Interdisciplinary">MYP Core / Interdisciplinary</option>
+                        </optgroup>
+                      )}
+                      {subjectModal.subject?.category && 
+                       !["Group 1: Studies in Language & Literature", "Group 2: Language Acquisition", "Group 1 & 2: Languages", "Group 3: Individuals & Societies", "Group 4: Sciences", "Group 5: Mathematics", "Group 6: The Arts", "Core Requirements", "Language and Literature", "Language Acquisition", "Individuals and Societies", "Sciences", "Mathematics", "Arts", "Design", "Physical and Health Education"].includes(subjectModal.subject.category) && (
+                        <option value={subjectModal.subject.category}>{subjectModal.subject.category}</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {subjectModal.program !== "myp" && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-indigo-500/5 to-purple-500/5 border border-indigo-500/20 space-y-3">
+                    <span className="block text-[11px] font-black text-indigo-400 uppercase tracking-widest">Available Levels (DP)</span>
+                    <div className="flex items-center gap-8">
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className="relative flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            name="level_sl"
+                            defaultChecked={
+                              subjectModal.subject?.available_levels
+                                ? (typeof subjectModal.subject.available_levels === "string"
+                                    ? subjectModal.subject.available_levels.includes("SL")
+                                    : Array.isArray(subjectModal.subject.available_levels)
+                                    ? subjectModal.subject.available_levels.includes("SL")
+                                    : true)
+                                : true
+                            }
+                            className="peer appearance-none w-5 h-5 border-2 border-indigo-500/30 rounded-md checked:bg-indigo-500 checked:border-indigo-500 transition-all cursor-pointer"
+                          />
+                          <CheckCircle2 size={14} className="absolute text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
+                        </div>
+                        <span className="font-bold text-sm text-[var(--foreground)] group-hover:text-indigo-400 transition-colors">Standard Level (SL)</span>
+                      </label>
+                      <label className="flex items-center gap-3 cursor-pointer group">
+                        <div className="relative flex items-center justify-center">
+                          <input
+                            type="checkbox"
+                            name="level_hl"
+                            defaultChecked={
+                              subjectModal.subject?.available_levels
+                                ? (typeof subjectModal.subject.available_levels === "string"
+                                    ? subjectModal.subject.available_levels.includes("HL")
+                                    : Array.isArray(subjectModal.subject.available_levels)
+                                    ? subjectModal.subject.available_levels.includes("HL")
+                                    : true)
+                                : true
+                            }
+                            className="peer appearance-none w-5 h-5 border-2 border-indigo-500/30 rounded-md checked:bg-indigo-500 checked:border-indigo-500 transition-all cursor-pointer"
+                          />
+                          <CheckCircle2 size={14} className="absolute text-white opacity-0 peer-checked:opacity-100 pointer-events-none transition-opacity" />
+                        </div>
+                        <span className="font-bold text-sm text-[var(--foreground)] group-hover:text-indigo-400 transition-colors">Higher Level (HL)</span>
+                      </label>
                     </div>
                   </div>
-                ) : (
-                  <form onSubmit={(e) => { e.preventDefault(); handleSaveItemEdit(itemDrawer.item, new FormData(e.target)); }} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Title</label>
-                      <input type="text" name="title" defaultValue={itemDrawer.item.title} className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Subject Category</label>
-                      <input type="text" name="category" defaultValue={itemDrawer.item.category} className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Content / Description</label>
-                      <textarea name="content" rows={6} defaultValue={itemDrawer.item.content} className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                    </div>
-                    <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border)]">
-                      <button type="button" onClick={() => setItemDrawer(prev => ({ ...prev, isEditing: false }))} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-sm">
-                        Cancel
-                      </button>
-                      <button type="submit" disabled={isPending} className="px-5 py-2.5 rounded-xl bg-[var(--accent)] text-white font-bold text-sm shadow-lg shadow-[var(--accent)]/30 flex items-center gap-2">
-                        {isPending && <RefreshCw size={14} className="animate-spin" />}
-                        <span>Save Changes</span>
-                      </button>
-                    </div>
-                  </form>
+                )}
+
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border)] mt-6">
+                  <button type="button" onClick={() => setSubjectModal(null)} className="px-5 py-2.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] text-[var(--foreground)] font-bold text-sm transition-colors">
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={isPending} className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-[0_4px_20px_-5px_rgba(99,102,241,0.5)] transition-all flex items-center gap-2">
+                    {isPending ? <RefreshCw size={16} className="animate-spin" /> : null}
+                    {subjectModal.mode === "create" ? "Add Subject" : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL: AUDIT LOG DETAILS */}
+      <AnimatePresence>
+        {logDetailModal && (
+          <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain flex items-center justify-center p-4 sm:p-6">
+            <div onClick={() => setLogDetailModal(null)} className="fixed inset-0 bg-black/75 backdrop-blur-sm" />
+            <div className="relative w-full max-w-lg my-auto max-h-[90vh] overflow-y-auto p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-4 z-10">
+              <div className="flex items-center justify-between border-b border-[var(--border)] pb-3">
+                <h3 className="text-lg font-extrabold text-[var(--foreground)]">Audit Trail Event Detail</h3>
+                <button type="button" onClick={() => setLogDetailModal(null)} className="p-1 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--muted)] hover:text-[var(--foreground)]"><X size={18} /></button>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Event / Action</span>
+                  <p className="font-extrabold text-sm text-[var(--foreground)]">{logDetailModal.action}</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Actor</span>
+                    <p className="font-semibold text-[var(--foreground)] truncate">{logDetailModal.actor_email || "System"}</p>
+                  </div>
+                  <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Timestamp</span>
+                    <p suppressHydrationWarning className="font-mono text-[var(--foreground)]">{new Date(logDetailModal.created_at).toLocaleString()}</p>
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--muted)]">Details</span>
+                  <p className="text-[var(--foreground)] whitespace-pre-wrap leading-relaxed">{logDetailModal.details || "No additional text details recorded."}</p>
+                </div>
+
+                {logDetailModal.target_id && (
+                  <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex justify-between font-mono text-[11px]">
+                    <span className="text-[var(--muted)]">Target ID:</span>
+                    <span className="text-[var(--foreground)] select-all">{logDetailModal.target_id}</span>
+                  </div>
                 )}
               </div>
-            </motion.div>
+
+              <div className="flex items-center justify-end pt-3 border-t border-[var(--border)]">
+                <button type="button" onClick={() => setLogDetailModal(null)} className="px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </AnimatePresence>
@@ -2482,6 +4408,15 @@ export default function AdminClient({
                         Re-Activate Room
                       </button>
                     )}
+                    <button
+                      onClick={handleRefreshChatDrawer}
+                      disabled={refreshingChat}
+                      className="px-3 py-1.5 rounded-xl bg-[var(--surface-hover)] hover:bg-[var(--surface)] text-[var(--foreground)] border border-[var(--border)] text-xs font-bold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                      title="Quick hard-refresh room messages and active participants"
+                    >
+                      <RefreshCw size={13} className={refreshingChat ? "animate-spin text-indigo-400" : ""} />
+                      <span>Refresh Chat</span>
+                    </button>
                     <button
                       onClick={() => setRoomModal({ mode: "edit", room: chatDrawer.room })}
                       className="px-3 py-1.5 rounded-xl bg-[var(--surface-hover)] text-[var(--foreground)] border border-[var(--border)] text-xs font-bold flex items-center gap-1 transition-all"
@@ -2856,652 +4791,6 @@ export default function AdminClient({
         )}
       </AnimatePresence>
 
-      {/* MODAL: CONFIRMATION */}
-      <AnimatePresence>
-        {confirmModal && (
-          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmModal(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-6 z-10">
-              <div className="flex items-center gap-3 text-rose-400">
-                <AlertTriangle size={28} />
-                <h3 className="text-xl font-extrabold text-[var(--foreground)]">{confirmModal.title}</h3>
-              </div>
-              <p className="text-sm text-[var(--muted)] leading-relaxed">{confirmModal.message}</p>
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border)]">
-                <button onClick={() => setConfirmModal(null)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm font-semibold hover:bg-[var(--surface-hover)]">
-                  Cancel
-                </button>
-                <button
-                  onClick={async () => {
-                    startTransition(async () => {
-                      await confirmModal.actionFn();
-                      setConfirmModal(null);
-                    });
-                  }}
-                  disabled={isPending}
-                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold shadow-lg shadow-rose-600/30 transition-all flex items-center gap-2"
-                >
-                  {isPending && <RefreshCw size={14} className="animate-spin" />}
-                  <span>{confirmModal.dangerText}</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: CREATE / EDIT LIVE ROOM */}
-      <AnimatePresence>
-        {roomModal && (
-          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setRoomModal(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-lg p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-6 z-10">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-extrabold text-[var(--foreground)]">
-                  {roomModal.mode === "create" ? "Create New Live Room" : "Edit Live Room"}
-                </h3>
-                <button onClick={() => setRoomModal(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]"><X size={20} /></button>
-              </div>
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.target);
-                  const name = formData.get("name");
-                  const subject = formData.get("subject");
-                  const description = formData.get("description");
-                  const is_active = formData.get("is_active") === "on";
-
-                  startTransition(async () => {
-                    let res;
-                    if (roomModal.mode === "create") {
-                      res = await createLiveRoomAction({ name, subject, description, is_active });
-                    } else {
-                      res = await updateLiveRoomAction(roomModal.room.id, { name, subject, description, is_active });
-                    }
-
-                    if (res.success) {
-                      showToast(res.message, "success");
-                      setRoomModal(null);
-                      handleRefresh();
-                    } else {
-                      showToast(res.error, "error");
-                    }
-                  });
-                }}
-                className="space-y-4"
-              >
-                <div>
-                  <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Room Name</label>
-                  <input type="text" name="name" required defaultValue={roomModal.room?.name || ""} placeholder="e.g. Biology HL Exam Prep" className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Subject</label>
-                  <input type="text" name="subject" required defaultValue={roomModal.room?.subject || "Biology HL"} placeholder="e.g. Biology HL" className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Description</label>
-                  <textarea name="description" rows={3} defaultValue={roomModal.room?.description || ""} placeholder="Discuss Biology HL concepts..." className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                </div>
-                <div className="flex items-center gap-2 pt-2">
-                  <input type="checkbox" id="is_active" name="is_active" defaultChecked={roomModal.room?.is_active !== false} className="w-4 h-4 rounded text-[var(--accent)]" />
-                  <label htmlFor="is_active" className="text-sm font-semibold text-[var(--foreground)]">Room is Active & Visible to Students</label>
-                </div>
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-[var(--border)]">
-                  <button type="button" onClick={() => setRoomModal(null)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-sm">Cancel</button>
-                  <button type="submit" disabled={isPending} className="px-5 py-2.5 rounded-xl bg-[var(--accent)] text-white font-bold text-sm shadow-lg shadow-[var(--accent)]/30 flex items-center gap-2">
-                    {isPending && <RefreshCw size={14} className="animate-spin" />}
-                    <span>{roomModal.mode === "create" ? "Create Room" : "Save Changes"}</span>
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: LOG DETAIL */}
-      <AnimatePresence>
-        {logDetailModal && (
-          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setLogDetailModal(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-4 z-10">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-[var(--foreground)]">Audit Event Details</h3>
-                <button onClick={() => setLogDetailModal(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]"><X size={18} /></button>
-              </div>
-              <div className="space-y-2 text-sm text-[var(--foreground)]">
-                <p><span className="font-bold text-[var(--muted)]">Action:</span> {logDetailModal.action}</p>
-                <p><span className="font-bold text-[var(--muted)]">Target Type:</span> {logDetailModal.target_type}</p>
-                <p><span className="font-bold text-[var(--muted)]">Target ID:</span> {logDetailModal.target_id || "N/A"}</p>
-                <p><span className="font-bold text-[var(--muted)]">Actor:</span> {logDetailModal.actor_email || "Admin"}</p>
-                <p><span className="font-bold text-[var(--muted)]">Timestamp:</span> {new Date(logDetailModal.created_at).toLocaleString()}</p>
-                <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] mt-2">
-                  <span className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Details</span>
-                  <p className="text-xs font-mono text-[var(--foreground)] whitespace-pre-wrap">{logDetailModal.details}</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-                <button type="button" onClick={() => setLogDetailModal(null)} className="px-4 py-2 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-xs font-bold">Close</button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const targetLog = logDetailModal;
-                    setLogDetailModal(null);
-                    setConfirmDeleteLogModal(targetLog);
-                  }}
-                  className="px-4 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold flex items-center gap-1.5"
-                >
-                  <Trash2 size={14} /> Delete Log
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: CONFIRM DELETE SINGLE LOG */}
-      <AnimatePresence>
-        {confirmDeleteLogModal && (
-          <div className="fixed inset-0 z-[450] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmDeleteLogModal(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-4 z-10">
-              <div className="flex items-center gap-3 text-rose-400">
-                <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20">
-                  <AlertTriangle size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[var(--foreground)]">Delete Audit Log Entry</h3>
-                  <p className="text-xs text-[var(--muted)]">Permanent database deletion</p>
-                </div>
-              </div>
-              <p className="text-sm text-[var(--foreground)] leading-relaxed">
-                Are you sure you want to permanently delete this audit log entry? This action cannot be undone.
-              </p>
-              <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--muted)] space-y-1 font-mono">
-                <p><strong className="text-[var(--foreground)]">Action:</strong> {confirmDeleteLogModal.action}</p>
-                <p><strong className="text-[var(--foreground)]">Details:</strong> {confirmDeleteLogModal.details}</p>
-              </div>
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-                <button type="button" onClick={() => setConfirmDeleteLogModal(null)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={() => handleDeleteSingleLog(confirmDeleteLogModal.id)}
-                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/30 flex items-center gap-2"
-                >
-                  {isPending && <RefreshCw size={14} className="animate-spin" />}
-                  <span>Delete Permanently</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: CONFIRM CLEAR ALL LOGS */}
-      <AnimatePresence>
-        {confirmClearLogsModal && (
-          <div className="fixed inset-0 z-[450] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConfirmClearLogsModal(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md p-6 rounded-3xl bg-[var(--card)] border border-rose-500/30 shadow-2xl space-y-4 z-10">
-              <div className="flex items-center gap-3 text-rose-400">
-                <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20">
-                  <Trash2 size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[var(--foreground)]">Clear Entire Audit Log</h3>
-                  <p className="text-xs text-rose-400 font-semibold">High Priority Admin Action</p>
-                </div>
-              </div>
-              <p className="text-sm text-[var(--foreground)] leading-relaxed">
-                Are you sure you want to permanently delete <strong className="text-rose-400">ALL {logs.length} activity audit log records</strong>?
-              </p>
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300">
-                ⚠️ Warning: This will erase the entire audit history from the system database permanently.
-              </div>
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-                <button type="button" onClick={() => setConfirmClearLogsModal(false)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isPending}
-                  onClick={handleClearAllLogs}
-                  className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg shadow-rose-600/30 flex items-center gap-2"
-                >
-                  {isPending && <RefreshCw size={14} className="animate-spin" />}
-                  <span>Clear All Logs Permanently</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: ADD / EDIT SUBJECT */}
-      <AnimatePresence>
-        {subjectModal && (
-          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSubjectModal(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-md p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-4 z-10">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-extrabold text-[var(--foreground)]">
-                  {subjectModal.mode === "create" ? "Add New Course to Catalog" : "Edit Course Details"}
-                </h3>
-                <button onClick={() => setSubjectModal(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]"><X size={18} /></button>
-              </div>
-
-              <form onSubmit={handleSaveSubjectSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Target Programme *</label>
-                  <select name="program" defaultValue={subjectModal.subject?.program || "dp"} className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]">
-                    <option value="dp">DP 2 (Diploma Programme)</option>
-                    <option value="myp">MYP 5 (Middle Years Programme)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Subject Group / Category *</label>
-                  <input type="text" name="category" required defaultValue={subjectModal.subject?.category || ""} placeholder="e.g. Group 4: Sciences" className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Course Title *</label>
-                  <input type="text" name="name" required defaultValue={subjectModal.subject?.name || ""} placeholder="e.g. Biology" className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)]" />
-                </div>
-
-                <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-2">
-                  <span className="block text-xs font-bold uppercase text-[var(--muted)]">Available Levels (DP Only)</span>
-                  <div className="flex items-center gap-4 text-xs font-semibold text-[var(--foreground)]">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="level_sl"
-                        defaultChecked={
-                          !subjectModal.subject?.available_levels ||
-                          (typeof subjectModal.subject.available_levels === 'string'
-                            ? subjectModal.subject.available_levels.includes("SL")
-                            : Array.isArray(subjectModal.subject.available_levels) && subjectModal.subject.available_levels.includes("SL"))
-                        }
-                        className="accent-[var(--accent)]"
-                      />
-                      <span>Standard Level (SL)</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="level_hl"
-                        defaultChecked={
-                          subjectModal.subject?.available_levels
-                            ? (typeof subjectModal.subject.available_levels === 'string'
-                                ? subjectModal.subject.available_levels.includes("HL")
-                                : Array.isArray(subjectModal.subject.available_levels) && subjectModal.subject.available_levels.includes("HL"))
-                            : false
-                        }
-                        className="accent-[var(--accent)]"
-                      />
-                      <span>Higher Level (HL)</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-                  <button type="button" onClick={() => setSubjectModal(null)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={isPending} className="px-5 py-2.5 rounded-xl bg-[var(--accent)] text-white font-bold text-xs shadow-lg shadow-[var(--accent)]/30 flex items-center gap-2">
-                    {isPending && <RefreshCw size={14} className="animate-spin" />}
-                    <span>{subjectModal.mode === "create" ? "Add Course" : "Save Changes"}</span>
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: AI KNOWLEDGE ITEM */}
-      <AnimatePresence>
-        {aiKnowledgeModal && (
-          <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setAiKnowledgeModal(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative w-full max-w-lg p-6 rounded-3xl bg-[var(--card)] border border-[var(--border)] shadow-2xl space-y-4 z-10 max-h-[90vh] flex flex-col">
-              <div className="flex items-center justify-between shrink-0">
-                <h3 className="text-lg font-extrabold text-[var(--foreground)] flex items-center gap-2">
-                  <Sparkles size={20} className="text-indigo-400" />
-                  {aiKnowledgeModal.mode === "create" ? "Add AI Knowledge Item" : "Edit AI Knowledge Item"}
-                </h3>
-                <button onClick={() => setAiKnowledgeModal(null)} className="text-[var(--muted)] hover:text-[var(--foreground)]"><X size={18} /></button>
-              </div>
-
-              <div className="overflow-y-auto flex-1 pr-2 hide-scrollbar">
-                <form id="aiKnowledgeForm" onSubmit={async (e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.target);
-                  const title = formData.get("title");
-                  const subject_id = formData.get("subject_id") || null;
-                  const content_type = formData.get("content_type");
-                  const content = formData.get("content");
-                  const metadataStr = formData.get("metadata");
-                  
-                  let metadata = null;
-                  if (metadataStr) {
-                    const keywords = metadataStr.split(",").map(k => k.trim()).filter(Boolean);
-                    metadata = JSON.stringify({ keywords });
-                  }
-                  
-                  startTransition(async () => {
-                    let res;
-                    if (aiKnowledgeModal.mode === "create") {
-                      res = await addKnowledgeItemAction({ title, subject: subject_id, knowledgeType: content_type, content, metadata });
-                    } else {
-                      res = await editKnowledgeItemAction(aiKnowledgeModal.item.id, { title, subject: subject_id, knowledge_type: content_type, content, metadata });
-                    }
-                    
-                    if (res.success) {
-                      showToast(aiKnowledgeModal.mode === "create" ? "Added to AI knowledge base" : "Knowledge item updated", "success");
-                      setAiKnowledgeModal(null);
-                      // Optionally, refresh local state here or call handleRefresh()
-                      setAiKnowledge(prev => {
-                        if (aiKnowledgeModal.mode === "create") return [res.item, ...prev];
-                        return prev.map(item => item.id === res.item.id ? res.item : item);
-                      });
-                    } else {
-                      showToast(res.error, "error");
-                    }
-                  });
-                }} className="space-y-4 pb-2">
-                  <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
-                    <p className="text-xs text-indigo-300">
-                      Knowledge items added here are injected into the Gemini AI's prompt when a student asks a relevant question.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Title *</label>
-                    <input type="text" name="title" required defaultValue={aiKnowledgeModal.item?.title || ""} placeholder="e.g. IB Biology Paper 1 Format" className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-indigo-500" />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Subject ID</label>
-                      <input type="text" name="subject_id" defaultValue={aiKnowledgeModal.item?.subject_id || ""} placeholder="e.g. biology_hl" className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-indigo-500" />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Content Type</label>
-                      <select name="content_type" defaultValue={aiKnowledgeModal.item?.content_type || "concept"} className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-indigo-500">
-                        <option value="concept">Concept Explanation</option>
-                        <option value="exam_tips">Exam Tips</option>
-                        <option value="syllabus">Syllabus Info</option>
-                        <option value="rubric">Grading Rubric</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Knowledge Content (Markdown) *</label>
-                    <textarea name="content" required rows={6} defaultValue={aiKnowledgeModal.item?.content || ""} placeholder="Enter the knowledge content the AI should reference..." className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] font-mono focus:outline-none focus:border-indigo-500" />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-[var(--muted)] mb-1">Matching Keywords (Comma separated)</label>
-                    <input type="text" name="metadata" defaultValue={aiKnowledgeModal.item?.metadata ? JSON.parse(aiKnowledgeModal.item.metadata).keywords?.join(", ") : ""} placeholder="e.g. paper 1, multiple choice, biology" className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-sm text-[var(--foreground)] focus:outline-none focus:border-indigo-500" />
-                  </div>
-                </form>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)] shrink-0">
-                <button type="button" onClick={() => setAiKnowledgeModal(null)} className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs">
-                  Cancel
-                </button>
-                <button type="submit" form="aiKnowledgeForm" disabled={isPending} className="px-5 py-2.5 rounded-xl bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/30 flex items-center gap-2">
-                  {isPending && <RefreshCw size={14} className="animate-spin" />}
-                  <span>{aiKnowledgeModal.mode === "create" ? "Add to Library" : "Save Changes"}</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: WEBSITE LOCK/UNLOCK CONFIRMATION */}
-      <AnimatePresence>
-        {websiteLockConfirmModal && (
-          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setWebsiteLockConfirmModal(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className={`relative w-full max-w-md p-6 rounded-3xl bg-[var(--card)] border shadow-2xl space-y-5 z-10 ${
-                websiteLockConfirmModal === "lock" ? "border-rose-500/30" : "border-emerald-500/30"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`p-3 rounded-2xl border ${
-                  websiteLockConfirmModal === "lock"
-                    ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                    : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                }`}>
-                  {websiteLockConfirmModal === "lock" ? <Lock size={24} /> : <Unlock size={24} />}
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[var(--foreground)]">
-                    {websiteLockConfirmModal === "lock" ? "Lock IB Nexus Website?" : "Reopen IB Nexus Website?"}
-                  </h3>
-                  <p className="text-xs text-[var(--muted)]">
-                    {websiteLockConfirmModal === "lock" ? "System Preservation Trigger" : "Normal Access Restoration"}
-                  </p>
-                </div>
-              </div>
-
-              <p className="text-sm text-[var(--foreground)] leading-relaxed">
-                {websiteLockConfirmModal === "lock"
-                  ? "Normal users will no longer be able to access the application. They will see the IB Nexus preservation screen until the website is reopened by an Admin."
-                  : "This will restore normal application access for all registered users."}
-              </p>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-                <button
-                  type="button"
-                  onClick={() => setWebsiteLockConfirmModal(null)}
-                  className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isUpdatingLock}
-                  onClick={() => handleToggleWebsiteLock(websiteLockConfirmModal === "lock")}
-                  className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs shadow-lg flex items-center gap-2 ${
-                    websiteLockConfirmModal === "lock"
-                      ? "bg-rose-600 hover:bg-rose-500 shadow-rose-600/30"
-                      : "bg-emerald-600 hover:bg-emerald-500 shadow-emerald-600/30"
-                  }`}
-                >
-                  {isUpdatingLock && <RefreshCw size={14} className="animate-spin" />}
-                  <span>{websiteLockConfirmModal === "lock" ? "Lock Website Now" : "Reopen Website Now"}</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* MODAL: EDIT MODEL METADATA */}
-      <AnimatePresence>
-        {editingModelModal && (
-          <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setEditingModelModal(null)}
-              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="relative w-full max-w-lg p-6 rounded-3xl bg-[var(--card)] border border-indigo-500/30 shadow-2xl space-y-5 z-10"
-            >
-              <div className="flex items-center justify-between border-b border-[var(--border)] pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    <Edit3 size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-extrabold text-[var(--foreground)]">
-                      Edit Model Details
-                    </h3>
-                    <p className="text-xs font-mono text-[var(--muted)]">
-                      ID: {editingModelModal.model_id}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setEditingModelModal(null)}
-                  className="p-2 rounded-xl text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface)]"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              <form onSubmit={handleSaveModelMetadata} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
-                    User-Facing Display Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={editDisplayName}
-                    onChange={(e) => setEditDisplayName(e.target.value)}
-                    placeholder="e.g. Gemini 2.5 Flash"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm border border-[var(--border)] focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
-                    User-Facing Description
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
-                    placeholder="Describe the model's primary academic strengths..."
-                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm border border-[var(--border)] focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
-                    User Access Control (RBAC)
-                  </label>
-                  <select
-                    value={editAllowedRoles}
-                    onChange={(e) => setEditAllowedRoles(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm border border-[var(--border)] focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="all">All Users (Public)</option>
-                    <option value="student">Registered Students Only</option>
-                    <option value="premium">Premium Tiers Only</option>
-                    <option value="admin">Admins Only</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
-                      Max Output Tokens
-                    </label>
-                    <input
-                      type="number"
-                      min={256}
-                      max={16384}
-                      step={256}
-                      value={editMaxTokens}
-                      onChange={(e) => setEditMaxTokens(Number(e.target.value))}
-                      className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm border border-[var(--border)] focus:outline-none focus:border-indigo-500 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
-                      Temperature ({editTemperature})
-                    </label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={editTemperature}
-                      onChange={(e) => setEditTemperature(parseFloat(e.target.value))}
-                      className="w-full h-2 bg-[var(--surface)] rounded-lg appearance-none cursor-pointer mt-3 accent-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[var(--foreground)] uppercase tracking-wider mb-1.5">
-                    Fallback Model Selection
-                  </label>
-                  <select
-                    value={editFallbackModelId}
-                    onChange={(e) => setEditFallbackModelId(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] text-sm border border-[var(--border)] focus:outline-none focus:border-indigo-500"
-                  >
-                    {modelConfigs
-                      .filter((m) => m.model_id !== (editingModelModal.model_id || editingModelModal.id))
-                      .map((m) => (
-                        <option key={m.model_id} value={m.model_id}>
-                          {m.display_name || m.model_id} ({m.provider})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                <div className="p-3 rounded-2xl bg-[var(--surface)] border border-[var(--border)] space-y-1">
-                  <span className="text-[11px] font-bold uppercase text-[var(--muted)]">Authoritative API Model ID</span>
-                  <p className="text-xs font-mono text-indigo-300 font-semibold">{editingModelModal.model_id || editingModelModal.id}</p>
-                  <p className="text-[11px] text-[var(--muted)]">The internal model ID remains locked and will be called by the backend API.</p>
-                </div>
-
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-[var(--border)]">
-                  <button
-                    type="button"
-                    onClick={() => setEditingModelModal(null)}
-                    className="px-4 py-2.5 rounded-xl bg-[var(--surface)] text-[var(--foreground)] font-semibold text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isSubmittingModelEdit}
-                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 flex items-center gap-2"
-                  >
-                    {isSubmittingModelEdit && <RefreshCw size={14} className="animate-spin" />}
-                    <span>Save Model Details</span>
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {activeTab === "aicore" && (
-        <AiCoreTab initialCoreVersions={initialCoreVersions} />
-      )}
     </div>
   );
 }

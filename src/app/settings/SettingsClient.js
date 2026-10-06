@@ -8,8 +8,8 @@ export default function SettingsClient() {
   const sections = [
     {
       href: "/settings/profile",
-      title: "Identity & Academics",
-      description: "Manage your display name, school, IB programme, and study preferences.",
+      title: "Identity, Academics & Subjects",
+      description: "Manage your display name, school, IB programme, and select or modify your enrolled IB subjects.",
       icon: <User size={36} strokeWidth={1.5} />,
       gradient: "from-[var(--accent)] to-[var(--info)]",
       delay: 0.1,
@@ -43,7 +43,7 @@ export default function SettingsClient() {
   };
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] bg-[var(--background)] px-4 py-10 sm:py-16 relative overflow-hidden flex flex-col justify-center">
+    <main className="p-6 sm:p-10 max-w-6xl mx-auto space-y-8 relative">
       {/* Ambient Glows */}
       <div className="absolute top-[10%] left-[20%] w-[40vw] h-[40vw] bg-[var(--accent)]/10 blur-[140px] rounded-full pointer-events-none" />
       <div className="absolute bottom-[10%] right-[10%] w-[30vw] h-[30vw] bg-[var(--info)]/10 blur-[140px] rounded-full pointer-events-none" />

@@ -161,7 +161,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
           <button 
             onClick={handleToggleAI}
             disabled={isTogglingAI}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all ${aiEnabled ? 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30' : 'bg-hover text-muted hover:bg-hover border border-subtle'}`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold interactive-hover interactive-press ${aiEnabled ? 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30' : 'bg-hover text-muted hover:bg-hover border border-subtle'}`}
           >
             {aiEnabled ? <><Check size={16}/> AI Allowed</> : <><Settings2 size={16}/> Allow AI</>}
           </button>
@@ -170,7 +170,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
             <button 
               onClick={handleGenerateAI}
               disabled={isGenerating}
-              className="btn bg-indigo-500 hover:bg-indigo-400 text-white font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 animate-in fade-in zoom-in duration-300"
+              className="btn bg-indigo-500 hover:bg-indigo-400 text-white font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50 animate-in fade-in zoom-in interactive-hover interactive-press"
             >
               {isGenerating ? "Scanning..." : "Scan Notes & Extract"}
             </button>
@@ -200,7 +200,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
           {stats.due > 0 ? (
             <Link 
               href="/dashboard/flashcards/review?mode=smart"
-              className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-full bg-indigo-500 text-primary_PROTECTED font-bold hover:bg-indigo-400 transition-colors shadow-[0_0_20px_rgba(99,102,241,0.3)]"
+              className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-full bg-indigo-500 text-primary_PROTECTED font-bold hover:bg-indigo-400 shadow-[0_0_20px_rgba(99,102,241,0.3)] interactive-hover interactive-press"
             >
               Start Smart Review
             </Link>
@@ -219,7 +219,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
       <section>
         <h3 className="text-sm font-bold text-muted tracking-widest uppercase mb-4 px-1">Your Progress</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-surface border border-subtle rounded-2xl p-5">
+          <div className="bg-surface border border-subtle rounded-2xl p-5 interactive-hover interactive-press-subtle cursor-pointer hover:shadow-md">
             <div className="flex items-center gap-3 text-muted mb-2">
               <Target size={18} className="text-emerald-400" />
               <span className="text-sm font-semibold">Mastered</span>
@@ -227,7 +227,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
             <div className="text-3xl font-black text-primary">{stats.mastered}</div>
           </div>
           
-          <div className="bg-surface border border-subtle rounded-2xl p-5">
+          <div className="bg-surface border border-subtle rounded-2xl p-5 interactive-hover interactive-press-subtle cursor-pointer hover:shadow-md">
             <div className="flex items-center gap-3 text-muted mb-2">
               <Activity size={18} className="text-blue-400" />
               <span className="text-sm font-semibold">Retention</span>
@@ -235,7 +235,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
             <div className="text-3xl font-black text-primary">{safeRetention}</div>
           </div>
           
-          <div className="bg-surface border border-subtle rounded-2xl p-5">
+          <div className="bg-surface border border-subtle rounded-2xl p-5 interactive-hover interactive-press-subtle cursor-pointer hover:shadow-md">
             <div className="flex items-center gap-3 text-muted mb-2">
               <Flame size={18} className="text-orange-400" />
               <span className="text-sm font-semibold">Streak</span>
@@ -243,7 +243,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
             <div className="text-3xl font-black text-primary">{stats.streak || 0}</div>
           </div>
           
-          <div className="bg-surface border border-subtle rounded-2xl p-5">
+          <div className="bg-surface border border-subtle rounded-2xl p-5 interactive-hover interactive-press-subtle cursor-pointer hover:shadow-md">
             <div className="flex items-center gap-3 text-muted mb-2">
               <BookOpen size={18} className="text-purple-400" />
               <span className="text-sm font-semibold">Total Cards</span>
@@ -263,7 +263,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
             <div className="group relative">
               <button 
                 onClick={() => setActiveTab("manual")}
-                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'manual' ? 'bg-indigo-500 text-primary_PROTECTED shadow-lg shadow-indigo-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 interactive-hover interactive-press-subtle ${activeTab === 'manual' ? 'bg-indigo-500 text-primary_PROTECTED shadow-lg shadow-indigo-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
               >
                 <BookOpen size={16} className={activeTab === 'manual' ? 'text-primary' : 'text-indigo-400'} />
                 My Nexus Cards
@@ -277,7 +277,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
             <div className="group relative">
               <button 
                 onClick={() => setActiveTab("ai")}
-                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'ai' ? 'bg-purple-500 text-primary_PROTECTED shadow-lg shadow-purple-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 interactive-hover interactive-press-subtle ${activeTab === 'ai' ? 'bg-purple-500 text-primary_PROTECTED shadow-lg shadow-purple-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
               >
                 <Sparkles size={16} className={activeTab === 'ai' ? 'text-primary' : 'text-purple-400'} />
                 AI Nexus Cards
@@ -291,7 +291,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
             <div className="group relative">
               <button 
                 onClick={() => setActiveTab("queue")}
-                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 ${activeTab === 'queue' ? 'bg-rose-500 text-primary_PROTECTED shadow-lg shadow-rose-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
+                className={`px-5 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 interactive-hover interactive-press-subtle ${activeTab === 'queue' ? 'bg-rose-500 text-primary_PROTECTED shadow-lg shadow-rose-500/25' : 'text-muted hover:text-muted hover:bg-surface'}`}
               >
                 <Flame size={16} className={activeTab === 'queue' ? 'text-primary' : 'text-rose-400'} />
                 Smart Priority Queue
@@ -355,7 +355,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
                 {activeTab === 'manual' && (
                   <button 
                     onClick={() => setIsCreateOpen(true)}
-                    className="btn bg-hover text-white hover:bg-hover"
+                    className="btn bg-hover text-white hover:bg-hover interactive-hover interactive-press"
                   >
                     Create your first Nexus Card
                   </button>
@@ -374,7 +374,7 @@ const displayDecks = activeTab === "manual" ? manualDecks : aiDecks;
                     {/* Checkbox */}
                     <button 
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSelection(deck.id); }}
-                      className={`absolute top-4 right-4 z-10 p-1.5 rounded-lg transition-all ${isSelected ? 'text-indigo-400 opacity-100 bg-indigo-500/10' : 'text-primary/20 opacity-0 group-hover:opacity-100 hover:text-muted bg-hover hover:bg-hover'}`}
+                      className={`absolute top-4 right-4 z-10 p-1.5 rounded-lg transition-all interactive-hover interactive-press-subtle ${isSelected ? 'text-indigo-400 opacity-100 bg-indigo-500/10' : 'text-primary/20 opacity-0 group-hover:opacity-100 hover:text-muted bg-hover hover:bg-hover'}`}
                     >
                       {isSelected ? <CheckSquare size={18} className="fill-indigo-500/20" /> : <Square size={18} />}
                     </button>

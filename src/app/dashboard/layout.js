@@ -1,37 +1,40 @@
+import { redirect } from "next/navigation";
 import { getAuthSession, requireCompleteProfile } from "@/lib/auth/session";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import GlobalSearch from "@/components/GlobalSearch";
-import NexusOpeningExperience from "@/components/NexusOpeningExperience";
-import { getWebsiteLockSettings } from "@/lib/website-lock";
-import { isUserApprovedForLockedSite } from "@/lib/website-access-allowlist";
+import ScholarOpeningExperience from "@/components/ScholarOpeningExperience";
+import AccessRestrictedExperience from "@/components/AccessRestrictedExperience";
+import { getWebsiteAccessState, ACCESS_STATES } from "@/lib/website-access";
 
 export default async function DashboardLayout({children}) { 
-  const { is_locked, lock_message } = await getWebsiteLockSettings();
+  const { user, profile } = await getAuthSession();
 
-  if (is_locked) {
-    const { user, profile } = await getAuthSession();
-    const isApproved = await isUserApprovedForLockedSite(user, profile);
-    if (!isApproved) {
-      return <NexusOpeningExperience lockMessage={lock_message} isLocked={true} isAuthenticated={!!user} />;
+  await requireCompleteProfile(); 
+
+  const accessState = await getWebsiteAccessState(user, profile);
+
+  if (accessState.state === ACCESS_STATES.RESTRICTED) {
+    if (accessState.reason === "site_locked") {
+      redirect("/");
     }
+    return <AccessRestrictedExperience user={user} profile={profile} lockMessage={accessState.lockMessage} />;
   }
 
-  const { profile } = await requireCompleteProfile(); 
   return (
-    <div className="dashboard-shell relative min-h-screen">
+    <div className="dashboard-shell relative min-h-screen" suppressHydrationWarning>
       {/* Ambient Lighting Background */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden mix-blend-screen dark:mix-blend-lighten hidden md:block">
+      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden mix-blend-screen dark:mix-blend-lighten hidden md:block" suppressHydrationWarning>
         <div className="absolute top-[-10%] right-[-5%] w-[45vw] h-[45vw] rounded-full bg-[var(--accent)] blur-[140px] opacity-15 dark:opacity-10" />
         <div className="absolute top-[40%] left-[20%] w-[35vw] h-[35vw] rounded-full bg-[var(--info)] blur-[150px] opacity-10 dark:opacity-[0.08]" />
         <div className="absolute bottom-[10%] left-[-10%] w-[40vw] h-[40vw] rounded-full bg-[var(--ai)] blur-[140px] opacity-10 dark:opacity-5" />
       </div>
       
       <DashboardSidebar profile={profile} />
-      <div className="dashboard-content min-h-[calc(100vh-72px)] relative z-10 pt-[68px]">
+      <div className="dashboard-content min-h-[calc(100vh-72px)] relative pt-[68px]" suppressHydrationWarning>
         {children}
         <GlobalSearch />
       </div>
+      <ScholarOpeningExperience profile={profile} user={user} />
     </div>
   ); 
 }
-

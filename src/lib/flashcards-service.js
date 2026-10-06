@@ -73,6 +73,7 @@ export function calculateNextReview(rating, card) {
 // Get all decks for the user with counts
 export async function getDecks() {
   const user = await getAuthUser();
+  if (!user?.id) return [];
   const supabase = await createServerClient();
 
   const { data: decks, error } = await supabase
@@ -107,6 +108,7 @@ export async function getDecks() {
 
 export async function getDeckDetails(deckId) {
   const user = await getAuthUser();
+  if (!user?.id) return null;
   const supabase = await createServerClient();
 
   const { data: deck, error } = await supabase
@@ -149,6 +151,7 @@ export async function getDeckDetails(deckId) {
 
 export async function getSmartQueueCards(limit = 15) {
   const user = await getAuthUser();
+  if (!user?.id) return [];
   const supabase = await createServerClient();
 
   // Fetch highest priority due cards (ascending next_review_at)
@@ -193,6 +196,7 @@ export async function getSmartQueueCards(limit = 15) {
 // Generate smart review session
 export async function generateSmartReviewSession() {
   const user = await getAuthUser();
+  if (!user?.id) return [];
   const supabase = await createServerClient();
   const now = new Date().toISOString();
 
@@ -212,6 +216,7 @@ export async function generateSmartReviewSession() {
 
 export async function getDeckReviewSession(deckId) {
   const user = await getAuthUser();
+  if (!user?.id) return [];
   const supabase = await createServerClient();
   const now = new Date().toISOString();
 
@@ -230,6 +235,7 @@ export async function getDeckReviewSession(deckId) {
 // Perform a review
 export async function submitCardReview(cardId, rating, durationMs = 0) {
   const user = await getAuthUser();
+  if (!user?.id) throw new Error("Unauthenticated");
   const supabase = await createServerClient();
 
   // 1. Fetch current card
@@ -284,6 +290,7 @@ export async function submitCardReview(cardId, rating, durationMs = 0) {
 // General Stats
 export async function getFlashcardStats() {
   const user = await getAuthUser();
+  if (!user?.id) return { total: 0, due: 0, mastered: 0, retention: 0, streak: 0, aiEnabled: false };
   const supabase = await createServerClient();
   const now = new Date();
 

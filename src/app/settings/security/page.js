@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { requireCompleteProfile } from "@/lib/auth";
-import { getEmailProviders } from "@/app/auth/actions";
+import { getEmailProviders, getUserAuthSettings } from "@/app/auth/actions";
 import SecurityClient from "./SecurityClient";
 
 export const metadata = {
@@ -21,14 +21,15 @@ function SecurityFallback() {
 export default async function SecurityPage() {
   const { user, profile } = await requireCompleteProfile();
 
-  console.log("SERVER FORENSIC LOG - user.identities:", user?.identities);
-
-  // Fetch the live provider list server-side so the page renders correctly
-  // on first load without a client-side fetch.
-  const providers = await getEmailProviders(user.email);
+  // Fetch both live provider list and auth settings server-side so the page
+  // renders with accurate state instantly on first paint.
+  const [providers, authSettingsResult] = await Promise.all([
+    getEmailProviders(user.email),
+    getUserAuthSettings(),
+  ]);
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] bg-background px-4 py-10 sm:py-14">
+    <main className="p-6 sm:p-10 max-w-2xl mx-auto space-y-8 relative">
       <div className="max-w-lg mx-auto">
         <div className="mb-8">
           <Link
@@ -52,6 +53,7 @@ export default async function SecurityPage() {
           <SecurityClient
             userEmail={user.email}
             initialProviders={providers}
+            initialAuthSettings={authSettingsResult?.data || null}
             profile={profile}
           />
         </Suspense>

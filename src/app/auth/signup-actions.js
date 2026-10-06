@@ -1,7 +1,6 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/server";
-import { cookies } from "next/headers";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createHash, randomBytes } from "crypto";
 
 const PENDING_SIGNUP_TTL_SECONDS = 600; // 10 minutes
@@ -68,8 +67,7 @@ export async function createPendingGoogleSignup() {
 
   console.log("[SIGNUP FLOW] Step 2: SUCCESS — pending row inserted:", insertedRow);
 
-  // Set the raw nonce as an HttpOnly cookie so the callback can
-  // cross-check it against the hash if needed in the future.
+  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
   cookieStore.set(NONCE_COOKIE, rawNonce, {
     httpOnly: true,

@@ -2,21 +2,73 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { PRESET_AVATARS } from "@/lib/avatars";
 import { motion, AnimatePresence } from "framer-motion";
+import { Loader2 } from "lucide-react";
 
-export const Button = ({ variant="primary", className="", ...props }) => <button className={`btn btn-${variant} ${className}`} {...props} />;
-export const Card = ({ className="", ...props }) => <section className={`card ${className}`} {...props} />;
+export const Button = ({ variant="primary", className="", isLoading, loadingText, children, disabled, ...props }) => {
+  const isSubtle = ["secondary", "ghost", "icon"].includes(variant);
+  const pressClass = isSubtle ? "interactive-press-subtle" : "interactive-press";
+  
+  return (
+    <button 
+      className={`btn btn-${variant} interactive-hover ${pressClass} relative overflow-hidden ${isLoading ? "pointer-events-none opacity-90" : ""} ${className}`} 
+      disabled={isLoading || disabled} 
+      {...props}
+    >
+      <span className={`flex items-center justify-center gap-2 transition-opacity duration-150 ${isLoading ? "opacity-0" : "opacity-100"}`}>
+        {children}
+      </span>
+      <AnimatePresence>
+        {isLoading && (
+          <motion.span 
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            transition={{ duration: 0.15 }}
+            className="absolute inset-0 flex items-center justify-center gap-2"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" />
+            {loadingText && <span>{loadingText}</span>}
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+};
+export const Card = ({ className="", ...props }) => <section className={`card interactive-hover ${className}`} {...props} />;
 export const Input = ({ className="", ...props }) => <input className={`field ${className}`} {...props} />;
 export const Textarea = ({ className="", ...props }) => <textarea className={`field min-h-28 resize-y ${className}`} {...props} />;
 export const Badge = ({ children, className="" }) => <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${className}`}>{children}</span>;
 export const Avatar = ({ name="", src, url, className="", size="md" }) => {
   const avatarUrl = src || url;
   const [imgErr, setImgErr] = useState(false);
-  const sizeClasses = { sm: "h-6 w-6 text-xs", md: "h-9 w-9 text-xs", lg: "h-12 w-12 text-sm", xl: "h-16 w-16 text-3xl" };
+  const sizeClasses = { 
+    xs: "h-5 w-5 text-[10px]",
+    sm: "h-6 w-6 text-xs", 
+    md: "h-9 w-9 text-base", 
+    lg: "h-12 w-12 text-2xl", 
+    xl: "h-16 w-16 text-3xl" 
+  };
   const sClass = sizeClasses[size] || sizeClasses.md;
+  const shapeClass = className.includes("rounded-") ? "" : "rounded-full";
   const preset = PRESET_AVATARS.find(a => a.id === avatarUrl);
-  if (preset) return <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br ${preset.color} ${sClass} ${className}`} title={name}>{preset.emoji}</span>;
+  if (preset) {
+    return (
+      <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden ${shapeClass} bg-gradient-to-br ${preset.color} ${sClass} ${className}`} title={name}>
+        <span className="leading-none select-none">{preset.emoji}</span>
+      </span>
+    );
+  }
   const isValidUrl = avatarUrl && !imgErr && (avatarUrl.startsWith("http") || avatarUrl.startsWith("/") || avatarUrl.startsWith("data:"));
-  return <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--surface)] font-semibold border border-white/5 ${sClass} ${className}`} title={name}>{isValidUrl ? (/* eslint-disable-next-line @next/next/no-img-element */ <img src={avatarUrl} alt="" onError={() => setImgErr(true)} className="h-full w-full object-cover" />) : name.slice(0,1).toUpperCase() || "?"}</span>;
+  return (
+    <span className={`inline-flex shrink-0 items-center justify-center overflow-hidden ${shapeClass} bg-[var(--surface)] font-semibold border border-white/5 ${sClass} ${className}`} title={name}>
+      {isValidUrl ? (
+        /* eslint-disable-next-line @next/next/no-img-element */ 
+        <img src={avatarUrl} referrerPolicy="no-referrer" alt={name || "Avatar"} onError={() => setImgErr(true)} className="h-full w-full object-cover" />
+      ) : (
+        <span className="leading-none font-bold uppercase select-none">{name.slice(0, 1) || "?"}</span>
+      )}
+    </span>
+  );
 };
 export { AvatarPicker } from "./AvatarPicker";
 export const Alert = ({ title, children, variant="info" }) => <div role="alert" className={`rounded-xl border p-4 shadow-sm flex items-start gap-3 ${variant === "error" ? "bg-[var(--danger)]/5 border-[var(--danger)]/20 text-[var(--danger)]" : variant === "success" ? "bg-[var(--success)]/5 border-[var(--success)]/20 text-[var(--success)]" : "bg-[var(--accent)]/5 border-[var(--accent)]/20 text-[var(--accent)]"}`}><div><p className="font-semibold text-[14px]">{title}</p>{children && <p className="mt-1 text-[13px] opacity-80">{children}</p>}</div></div>;
@@ -50,17 +102,17 @@ export const Modal = ({ open, onClose, title, children }) => {
   return (
     <AnimatePresence>
       {open && (
-        <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[60] grid place-items-center p-4">
+        <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain grid place-items-center p-4">
           <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}
             className="absolute inset-0 bg-[var(--background)]/60 backdrop-blur-sm" 
             onMouseDown={onClose} 
           />
           <motion.div 
-            initial={{ opacity: 0, scale: 0.96, y: 10 }}
+            initial={{ opacity: 0, scale: 0.98, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 10 }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            exit={{ opacity: 0, scale: 0.98, y: 10 }}
+            transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className="bg-[var(--dropdown)] border border-[var(--border-strong)] rounded-[1.5rem] shadow-2xl w-full max-w-md p-6 overflow-hidden relative z-10" 
             onMouseDown={e=>e.stopPropagation()}
           >
@@ -175,8 +227,8 @@ export const Dropdown = ({label, children}) => {
           <motion.div 
             initial={{ opacity: 0, y: -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.15 } }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
+            exit={{ opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.1 } }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
             className="card absolute right-0 z-30 mt-2 min-w-40 p-1 shadow-float"
           >
             {children}
@@ -188,3 +240,4 @@ export const Dropdown = ({label, children}) => {
 };
 
 export { FeatureExplanation } from "./FeatureExplanation";
+export { default as ToastProvider, useToast, toast } from "./ToastProvider";

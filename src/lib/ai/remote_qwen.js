@@ -64,6 +64,8 @@ export async function* streamRemoteQwenChat({
   modelId,
   knowledgeContext = [],
   masterRules = [],
+  userPreferences = {},
+  isTemporary = false,
 }) {
   let actualModelId = modelId || "qwen3-4b";
   let actualDisplayName = "Qwen3-4B";
@@ -103,6 +105,8 @@ export async function* streamRemoteQwenChat({
     subjectFilter,
     knowledgeContext,
     masterRules,
+    userPreferences,
+    isTemporary,
   });
   const recentMessages = messages.slice(-10);
 

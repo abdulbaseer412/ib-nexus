@@ -28,8 +28,6 @@ export const AI_MODELS = [
     enabled: true,
     provider: "google",
     tier: "free",
-    freeTierEligible: true,
-    billingRequired: false,
     maxTokens: 8192,
     temperature: 0.7,
     isDefault: true,
@@ -42,8 +40,6 @@ export const AI_MODELS = [
     enabled: true,
     provider: "google",
     tier: "free",
-    freeTierEligible: true,
-    billingRequired: false,
     maxTokens: 8192,
     temperature: 0.7,
     isDefault: false,
@@ -57,8 +53,6 @@ export const AI_MODELS = [
     enabled: true,
     provider: "google",
     tier: "premium",
-    freeTierEligible: false,
-    billingRequired: true,
     maxTokens: 8192,
     temperature: 0.7,
     isDefault: false,
@@ -74,8 +68,6 @@ export const AI_MODELS = [
     enabled: true,
     provider: "openai",
     tier: "premium",
-    freeTierEligible: false,
-    billingRequired: true,
     maxTokens: 4096,
     temperature: 0.7,
     isDefault: false,
@@ -89,8 +81,6 @@ export const AI_MODELS = [
     enabled: true,
     provider: "openai",
     tier: "free",
-    freeTierEligible: false,
-    billingRequired: true,
     maxTokens: 4096,
     temperature: 0.7,
     isDefault: false,
@@ -106,46 +96,10 @@ export const AI_MODELS = [
     enabled: true,
     provider: "groq",
     tier: "free",
-    freeTierEligible: true,
-    billingRequired: false,
     maxTokens: 8192,
     temperature: 0.7,
     isDefault: false,
     fallback: "gemini-3.6-flash",
-  },
-  {
-    id: "qwen/qwen3.6-27b",
-    displayName: "Qwen 3.6 27B",
-    description: "Multimodal model for text and image understanding",
-    capabilities: ["text", "reasoning", "code", "math", "image"],
-    enabled: true,
-    provider: "groq",
-    tier: "free",
-    freeTierEligible: true,
-    billingRequired: false,
-    maxTokens: 8192,
-    temperature: 0.7,
-    isDefault: false,
-    fallback: "gemini-3.6-flash",
-  },
-
-
-  // ================= REMOTE QWEN FASTAPI =================
-  {
-    id: "qwen3-4b",
-    displayName: "Qwen3-4B",
-    description: "Local/private AI for fast academic assistance.",
-    capabilities: ["text", "reasoning", "code", "math"],
-    enabled: true,
-    provider: "remote_qwen",
-    actualModel: "Qwen/Qwen3-4B",
-    tier: "free",
-    freeTierEligible: true,
-    billingRequired: false,
-    maxTokens: 4096,
-    temperature: 0.7,
-    isDefault: false,
-    fallback: null,
   },
 
   // ================= TOGETHER AI =================
@@ -157,13 +111,11 @@ export const AI_MODELS = [
     enabled: true,
     provider: "together",
     tier: "free",
-    freeTierEligible: true,
-    billingRequired: false,
     maxTokens: 4096,
     temperature: 0.7,
     isDefault: false,
     fallback: null,
-  }
+  },
 ];
 
 /**
@@ -172,29 +124,63 @@ export const AI_MODELS = [
 export async function getMergedModelRegistry() {
   let dbConfigs = [];
   try {
-    const { createAdminClient } = await import("@/lib/supabase/server");
+    const { createAdminClient } = await import("../supabase/admin.js");
     const admin = createAdminClient();
     const { data } = await admin.from("ai_model_configs").select("*");
+
     if (data && Array.isArray(data)) {
-      dbConfigs = data;
+      if (data.length === 0) {
+        // Seed default config rows into ai_model_configs
+        const rowsToInsert = AI_MODELS.map((m, idx) => ({
+          model_id: m.id,
+          display_name: m.displayName,
+          description: m.description,
+          provider: m.provider,
+          enabled: m.enabled !== false,
+          is_paused: false,
+          is_hidden: false,
+          is_default: m.isDefault || false,
+          allowed_roles: "all",
+          max_tokens: m.maxTokens || 4096,
+          temperature: m.temperature || 0.7,
+          fallback_model_id: m.fallback || "gemini-3.6-flash",
+          sort_order: idx,
+        }));
+        await admin.from("ai_model_configs").upsert(rowsToInsert);
+        const { data: fresh } = await admin.from("ai_model_configs").select("*");
+        if (fresh && fresh.length > 0) {
+          dbConfigs = fresh;
+        }
+      } else {
+        dbConfigs = data;
+      }
     }
   } catch (err) {
-    // Fallback gracefully
+    console.warn("[getMergedModelRegistry] DB lookup error:", err?.message);
   }
 
   const configMap = new Map(dbConfigs.map((cfg) => [cfg.model_id, cfg]));
 
+  // If DB configs exist, filter out models marked as deleted
+  let baseModels = AI_MODELS;
+  if (dbConfigs.length > 0) {
+    const activeModelIds = new Set(
+      dbConfigs.filter((cfg) => !cfg.is_deleted).map((cfg) => cfg.model_id)
+    );
+    baseModels = AI_MODELS.filter((m) => activeModelIds.has(m.id));
+  }
+
   let hasExplicitDefault = false;
-  const merged = AI_MODELS.map((m, idx) => {
+  const merged = baseModels.map((m, idx) => {
     const cfg = configMap.get(m.id);
     const isDefault = cfg ? cfg.is_default === true : m.isDefault === true;
     const isPaused = cfg ? cfg.is_paused === true : false;
     const isHidden = cfg ? cfg.is_hidden === true : false;
     const enabled = cfg ? cfg.enabled !== false : m.enabled;
     const allowedRoles = cfg?.allowed_roles || "all";
-    const maxTokens = cfg?.max_tokens ? Number(cfg.max_tokens) : 2048;
-    const temperature = cfg?.temperature !== undefined && cfg?.temperature !== null ? Number(cfg.temperature) : 0.7;
-    const fallbackModelId = cfg?.fallback_model_id || "gemini-3.6-flash";
+    const maxTokens = cfg?.max_tokens ? Number(cfg.max_tokens) : (m.maxTokens || 4096);
+    const temperature = cfg?.temperature !== undefined && cfg?.temperature !== null ? Number(cfg.temperature) : (m.temperature || 0.7);
+    const fallbackModelId = cfg?.fallback_model_id || m.fallback || "gemini-3.6-flash";
 
     const displayName = cfg?.display_name || m.displayName;
     const description = cfg?.description || m.description;
@@ -230,16 +216,17 @@ export async function getMergedModelRegistry() {
     };
   });
 
-  if (!hasExplicitDefault) {
+  if (!hasExplicitDefault && merged.length > 0) {
     const defaultCandidate =
       merged.find((m) => m.id === "gemini-3.6-flash" && !m.isPaused && !m.isHidden && m.enabled) ||
       merged.find((m) => !m.isPaused && !m.isHidden && m.enabled);
     if (defaultCandidate) {
-      defaultCandidate.isDefault = true;
-      defaultCandidate.is_default = true;
+      merged.forEach((m) => {
+        m.isDefault = m.id === defaultCandidate.id;
+        m.is_default = m.id === defaultCandidate.id;
+      });
     }
   }
-
 
   merged.sort((a, b) => a.sortOrder - b.sortOrder);
   return merged;
@@ -404,15 +391,18 @@ export function getClientModels() {
 export async function getClientModelsWithHealth() {
   const merged = await getMergedModelRegistry();
 
-  // Filter out disabled, hidden, or paused models for normal users
+  // Filter out disabled or hidden models for normal users (PAUSED models remain listed, but marked isAvailable: false so they are locked)
   const userEligible = merged.filter(
-    (m) => m.enabled && !m.isHidden && !m.isPaused && m.freeTierEligible && !m.billingRequired
+    (m) => m.enabled !== false && !m.isHidden && !m.is_hidden
   );
 
   for (const model of userEligible) {
-    model.isAvailable = isProviderAvailable(model.provider);
+    const isPaused = !!(model.isPaused || model.is_paused);
+    model.isAvailable = !isPaused && isProviderAvailable(model.provider);
 
-    if (model.provider === "remote_qwen") {
+    if (isPaused) {
+      model.status = "Paused";
+    } else if (model.provider === "remote_qwen") {
       const isHealthy = await checkRemoteQwenHealth();
       model.isAvailable = isHealthy;
       if (!isHealthy) {
@@ -436,17 +426,19 @@ export async function getClientModelsWithHealth() {
     }
   }
 
-  return userEligible.map(({ id, displayName, description, capabilities, enabled, tier, isDefault, provider, isAvailable, status }) => ({
+  return userEligible.map(({ id, displayName, description, capabilities, enabled, tier, isDefault, provider, isAvailable, isPaused, is_paused, status }) => ({
     id,
     displayName,
     description,
     capabilities,
     enabled,
     tier,
-    isDefault,
+    isDefault: isDefault && !isPaused && !is_paused,
     provider,
     isAvailable,
-    status,
+    isPaused: !!(isPaused || is_paused),
+    is_paused: !!(isPaused || is_paused),
+    status: (isPaused || is_paused) ? "Paused" : (status || "Available"),
   }));
 }
 

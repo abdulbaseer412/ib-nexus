@@ -24,8 +24,9 @@ export function CreateDeckModal({ onClose, onSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-md bg-[var(--background)] border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/60 backdrop-blur-sm">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="w-full max-w-md bg-[var(--background)] border border-white/10 rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
         <div className="flex items-center justify-between p-6 border-b border-white/5">
           <h2 className="text-xl font-bold text-white tracking-tight">Create Nexus Card</h2>
           <button 
@@ -100,6 +101,7 @@ export function CreateDeckModal({ onClose, onSuccess }) {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

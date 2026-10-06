@@ -9,15 +9,19 @@ import {
   fetchWebsiteLockSettingsAction,
   fetchAdminModelConfigsAction,
   getWebsiteAccessAllowlist,
+  fetchContactMessagesAction,
 } from "./actions";
 
-import { fetchAdminAiCoreVersionsAction } from "./ai-actions";
+import { fetchAdminAiCoreVersionsAction, fetchAdminAiFeedbackAction } from "./ai-actions";
 import { fetchGlobalSubjects } from "../subjects/actions";
 
 export const metadata = {
   title: "Admin Control Center | IB Nexus",
   description: "Comprehensive website administration and content moderation for IB Nexus.",
 };
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function AdminPage() {
   const { user, profile } = await requireAdmin();
@@ -33,6 +37,8 @@ export default async function AdminPage() {
     fetchAdminModelConfigsAction(),
     getWebsiteAccessAllowlist(),
     fetchAdminAiCoreVersionsAction(),
+    fetchAdminAiFeedbackAction({ limit: 50 }),
+    fetchContactMessagesAction(),
   ]);
 
   const statsRes = results[0].status === "fulfilled" ? results[0].value : { stats: {} };
@@ -45,6 +51,11 @@ export default async function AdminPage() {
   const modelsRes = results[7].status === "fulfilled" ? results[7].value : { models: [] };
   const allowlistRes = results[8].status === "fulfilled" ? results[8].value : { allowlist: [] };
   const aiCoreRes = results[9].status === "fulfilled" ? results[9].value : { versions: [] };
+  const aiFeedbackRes = results[10].status === "fulfilled" ? results[10].value : { feedback: [] };
+  const contactMessagesRes = results[11].status === "fulfilled" ? results[11].value : { messages: [] };
+
+  const envEmail = process.env.SUPER_ADMIN_EMAIL;
+  const superAdminEmail = envEmail ? envEmail.trim().toLowerCase() : null;
 
   return (
     <AdminClient
@@ -60,6 +71,9 @@ export default async function AdminPage() {
       initialModelConfigs={modelsRes.models || []}
       initialWebsiteAllowlist={allowlistRes.allowlist || []}
       initialCoreVersions={aiCoreRes.versions || []}
+      initialAiFeedback={aiFeedbackRes.feedback || []}
+      initialContactMessages={contactMessagesRes.messages || []}
+      superAdminEmail={superAdminEmail}
     />
   );
 }

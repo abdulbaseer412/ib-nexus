@@ -112,7 +112,7 @@ function StudyPath({ resource, related, paired, relatedNotes, relatedDecks }) {
 }
 
 /* ── Main Detail Client ───────────────────────────────────────────────────── */
-export default function ResourceDetailClient({ resourceId, userProgram, isAdmin }) {
+export default function ResourceDetailClient({ resourceId, userProgram, isAdmin, userProfile = {} }) {
   const router = useRouter();
   const [resource, setResource] = useState(null);
   const [paired, setPaired] = useState(null);
@@ -240,10 +240,10 @@ export default function ResourceDetailClient({ resourceId, userProgram, isAdmin 
   const sessionLabel = resource.exam_session
     ? `${resource.exam_session === "may" ? "May" : "November"} ${resource.year || ""}`
     : resource.year ? `${resource.year}` : null;
-  const canDelete = isAdmin || resource.source === "user";
+  const canDelete = isAdmin || (resource.user_id && resource.user_id === userProfile?.id);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
       {/* Back */}
       <Link href="/dashboard/resources" className="inline-flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--foreground)] mb-6 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back to Resources
@@ -265,10 +265,10 @@ export default function ResourceDetailClient({ resourceId, userProgram, isAdmin 
               </span>
               <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
                 resource.source === "platform"
-                  ? "bg-[var(--accent)]/10 text-[var(--accent)]"
-                  : "bg-[var(--surface)] text-[var(--muted)]"
+                  ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                  : "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
               }`}>
-                {resource.source === "platform" ? "IB Nexus" : "My Library"}
+                {resource.source === "platform" ? "IB Nexus Official Library" : "Student Community Library"}
               </span>
             </div>
 
@@ -295,11 +295,12 @@ export default function ResourceDetailClient({ resourceId, userProgram, isAdmin 
         <div className="flex flex-wrap gap-3 mt-6 pb-6 border-b border-[var(--border)]">
           <a
             href={resource.file_url}
+            download={resource.file_name || resource.title || "resource"}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn btn-primary inline-flex items-center gap-2"
+            className="btn btn-primary inline-flex items-center gap-2 shadow-md shadow-[var(--accent)]/20"
           >
-            <ExternalLink className="w-4 h-4" /> Open Resource
+            <Download className="w-4 h-4" /> Download Resource
           </a>
           <Button variant="secondary" onClick={toggleSave}>
             {isSaved ? <BookmarkCheck className="w-4 h-4 mr-1.5 text-[var(--accent)]" /> : <Bookmark className="w-4 h-4 mr-1.5" />}
@@ -314,6 +315,31 @@ export default function ResourceDetailClient({ resourceId, userProgram, isAdmin 
             </Button>
           )}
         </div>
+
+        {/* ── In-Website Document Viewer (No External Redirection!) ─────────── */}
+        <section className="mt-8 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)] flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-[var(--accent)]" />
+              In-Website Document Viewer
+            </h2>
+            <span className="text-xs text-[var(--muted)]">Embedded reader — study directly on IB Nexus</span>
+          </div>
+
+          <div className="w-full h-[78vh] rounded-2xl border border-[var(--border)] bg-zinc-950 overflow-hidden shadow-2xl relative flex items-center justify-center">
+            {resource.file_type?.includes("image") || /\.(png|jpe?g|webp|gif)$/i.test(resource.file_url) ? (
+              <div className="w-full h-full flex items-center justify-center p-4 overflow-auto">
+                <img src={resource.file_url} alt={resource.title} className="max-w-full max-h-full object-contain rounded-lg shadow-lg" />
+              </div>
+            ) : (
+              <iframe
+                src={`${resource.file_url}#toolbar=1`}
+                className="w-full h-full border-none bg-white"
+                title={resource.title || "Document Viewer"}
+              />
+            )}
+          </div>
+        </section>
 
         {/* ── Paired Resource (Paper ↔ Markscheme) ──────────────────────────── */}
         {(paired || reverseLinked.length > 0) && (

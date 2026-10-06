@@ -10,6 +10,7 @@ import {
 import { inputClassName } from "@/components/auth/auth-styles";
 import { PRESET_AVATARS } from "@/lib/avatars";
 import { AvatarPicker } from "@/components/ui";
+import { isSLOnlySubject } from "@/lib/subject-levels";
 
 const initialState = { error: "" };
 
@@ -220,42 +221,26 @@ export default function OnboardingForm({
     );
   };
 
-  const toggleSubjectDP = (courseName, category, level, slOnly = false) => {
-    const targetLevel = slOnly ? "SL" : level;
+  const toggleSubjectDP = (courseName, category, level) => {
     setSelectedSubjects(prev => {
       const exists = prev.find(s => s.name === courseName);
-      if (exists && exists.level === targetLevel) {
+      if (exists && exists.level === level) {
         return prev.filter(s => s.name !== courseName);
       }
       if (exists) {
-        return prev.map(s => s.name === courseName ? { ...s, level: targetLevel, category } : s);
+        return prev.map(s => s.name === courseName ? { ...s, level, category } : s);
       }
-      return [...prev, { name: courseName, category, level: targetLevel }];
+      return [...prev, { name: courseName, category, level }];
     });
   };
 
-  const toggleSubjectMYP = (courseName, category, selectionMode = "single", maxSelections = 1) => {
+  const toggleSubjectMYP = (courseName, category) => {
     setSelectedSubjects(prev => {
       const exists = prev.some(s => s.name === courseName);
       if (exists) {
         return prev.filter(s => s.name !== courseName);
       }
-
-      const inGroup = prev.filter(s => s.category === category);
-      if (selectionMode === "single" || maxSelections === 1) {
-        // Swap selection in this group seamlessly
-        const withoutGroup = prev.filter(s => s.category !== category);
-        return [...withoutGroup, { name: courseName, category, level: null }];
-      }
-
-      if (inGroup.length >= maxSelections) {
-        // Replace oldest selection in multi group
-        const firstInGroup = inGroup[0];
-        const withoutFirst = prev.filter(s => s.name !== firstInGroup.name);
-        return [...withoutFirst, { name: courseName, category, level: null }];
-      }
-
-      return [...prev, { name: courseName, category, level: null }];
+      return [...prev, { name: courseName, category, level: "MYP" }];
     });
   };
 
@@ -274,34 +259,7 @@ export default function OnboardingForm({
   const hlCount = selectedSubjects.filter(s => s.level === "HL").length;
   const slCount = selectedSubjects.filter(s => s.level === "SL").length;
 
-  const validateDP = () => {
-    const errors = [];
-    if (!isDP) return errors;
-
-    if (selectedSubjects.length !== 6) {
-      errors.push(`You should select exactly 6 DP subjects (Currently: ${selectedSubjects.length}).`);
-    }
-    if (hlCount < 3 || hlCount > 4) {
-      errors.push(`Standard IB Diploma profiles require 3 or 4 Higher Level (HL) subjects (Currently: ${hlCount} HL).`);
-    }
-    return errors;
-  };
-
-  const validateMYP = () => {
-    const errors = [];
-    if (!isMYP) return errors;
-
-    const uniqueGroups = new Set(selectedSubjects.map(s => s.category));
-    if (uniqueGroups.size < 6) {
-      errors.push(`MYP flexibility rules require selecting courses from at least 6 subject groups (Currently: ${uniqueGroups.size} of 8 groups).`);
-    }
-    if (selectedSubjects.length < 6) {
-      errors.push(`Please select your enrolled MYP subjects (Currently: ${selectedSubjects.length}).`);
-    }
-    return errors;
-  };
-
-  const validationErrors = isDP ? validateDP() : validateMYP();
+  const validationErrors = [];
   const isValid = selectedSubjects.length > 0;
 
   return (
@@ -499,7 +457,7 @@ export default function OnboardingForm({
                   </h2>
                   <p className="mt-1 text-sm text-white/60">
                     {isDP 
-                      ? "Select your 6 Diploma subjects (3–4 HLs, remaining SLs) + DP Core." 
+                      ? "Select your Diploma subjects and levels with complete flexibility + DP Core." 
                       : "Select the subjects offered at your school across the MYP subject groups."}
                   </p>
                 </div>
@@ -507,8 +465,8 @@ export default function OnboardingForm({
                 {isDP && (
                   <div className="flex items-center justify-between p-4 rounded-2xl bg-black/40 border border-white/10 text-xs font-bold">
                     <div className="flex items-center gap-4">
-                      <span>Total: <strong className="text-indigo-300">{selectedSubjects.length} / 6</strong></span>
-                      <span>HL: <strong className={hlCount >= 3 && hlCount <= 4 ? "text-emerald-400" : "text-amber-400"}>{hlCount}</strong> (Req: 3–4)</span>
+                      <span>Total: <strong className="text-indigo-300">{selectedSubjects.length}</strong></span>
+                      <span>HL: <strong className="text-emerald-400">{hlCount}</strong></span>
                       <span>SL: <strong className="text-teal-300">{slCount}</strong></span>
                     </div>
                     <span className="text-[10px] uppercase font-mono text-white/40">DP Curriculum</span>
@@ -520,19 +478,14 @@ export default function OnboardingForm({
                     const groupSelectedCount = isMYP 
                       ? selectedSubjects.filter(s => s.category === group.category).length 
                       : 0;
-                    const maxSelections = group.maxSelections || 1;
 
                     return (
                       <div key={group.category} className="space-y-2">
                         <div className="flex items-center justify-between px-1">
                           <h3 className="text-xs font-extrabold uppercase tracking-wider text-indigo-300">{group.category}</h3>
-                          {isMYP && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              groupSelectedCount > 0 
-                                ? "bg-teal-500/20 text-teal-300 border-teal-500/30" 
-                                : "bg-white/5 text-white/40 border-white/10"
-                            }`}>
-                              {groupSelectedCount} of {maxSelections} selected
+                          {isMYP && groupSelectedCount > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border bg-teal-500/20 text-teal-300 border-teal-500/30">
+                              {groupSelectedCount} selected
                             </span>
                           )}
                         </div>
@@ -540,24 +493,28 @@ export default function OnboardingForm({
                         <div className="grid gap-2">
                           {group.courses.map(course => {
                             const courseName = typeof course === "string" ? course : course.name;
-                            const slOnly = typeof course === "object" ? course.slOnly : false;
 
                             if (isDP) {
                               const selected = selectedSubjects.find(s => s.name === courseName);
                               const isHL = selected?.level === "HL";
                               const isSL = selected?.level === "SL";
+                              const isSLOnly = isSLOnlySubject(courseName, "dp");
 
                               return (
                                 <div key={courseName} className="flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/[0.02] hover:bg-white/[0.04] transition-all">
                                   <div className="space-y-0.5">
                                     <span className="text-sm font-semibold text-white">{courseName}</span>
-                                    {slOnly && <span className="block text-[10px] font-bold text-amber-400 uppercase">Standard Level Only</span>}
+                                    {isSLOnly && (
+                                      <span className="block text-[10px] font-bold text-sky-400 uppercase tracking-wider">
+                                        Standard Level Only
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-1.5 bg-black/40 p-1 rounded-xl border border-white/10">
-                                    {!slOnly && (
+                                    {!isSLOnly && (
                                       <button 
                                         type="button" 
-                                        onClick={() => toggleSubjectDP(courseName, group.category, "HL", slOnly)}
+                                        onClick={() => toggleSubjectDP(courseName, group.category, "HL")}
                                         className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
                                           isHL ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30" : "text-white/50 hover:text-white"
                                         }`}
@@ -567,7 +524,7 @@ export default function OnboardingForm({
                                     )}
                                     <button 
                                       type="button" 
-                                      onClick={() => toggleSubjectDP(courseName, group.category, "SL", slOnly)}
+                                      onClick={() => toggleSubjectDP(courseName, group.category, "SL")}
                                       className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
                                         isSL ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-white/50 hover:text-white"
                                       }`}
@@ -579,13 +536,12 @@ export default function OnboardingForm({
                               );
                             } else {
                               const isSelected = selectedSubjects.some(s => s.name === courseName);
-                              const hasOtherInSingleGroup = group.selectionMode === "single" && groupSelectedCount > 0 && !isSelected;
 
                               return (
                                 <button
                                   key={courseName}
                                   type="button"
-                                  onClick={() => toggleSubjectMYP(courseName, group.category, group.selectionMode, group.maxSelections)}
+                                  onClick={() => toggleSubjectMYP(courseName, group.category)}
                                   className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
                                     isSelected 
                                       ? "border-teal-500 bg-teal-500/15 text-white" 
@@ -594,11 +550,6 @@ export default function OnboardingForm({
                                 >
                                   <span className="text-sm font-semibold">{courseName}</span>
                                   <div className="flex items-center gap-2">
-                                    {hasOtherInSingleGroup && (
-                                      <span className="text-[10px] font-medium text-teal-400/80 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/20">
-                                        Change selection
-                                      </span>
-                                    )}
                                     {isSelected && <Check size={16} className="text-teal-400" />}
                                   </div>
                                 </button>
@@ -649,17 +600,6 @@ export default function OnboardingForm({
                     </div>
                   )}
                 </div>
-
-                {validationErrors.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs space-y-1">
-                    <div className="font-bold flex items-center gap-1.5 text-rose-400">
-                      <AlertTriangle size={15} /> Curriculum Guidance Warnings:
-                    </div>
-                    <ul className="list-disc list-inside space-y-0.5 text-white/70">
-                      {validationErrors.map((err, idx) => <li key={idx}>{err}</li>)}
-                    </ul>
-                  </div>
-                )}
               </div>
             )}
 

@@ -48,6 +48,8 @@ export async function* streamTogetherChat({
   modelId,
   knowledgeContext = [],
   masterRules = [],
+  userPreferences = {},
+  isTemporary = false,
 }) {
   let actualModelId = modelId || "zai-org/GLM-5.3-Flash";
   let actualDisplayName = "GLM-5.3-Flash";
@@ -106,6 +108,8 @@ export async function* streamTogetherChat({
     subjectFilter,
     knowledgeContext,
     masterRules,
+    userPreferences,
+    isTemporary,
   });
 
   const formattedMessages = [

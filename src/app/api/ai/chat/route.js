@@ -8,10 +8,36 @@ import { createStreamSanitizer } from "@/lib/ai/response-sanitizer";
 import { generateSmartTitle } from "@/lib/ai/title-generator";
 import { renameConversation } from "@/lib/ai/db-conversations";
 
-// In-memory rate limiting map: userId -> array of timestamps
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const MAX_REQUESTS_PER_WINDOW = 20;
+
+// In-memory locks to prevent race condition between manual rename and auto-title
+const manualRenameLocks = new Set();
+
+function extractRenameIntent(prompt) {
+  if (!prompt || typeof prompt !== 'string' || prompt.length > 100) return null;
+  const p = prompt.trim();
+  if (p.toLowerCase().startsWith('explain ') || p.toLowerCase().startsWith('why ') || p.toLowerCase().startsWith('what ')) {
+    return null;
+  }
+  
+  const prefix = /^(?:please\s+|can you\s+|could you\s+)?/i;
+  const verb = /(?:rename|change|save|set|make|call|name)\s+/i;
+  const object = /(?:this|the|my)\s+(?:chat|conversation|chat name|name|title)\s+/i;
+  const extra = /(?:(?:name|title|to be|to|as|called)\s+)?/i;
+  const nameCapture = /["'`]?(.+?)["'`]?[\.\!\?]*$/i;
+
+  const fullRegex = new RegExp(prefix.source + verb.source + object.source + extra.source + nameCapture.source, 'i');
+  
+  const match = p.match(fullRegex);
+  if (match && match[1]) {
+    let result = match[1].trim();
+    result = result.replace(/^(?:to|as|called)\s+/i, '');
+    return result.trim();
+  }
+  return null;
+}
 
 function checkRateLimit(userId) {
   const now = Date.now();
@@ -43,7 +69,8 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { messages, subjectFilter, modelId, conversationId } = body || {};
+    const { messages, subjectFilter, modelId, conversationId, isTemporary: bodyIsTemp } = body || {};
+    const isTemporary = bodyIsTemp === true || (typeof conversationId === "string" && conversationId.startsWith("temp_"));
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -59,6 +86,49 @@ export async function POST(request) {
         { status: 400 }
       );
     }
+
+    // ----------------------------------------------------------------------
+    // EXPLICIT RENAME COMMAND INTERCEPTION (Bypassed for temporary chats)
+    // ----------------------------------------------------------------------
+    const renameIntentTitle = extractRenameIntent(latestMessage.content);
+    if (!isTemporary && renameIntentTitle && conversationId) {
+      manualRenameLocks.add(conversationId);
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          try {
+            await renameConversation(conversationId, renameIntentTitle);
+            
+            // Release the lock after 10 seconds (beats any in-flight auto-title)
+            setTimeout(() => manualRenameLocks.delete(conversationId), 10000);
+
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ type: "title", title: renameIntentTitle })}\n\n`)
+            );
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ text: `Chat name updated to **${renameIntentTitle}**.` })}\n\n`)
+            );
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          } catch (e) {
+            console.error("[api/ai/chat] Explicit rename failed:", e);
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ error: "Failed to rename chat. Please try again." })}\n\n`)
+            );
+            controller.close();
+          }
+        }
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
+    }
+    // ----------------------------------------------------------------------
 
     // Fetch user profile for context, role, and Admin authorization
     const { data: profile } = await supabase
@@ -133,12 +203,17 @@ export async function POST(request) {
       console.warn("[api/ai/chat] Knowledge Lens or Core warning:", ragErr?.message);
     }
 
-    // Parallel Title Generation right at request start
+    // Parallel Title Generation right at request start (Bypassed for temporary chats)
     const userMessagesCount = Array.isArray(messages) ? messages.filter((m) => m.role === "user").length : 0;
-    const shouldGenerateTitle = conversationId && (userMessagesCount === 1 || (userMessagesCount === 2 && messages[0]?.content?.length < 10));
+    const shouldGenerateTitle = !isTemporary && conversationId && (userMessagesCount === 1 || (userMessagesCount === 2 && messages[0]?.content?.length < 10));
     
     const titlePromise = shouldGenerateTitle
-      ? generateSmartTitle({ conversationId, messages })
+      ? generateSmartTitle({ 
+          conversationId, 
+          messages, 
+          modelId: resolvedModel.id, 
+          userProfile: finalProfile 
+        })
       : null;
 
     // Stream generator via unified AI Router
@@ -149,6 +224,7 @@ export async function POST(request) {
       modelId: resolvedModel.id,
       knowledgeContext,
       masterRules,
+      isTemporary,
     });
 
     const encoder = new TextEncoder();
@@ -162,7 +238,7 @@ export async function POST(request) {
           if (titlePromise) {
             titleStreamPromise = titlePromise
               .then(async (smartTitle) => {
-                if (smartTitle) {
+                if (smartTitle && !manualRenameLocks.has(conversationId)) {
                   try {
                     await renameConversation(conversationId, smartTitle);
                     controller.enqueue(

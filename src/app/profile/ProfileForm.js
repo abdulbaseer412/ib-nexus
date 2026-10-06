@@ -2,7 +2,8 @@
 
 import { inputClassName } from "@/components/auth/auth-styles";
 import ProgramSelect from "@/components/ui/ProgramSelect";
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useRef, useState, useEffect } from "react";
+import { toast } from "@/components/ui/ToastProvider";
 
 const initialState = { error: "", success: "" };
 
@@ -18,6 +19,14 @@ export default function ProfileForm({
     async (_prevState, formData) => updateProfile(formData),
     initialState
   );
+
+  useEffect(() => {
+    if (state.success) {
+      toast.success(state.success);
+    } else if (state.error) {
+      toast.error(state.error);
+    }
+  }, [state.success, state.error]);
 
   const fileInputRef = useRef(null);
   const [avatarPreview, setAvatarPreview] = useState(currentAvatarUrl || googleAvatarUrl || null);
@@ -73,6 +82,7 @@ export default function ProfileForm({
             <img
               src={avatarPreview}
               alt=""
+              referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
             />
           ) : (

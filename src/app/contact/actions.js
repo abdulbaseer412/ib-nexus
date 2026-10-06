@@ -43,24 +43,44 @@ export async function submitContactForm(prevState, formData) {
     const message = formData.get("message");
 
     if (!name || !email || !category || !message) {
-      return { error: "Please fill out all fields." };
+      return { error: "Please fill out all fields.", fields: { name, email, category, message } };
     }
 
     const supabase = await createServerClient();
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const admin = createAdminClient();
 
-    const { error } = await supabase
+    const payload = {
+      name,
+      email,
+      category,
+      message,
+      status: "pending"
+    };
+
+    let { error } = await admin
       .from("ib_contact_messages")
-      .insert({
-        name,
-        email,
-        category,
-        message,
-        status: "pending"
-      });
+      .insert(payload);
 
     if (error) {
       console.error("Error inserting contact message:", error);
-      return { error: "Failed to send message. Please try again later." };
+      return { error: "Failed to send message. Please try again later.", fields: { name, email, category, message } };
+    }
+
+    try {
+      await admin.from("admin_requests").insert({
+        user_email: email,
+        user_name: name,
+        request_type: "contact_inbox",
+        title: `Contact Inquiry: ${name} (${category})`,
+        details: message,
+        metadata: { category, name, email },
+        target_id: email,
+        target_table: "ib_contact_messages",
+        status: "pending",
+      });
+    } catch (reqErr) {
+      console.warn("Failed to create admin request for contact:", reqErr?.message);
     }
 
     if (process.env.RESEND_API_KEY) {
@@ -86,6 +106,10 @@ export async function submitContactForm(prevState, formData) {
     return { success: true };
   } catch (error) {
     console.error("Contact form error:", error);
-    return { error: "An unexpected error occurred." };
+    const formDataObj = {};
+    if (formData && formData.forEach) {
+        formData.forEach((value, key) => formDataObj[key] = value);
+    }
+    return { error: "An unexpected error occurred.", fields: formDataObj };
   }
 }

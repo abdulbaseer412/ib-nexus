@@ -9,6 +9,8 @@ const TYPES_WITH_TOPICS = ["revision_guide", "study_guide", "worksheet", "teache
 
 // Predefined IB taxonomy
 const TAXONOMY = {
+  "Mathematics AA": { levels: ["HL", "SL"], topics: ["Algebra", "Functions", "Geometry", "Trigonometry", "Calculus", "Statistics", "Probability", "Vectors"], icon: Sigma, color: "rgba(79,140,255,.1)", textColor: "#4f8cff" },
+  "Mathematics AI": { levels: ["HL", "SL"], topics: ["Number & Algebra", "Functions", "Geometry & Trigonometry", "Statistics & Probability", "Calculus"], icon: Sigma, color: "rgba(79,140,255,.1)", textColor: "#4f8cff" },
   "Mathematics AA (Analysis and Approaches)": { levels: ["HL", "SL"], topics: ["Algebra", "Functions", "Geometry", "Trigonometry", "Calculus", "Statistics", "Probability", "Vectors"], icon: Sigma, color: "rgba(79,140,255,.1)", textColor: "#4f8cff" },
   "Mathematics AI (Applications and Interpretation)": { levels: ["HL", "SL"], topics: ["Number & Algebra", "Functions", "Geometry & Trigonometry", "Statistics & Probability", "Calculus"], icon: Sigma, color: "rgba(79,140,255,.1)", textColor: "#4f8cff" },
   "Physics": { levels: ["HL", "SL"], topics: ["Space, time and motion", "The particulate nature of matter", "Wave behavior", "Fields", "Nuclear and quantum physics"], icon: Flame, color: "rgba(14,165,233,.1)", textColor: "#0ea5e9" },
@@ -16,16 +18,38 @@ const TAXONOMY = {
   "Biology": { levels: ["HL", "SL"], topics: ["Cell biology", "Molecular biology", "Genetics", "Ecology", "Evolution and biodiversity", "Human physiology"], icon: Layers, color: "rgba(16,185,129,.1)", textColor: "#10b981" },
   "Economics": { levels: ["HL", "SL"], topics: ["Microeconomics", "Macroeconomics", "Global economics"], icon: FileText, color: "rgba(139,92,246,.1)", textColor: "#8b5cf6" },
   "Business Management": { levels: ["HL", "SL"], topics: ["Business organization", "Human resource management", "Finance", "Marketing", "Operations management"], icon: FileText, color: "rgba(59,130,246,.1)", textColor: "#3b82f6" },
+  "English A Lit": { levels: ["HL", "SL"], topics: ["Readers, writers and texts", "Time and space", "Intertextuality"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
+  "English A Lang & Lit": { levels: ["HL", "SL"], topics: ["Readers, writers and texts", "Time and space", "Intertextuality"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
   "English A": { levels: ["HL", "SL"], topics: ["Readers, writers and texts", "Time and space", "Intertextuality"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
   "English B": { levels: ["HL", "SL"], topics: ["Identities", "Experiences", "Human ingenuity", "Social organization", "Sharing the planet"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
+  "Spanish B": { levels: ["HL", "SL"], topics: ["Identities", "Experiences", "Human ingenuity", "Social organization", "Sharing the planet"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
+  "French B": { levels: ["HL", "SL"], topics: ["Identities", "Experiences", "Human ingenuity", "Social organization", "Sharing the planet"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
+  "German B": { levels: ["HL", "SL"], topics: ["Identities", "Experiences", "Human ingenuity", "Social organization", "Sharing the planet"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
+  "Mandarin B": { levels: ["HL", "SL"], topics: ["Identities", "Experiences", "Human ingenuity", "Social organization", "Sharing the planet"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
+  "German ab initio": { levels: ["SL"], topics: ["Identities", "Experiences", "Human ingenuity", "Social organization", "Sharing the planet"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
+  "Urdu": { levels: ["HL", "SL"], topics: ["Identities", "Experiences", "Human ingenuity", "Social organization", "Sharing the planet"], icon: FileText, color: "rgba(236,72,153,.1)", textColor: "#ec4899" },
   "History": { levels: ["HL", "SL"], topics: ["Prescribed subjects", "World history topics", "HL Depth studies"], icon: FileText, color: "rgba(168,85,247,.1)", textColor: "#a855f7" },
   "Psychology": { levels: ["HL", "SL"], topics: ["Biological approach", "Cognitive approach", "Sociocultural approach", "Abnormal psychology"], icon: FileText, color: "rgba(234,179,8,.1)", textColor: "#eab308" },
   "Geography": { levels: ["HL", "SL"], topics: ["Geographic themes", "Global change", "Global interactions"], icon: FileText, color: "rgba(34,197,94,.1)", textColor: "#22c55e" },
+  "Global Politics": { levels: ["HL", "SL"], topics: ["Power, sovereignty and international relations", "Human rights", "Development", "Peace and conflict"], icon: FileText, color: "rgba(139,92,246,.1)", textColor: "#8b5cf6" },
   "Computer Science": { levels: ["HL", "SL"], topics: ["System fundamentals", "Computer organization", "Networks", "Computational thinking"], icon: FileText, color: "rgba(59,130,246,.1)", textColor: "#3b82f6" },
-  "Visual Arts": { levels: ["HL", "SL"], topics: ["Visual arts in context", "Visual arts methods", "Communicating visual arts"], icon: FileText, color: "rgba(16,185,129,.1)", textColor: "#10b981" },
+  "ESS": { levels: ["SL", "HL"], topics: ["Foundations of environmental systems", "Ecosystems and ecology", "Biodiversity and conservation", "Water and aquatic food systems", "Soil systems", "Atmospheric systems", "Climate change"], icon: Layers, color: "rgba(16,185,129,.1)", textColor: "#10b981" },
   "Theory of Knowledge": { levels: ["Core"], topics: ["Knowledge and the knower", "Optional themes", "Areas of knowledge", "The TOK essay", "The TOK exhibition"], icon: LightbulbIcon, color: "rgba(244,63,94,.1)", textColor: "#f43f5e" },
   "Extended Essay": { levels: ["Core"], topics: ["Research process", "Writing process", "Formatting", "Subject-specific guidance"], icon: BookOpenIcon, color: "rgba(168,85,247,.1)", textColor: "#a855f7" }
 };
+
+function getTaxonomy(name) {
+  if (!name) return { levels: ["HL", "SL"], topics: ["General Topics", "Exam Practice"], icon: FileText, color: "rgba(79,140,255,.1)", textColor: "#4f8cff" };
+  if (TAXONOMY[name]) return TAXONOMY[name];
+  const nameLower = name.toLowerCase().trim();
+  for (const [k, v] of Object.entries(TAXONOMY)) {
+    const kLower = k.toLowerCase().trim();
+    if (kLower === nameLower || nameLower.startsWith(kLower) || kLower.startsWith(nameLower)) {
+      return v;
+    }
+  }
+  return { levels: ["HL", "SL"], topics: ["General Revision", "Unit 1", "Unit 2", "Exam Prep"], icon: FileText, color: "rgba(79,140,255,.1)", textColor: "#4f8cff" };
+}
 
 function BeakerIcon(props) {
   return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 3h15"/><path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3"/><path d="M6 14h12"/></svg>;
@@ -37,7 +61,7 @@ function BookOpenIcon(props) {
   return <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>;
 }
 
-export default function LayeredBrowser({ resourceType, initialSubject = null, onBack, onResourceSelect, userSubjects = [], userProgram, isAdmin }) {
+export default function LayeredBrowser({ resourceType, initialSubject = null, onBack, onResourceSelect, userSubjects = [], userProgram, isAdmin, userProfile }) {
   // state: [subject, level, topic]
   const [subject, setSubject] = useState(initialSubject);
   const [level, setLevel] = useState(null);
@@ -68,7 +92,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
        } else if (level === null) {
           const matchedUserSubject = userSubjects.find(s => s.startsWith(subject));
           const userLevel = matchedUserSubject ? matchedUserSubject.replace(subject, "").trim() : null;
-          if (userLevel && TAXONOMY[subject].levels.includes(userLevel)) {
+          if (userLevel && getTaxonomy(subject).levels.includes(userLevel)) {
              setLevel(userLevel);
           }
        }
@@ -84,7 +108,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
           resource_type: resourceType,
           subject: subject,
         });
-        if (level && !TAXONOMY[subject].levels.includes("Core") && (resourceType !== "formula_sheet" || subject === "Economics")) {
+        if (level && !getTaxonomy(subject).levels.includes("Core") && (resourceType !== "formula_sheet" || subject === "Economics")) {
           params.append("level", level);
         }
         if (topic) {
@@ -135,7 +159,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
         resource_type: resourceType,
         programme: userProgram || "dp",
         subject: subject || null,
-        level: level && !TAXONOMY[subject].levels.includes("Core") ? level : null,
+        level: level && !getTaxonomy(subject).levels.includes("Core") ? level : null,
         topic: topic ? topic.trim() : null,
         source: isAdmin ? "platform" : "user",
       };
@@ -229,7 +253,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
       // Auto-detect user's level if possible
       const matchedUserSubject = userSubjects.find(s => s.startsWith(subj));
       const userLevel = matchedUserSubject ? matchedUserSubject.replace(subj, "").trim() : null;
-      setLevel(userLevel && TAXONOMY[subj].levels.includes(userLevel) ? userLevel : null);
+      setLevel(userLevel && getTaxonomy(subj).levels.includes(userLevel) ? userLevel : null);
     }
   };
 
@@ -257,7 +281,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
              <div className="w-12 h-12 rounded-xl bg-[var(--accent)]/10 flex items-center justify-center text-[var(--accent)] shadow-sm">
                <FileIcon className="w-6 h-6" />
              </div>
-             {isAdmin && (
+             {(isAdmin || (file.user_id && userProfile?.id && file.user_id === userProfile.id)) && (
                <>
                  <button onClick={(e) => { e.stopPropagation(); handleEdit(file); }} className="absolute top-4 right-14 w-8 h-8 rounded-full bg-[var(--background)]/80 backdrop-blur border border-[var(--border)] flex items-center justify-center text-[var(--muted)] hover:text-blue-500 hover:border-blue-500 transition-colors z-20 opacity-0 group-hover:opacity-100" title="Rename Resource">
                    <Pencil className="w-3.5 h-3.5" />
@@ -383,7 +407,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
   );
 
   const renderTopicList = () => {
-    const data = TAXONOMY[subject];
+    const data = getTaxonomy(subject);
     return (
       <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
         <button onClick={handleBack} className="flex items-center gap-2 text-sm font-medium text-[var(--muted)] hover:text-[var(--foreground)] transition-colors mb-2">
@@ -506,7 +530,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
   };
 
   const renderFormulaView = () => {
-    const data = TAXONOMY[subject];
+    const data = getTaxonomy(subject);
     return (
       <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -518,9 +542,9 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
             <span className="font-medium text-[var(--foreground)]">{topic}</span>
           </div>
 
-          {TAXONOMY[subject].levels && TAXONOMY[subject].levels.length > 0 && !TAXONOMY[subject].levels.includes("Core") && (
+          {data.levels && data.levels.length > 0 && !data.levels.includes("Core") && (
             <div className="flex bg-[var(--surface)]/80 border border-[var(--border)] rounded-lg p-1 self-start sm:self-auto">
-              {TAXONOMY[subject].levels.map(lvl => (
+              {data.levels.map(lvl => (
                 <button
                   key={lvl}
                   onClick={() => setLevel(lvl)}
@@ -541,7 +565,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
             <div className="sticky top-24 bg-[var(--surface)]/30 backdrop-blur border border-[var(--border)] p-4 rounded-2xl">
               <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted)] mb-3">{subject}</h4>
               <ul className="space-y-1">
-                {TAXONOMY[subject].topics.map(t => (
+                {data.topics.map(t => (
                   <li key={t}>
                     <button 
                       onClick={() => setTopic(t)} 
@@ -580,9 +604,9 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
                   </h3>
                   <p className="text-sm text-[var(--muted)] max-w-sm mx-auto mb-6">
                     {isAdmin ? (
-                      <>Upload official {resourceType.replace("_", " ")}s for <strong className="text-[var(--foreground)]">{subject} {level && !TAXONOMY[subject].levels.includes("Core") ? `(${level})` : ""} - {topic}</strong> to make them available to all students.</>
+                      <>Upload official {resourceType.replace("_", " ")}s for <strong className="text-[var(--foreground)]">{subject} {level && !data.levels.includes("Core") ? `(${level})` : ""} - {topic}</strong> to make them available to all students.</>
                     ) : (
-                      <>No official {resourceType.replace("_", " ")}s have been published by your Admin for <strong className="text-[var(--foreground)]">{subject} {level && !TAXONOMY[subject].levels.includes("Core") ? `(${level})` : ""} - {topic}</strong> yet. Check back later.</>
+                      <>No official {resourceType.replace("_", " ")}s have been published by your Admin for <strong className="text-[var(--foreground)]">{subject} {level && !data.levels.includes("Core") ? `(${level})` : ""} - {topic}</strong> yet. Check back later.</>
                     )}
                   </p>
                   {isAdmin && (
@@ -624,7 +648,7 @@ export default function LayeredBrowser({ resourceType, initialSubject = null, on
                 <div>
                   <h3 className="text-lg font-bold text-[var(--foreground)]">Upload {resourceType.replace("_", " ")}</h3>
                   <p className="text-sm text-[var(--muted)] mt-1">
-                    {subject} {level && !TAXONOMY[subject].levels.includes("Core") ? `(${level})` : ""} {topic ? `- ${topic}` : ""}
+                    {subject} {level && !getTaxonomy(subject).levels.includes("Core") ? `(${level})` : ""} {topic ? `- ${topic}` : ""}
                   </p>
                 </div>
                 <button 

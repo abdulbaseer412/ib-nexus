@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Send, MessageCircle, Plus, Search, Pin, PinOff,
   Pencil, Trash2, Archive, MoreHorizontal, ChevronDown, X,
-  Copy, Check, ThumbsUp, ThumbsDown, RefreshCw, Square,
-  Bot, User, Zap, Menu, ChevronRight, AlertCircle, ArrowDown,
-  Paperclip, Image as ImageIcon, FileText, Trash, Volume2, VolumeX
+  Copy, Check, CheckCircle2, ThumbsUp, ThumbsDown, RefreshCw, Square,
+  Bot, User, Zap, Menu, ChevronRight, AlertCircle, AlertTriangle, ArrowDown,
+  Paperclip, Image as ImageIcon, FileText, Trash, Volume2, VolumeX, Ghost,
+  Share2, RotateCcw, Link2, ShieldCheck
 } from "lucide-react";
 import { sanitizeAiResponse } from "@/lib/ai/response-sanitizer";
 import { PRESET_AVATARS } from "@/lib/avatars";
@@ -33,12 +35,10 @@ const SUGGESTED_PROMPTS = [
 // ═══════════════════════════════════════════════════════════════
 
 const NEGATIVE_FEEDBACK_CATEGORIES = [
-  "Incorrect",
-  "Irrelevant",
-  "Too difficult",
-  "Too simple",
-  "Wrong IB information",
-  "Out of context",
+  "Incorrect information",
+  "Not relevant",
+  "Too long / too detailed",
+  "Poor explanation or format",
   "Other",
 ];
 
@@ -201,6 +201,7 @@ export default function AiTutorWorkspace({ userProfile }) {
   // State: model picker
   const [selectedModelId, setSelectedModelId] = useState("");
   const [showModelPicker, setShowModelPicker] = useState(false);
+  const [showErrorModelPicker, setShowErrorModelPicker] = useState(false);
 
   // State: sidebar
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -215,22 +216,40 @@ export default function AiTutorWorkspace({ userProfile }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [showClearAllModal, setShowClearAllModal] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [sharedIndex, setSharedIndex] = useState(null);
   const [feedbackModal, setFeedbackModal] = useState(null);
   const [feedbackCategory, setFeedbackCategory] = useState(null);
   const [feedbackComment, setFeedbackComment] = useState("");
   const [submittedFeedback, setSubmittedFeedback] = useState(new Set());
+  const [feedbackStatus, setFeedbackStatus] = useState("idle"); // idle, submitting, success, error
+
+  // State: Share Modal (ChatGPT Style)
+  const [shareModalData, setShareModalData] = useState(null);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [cardCopied, setCardCopied] = useState(false);
+  const [showLearnMoreModal, setShowLearnMoreModal] = useState(false);
 
   // State: scroll
   const [userScrolledUp, setUserScrolledUp] = useState(false);
+  
+  // State: message editing
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editContent, setEditContent] = useState("");
 
   // State: TTS
   const [speakingMsgId, setSpeakingMsgId] = useState(null);
   const [ttsEnabled, setTtsEnabled] = useState(false);
 
+  // State: Temporary Chat
+  const [isTemporaryChat, setIsTemporaryChat] = useState(false);
+  const [showTurnOffTempModal, setShowTurnOffTempModal] = useState(false);
+
   // Refs
   const chatContainerRef = useRef(null);
   const textareaRef = useRef(null);
   const modelPickerRef = useRef(null);
+  const errorModelPickerRef = useRef(null);
+  const contextMenuRef = useRef(null);
 
   const programme = (() => {
     const p = userProfile?.ib_program || userProfile?.programme || "";
@@ -271,7 +290,8 @@ export default function AiTutorWorkspace({ userProfile }) {
 
         if (modelData.models) {
           setAvailableModels(modelData.models);
-          const defaultModel = modelData.models.find(m => m.isDefault) || modelData.models[0];
+          const activeModels = modelData.models.filter(m => m.isAvailable !== false && !m.isPaused && !m.is_paused);
+          const defaultModel = activeModels.find(m => m.isDefault) || activeModels[0] || modelData.models[0];
           if (defaultModel) setSelectedModelId(defaultModel.id);
         }
 
@@ -293,6 +313,17 @@ export default function AiTutorWorkspace({ userProfile }) {
     }
 
     init();
+
+    // Safeguard: Ensure selected model is not paused/disabled
+    if (availableModels.length > 0 && selectedModelId) {
+      const current = availableModels.find((m) => m.id === selectedModelId);
+      if (current && (current.isPaused || current.is_paused || current.isAvailable === false)) {
+        const activeFallback = availableModels.find((m) => m.isAvailable !== false && !m.isPaused && !m.is_paused);
+        if (activeFallback) {
+          setSelectedModelId(activeFallback.id);
+        }
+      }
+    }
     
     // Load TTS preference
     if (typeof window !== "undefined") {
@@ -313,6 +344,7 @@ export default function AiTutorWorkspace({ userProfile }) {
 
   // ─── Load messages with instant memory caching ────────────
   const selectConversation = useCallback((convId) => {
+    setIsTemporaryChat(false);
     setActiveConversationId(convId);
     setSidebarMobileOpen(false);
     setErrorMsg(null);
@@ -403,19 +435,42 @@ export default function AiTutorWorkspace({ userProfile }) {
     }
   }, []);
 
-  // ─── Close dropdowns on outside click ─────────────────────
+  // ─── Close dropdowns on outside click & Escape key ─────────────────────
   useEffect(() => {
     function handleClick(e) {
       if (modelPickerRef.current && !modelPickerRef.current.contains(e.target)) {
         setShowModelPicker(false);
       }
-      if (contextMenu && !e.target.closest(".context-menu-container")) {
+      if (errorModelPickerRef.current && !errorModelPickerRef.current.contains(e.target)) {
+        setShowErrorModelPicker(false);
+      }
+      if (
+        contextMenu &&
+        contextMenuRef.current &&
+        !contextMenuRef.current.contains(e.target) &&
+        !e.target.closest(".conv-more-btn")
+      ) {
         setContextMenu(null);
       }
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [contextMenu]);
+
+    function handleKeyDown(e) {
+      if (e.key === "Escape") {
+        if (showLearnMoreModal) setShowLearnMoreModal(false);
+        if (shareModalData) setShareModalData(null);
+        if (showModelPicker) setShowModelPicker(false);
+        if (showErrorModelPicker) setShowErrorModelPicker(false);
+        if (contextMenu) setContextMenu(null);
+      }
+    }
+
+    document.addEventListener("click", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("click", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [contextMenu, shareModalData, showModelPicker, showErrorModelPicker, showLearnMoreModal]);
 
   // ─── Search conversations (ONLY titles per Req 19) ─────────
   useEffect(() => {
@@ -439,8 +494,55 @@ export default function AiTutorWorkspace({ userProfile }) {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
+  // ─── Temporary Chat Toggle & Confirmation ──────────────────
+  const confirmTurnOffTemporaryChat = useCallback(() => {
+    setIsTemporaryChat(false);
+    if (conversations.length > 0) {
+      const firstConv = conversations[0];
+      setActiveConversationId(firstConv.id);
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", `/dashboard/ai?c=${firstConv.id}`);
+      }
+    } else {
+      handleNewChat(true);
+    }
+  }, [conversations]);
+
+  const handleToggleTemporaryChat = useCallback(() => {
+    if (!isTemporaryChat) {
+      setIsTemporaryChat(true);
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      setActiveConversationId(tempId);
+      setMessages([]);
+      messagesCache.current[tempId] = [];
+      setStreamingContent("");
+      setStreamModelInfo(null);
+      setErrorMsg(null);
+      setComposerAttachments([]);
+      setSidebarMobileOpen(false);
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", "/dashboard/ai?temporary=true");
+      }
+    } else {
+      setShowTurnOffTempModal(true);
+    }
+  }, [isTemporaryChat]);
+
   // ─── New Chat ──────────────────────────────────────────────
-  const handleNewChat = useCallback(async () => {
+  const handleNewChat = useCallback(async (forcedNormal = false) => {
+    if (isTemporaryChat && !forcedNormal) {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      setActiveConversationId(tempId);
+      setMessages([]);
+      messagesCache.current[tempId] = [];
+      setStreamingContent("");
+      setStreamModelInfo(null);
+      setErrorMsg(null);
+      setComposerAttachments([]);
+      setSidebarMobileOpen(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/ai/conversations", {
         method: "POST",
@@ -452,6 +554,7 @@ export default function AiTutorWorkspace({ userProfile }) {
       });
       const data = await res.json();
       if (data.conversation) {
+        setIsTemporaryChat(false);
         setConversations((prev) => [data.conversation, ...prev]);
         setActiveConversationId(data.conversation.id);
         if (typeof window !== "undefined") {
@@ -467,7 +570,7 @@ export default function AiTutorWorkspace({ userProfile }) {
     } catch (err) {
       console.error("Failed to create conversation:", err);
     }
-  }, [selectedModelId]);
+  }, [selectedModelId, isTemporaryChat]);
 
   // ─── Multi-File Upload Handler ─────────────────────────────
   const handleFileChange = (e) => {
@@ -790,6 +893,163 @@ export default function AiTutorWorkspace({ userProfile }) {
     }
   }, [input, composerAttachments, isGenerating, activeConversationId, messages, selectedModelId, availableModels]);
 
+  // ─── Edit Message ──────────────────────────────────────────
+  const handleEditSubmit = useCallback(async (msgId, newContent) => {
+    const trimmed = newContent.trim();
+    if (!trimmed || isGenerating || isSendingRef.current) return;
+    isSendingRef.current = true;
+
+    // 1. Find message index
+    const targetIdx = messages.findIndex(m => m.id === msgId);
+    if (targetIdx === -1) {
+      isSendingRef.current = false;
+      return;
+    }
+
+    const targetMsg = messages[targetIdx];
+
+    // 2. Truncate DB
+    try {
+      await fetch("/api/ai/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "editMessage",
+          conversationId: activeConversationId,
+          messageId: msgId,
+          newContent: trimmed,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to edit message:", err);
+    }
+
+    // 3. Update local state
+    const truncatedMessages = messages.slice(0, targetIdx + 1);
+    truncatedMessages[targetIdx] = { ...targetMsg, content: trimmed };
+    setMessages(truncatedMessages);
+    messagesCache.current[activeConversationId] = truncatedMessages;
+    
+    setEditingMessageId(null);
+    setEditContent("");
+    setErrorMsg(null);
+    setIsGenerating(true);
+    setStreamingContent("");
+    setStreamModelInfo(null);
+
+    // 4. Build API history
+    const apiHistory = truncatedMessages.map((m) => ({
+      role: m.role === "assistant" ? "model" : m.role,
+      content: m.content,
+      attachments: m.attachments || (m.attachment ? [m.attachment] : []),
+    }));
+
+    // 5. Stream new response
+    const controller = new AbortController();
+    setAbortController(controller);
+    let fullText = "";
+    let modelInfo = null;
+
+    try {
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: apiHistory,
+          modelId: selectedModelId,
+          conversationId: activeConversationId,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        setErrorMsg(errData.error || "AI service error.");
+        setIsGenerating(false);
+        isSendingRef.current = false;
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter(Boolean);
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const dataStr = line.replace("data: ", "").trim();
+          if (dataStr === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed.modelDisplayName) modelInfo = parsed;
+            if (parsed.error) { setErrorMsg(parsed.error); continue; }
+            if (parsed.text) {
+              fullText += parsed.text;
+              setStreamingContent(sanitizeAiResponse(fullText));
+            }
+          } catch {}
+        }
+      }
+
+      const cleanedContent = sanitizeAiResponse(fullText);
+      setIsGenerating(false);
+      isSendingRef.current = false;
+      setAbortController(null);
+
+      if (cleanedContent) {
+        let finalModelDisplayName = modelInfo?.modelDisplayName || null;
+        if (modelInfo && modelInfo.modelId !== modelInfo.requestedModelId) {
+          const requestedModel = availableModels.find(m => m.id === modelInfo.requestedModelId);
+          const reqName = requestedModel ? requestedModel.displayName : modelInfo.requestedModelId;
+          finalModelDisplayName = `${modelInfo.modelDisplayName} (Fallback from ${reqName})`;
+        }
+
+        const aiMsg = {
+          role: "assistant",
+          content: cleanedContent,
+          model_id: modelInfo?.modelId || selectedModelId,
+          model_display_name: finalModelDisplayName,
+          created_at: new Date().toISOString(),
+          isFallback: modelInfo && modelInfo.modelId !== modelInfo.requestedModelId,
+          sources_used: modelInfo?.sourcesUsed || [],
+        };
+
+        setMessages((prev) => {
+          const updated = [...prev, aiMsg];
+          messagesCache.current[activeConversationId] = updated;
+          return updated;
+        });
+        setStreamingContent("");
+
+        fetch("/api/ai/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "addMessage",
+            conversationId: activeConversationId,
+            role: "assistant",
+            content: cleanedContent,
+            modelId: modelInfo?.modelId || selectedModelId,
+            modelDisplayName: finalModelDisplayName,
+            sourcesUsed: modelInfo?.sourcesUsed || [],
+          }),
+        }).catch(() => {});
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") setErrorMsg("Failed to get AI response.");
+    } finally {
+      setIsGenerating(false);
+      isSendingRef.current = false;
+      setAbortController(null);
+    }
+  }, [isGenerating, activeConversationId, messages, selectedModelId, availableModels]);
+
   // ─── Stop Generation ──────────────────────────────────────
   const handleStop = useCallback(async () => {
     if (abortController) {
@@ -841,22 +1101,170 @@ export default function AiTutorWorkspace({ userProfile }) {
     }
   }, [abortController, streamingContent, streamModelInfo, selectedModelId, availableModels, activeConversationId]);
 
-  // ─── Retry last message ───────────────────────────────────
-  const handleRetry = useCallback(() => {
-    if (messages.length < 1) return;
+  // ─── Regenerate / Retry AI response ───────────────────────
+  const handleRetry = useCallback(async (overrideModelId = null) => {
+    if (isGenerating || isSendingRef.current || messages.length < 1) return;
+
+    // 1. Find the target user message
     const lastUserIndex = [...messages].reverse().findIndex((m) => m.role === "user");
     if (lastUserIndex === -1) return;
 
-    const idx = messages.length - 1 - lastUserIndex;
-    const lastUserMsg = messages[idx];
+    const targetUserIdx = messages.length - 1 - lastUserIndex;
+    const targetUserMsg = messages[targetUserIdx];
 
-    setMessages((prev) => prev.slice(0, idx));
-    setInput(lastUserMsg.content || "");
-    if (lastUserMsg.attachments) {
-      setComposerAttachments(lastUserMsg.attachments);
+    // 2. Truncate local messages to keep ONLY up to the user message on screen, deleting ALL previous AI response(s)
+    const truncatedMessages = messages.slice(0, targetUserIdx + 1);
+    setMessages(truncatedMessages);
+    if (activeConversationId) {
+      messagesCache.current[activeConversationId] = truncatedMessages;
     }
+
+    // 3. Clear any error, set generating state immediately
     setErrorMsg(null);
-  }, [messages]);
+    setIsGenerating(true);
+    isSendingRef.current = true;
+    setStreamingContent("");
+    setStreamModelInfo(null);
+    setUserScrolledUp(false);
+
+    // Truncate DB messages after targetUserMsg so old AI responses are DELETED permanently from DB
+    if (activeConversationId && !isTemporaryChat && typeof activeConversationId === "string" && !activeConversationId.startsWith("temp_")) {
+      try {
+        await fetch("/api/ai/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "truncateAfter",
+            conversationId: activeConversationId,
+            messageId: targetUserMsg?.id || null,
+            createdAt: targetUserMsg?.created_at || null,
+          }),
+        });
+      } catch (err) {
+        console.warn("Failed to truncate DB messages on retry:", err);
+      }
+    }
+
+    const modelToUse = overrideModelId || selectedModelId;
+
+    // 4. Build message history for API up to and including the user message
+    const apiHistory = truncatedMessages.map((m) => ({
+      role: m.role === "assistant" ? "model" : m.role,
+      content: m.content,
+      attachments: m.attachments || (m.attachment ? [m.attachment] : []),
+    }));
+
+    // 5. Stream new AI response immediately
+    const controller = new AbortController();
+    setAbortController(controller);
+    let fullText = "";
+    let modelInfo = null;
+
+    try {
+      const res = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: apiHistory,
+          modelId: modelToUse,
+          conversationId: activeConversationId,
+          isTemporary: isTemporaryChat || (typeof activeConversationId === "string" && activeConversationId.startsWith("temp_")),
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        setErrorMsg(errData.error || "AI service error.");
+        setIsGenerating(false);
+        isSendingRef.current = false;
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter(Boolean);
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const dataStr = line.replace("data: ", "").trim();
+          if (dataStr === "[DONE]") break;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            if (parsed.modelDisplayName) modelInfo = parsed;
+            if (parsed.error) { setErrorMsg(parsed.error); continue; }
+            if (parsed.text) {
+              fullText += parsed.text;
+              setStreamingContent(sanitizeAiResponse(fullText));
+            }
+          } catch {}
+        }
+      }
+
+      const cleanedContent = sanitizeAiResponse(fullText);
+      setIsGenerating(false);
+      isSendingRef.current = false;
+      setAbortController(null);
+
+      if (cleanedContent) {
+        let finalModelDisplayName = modelInfo?.modelDisplayName || null;
+        if (modelInfo && modelInfo.modelId !== modelInfo.requestedModelId) {
+          const requestedModel = availableModels.find(m => m.id === modelInfo.requestedModelId);
+          const reqName = requestedModel ? requestedModel.displayName : modelInfo.requestedModelId;
+          finalModelDisplayName = `${modelInfo.modelDisplayName} (Fallback from ${reqName})`;
+        }
+
+        const aiMsg = {
+          role: "assistant",
+          content: cleanedContent,
+          model_id: modelInfo?.modelId || modelToUse,
+          model_display_name: finalModelDisplayName,
+          created_at: new Date().toISOString(),
+          isFallback: modelInfo && modelInfo.modelId !== modelInfo.requestedModelId,
+          sources_used: modelInfo?.sourcesUsed || [],
+        };
+
+        setMessages(() => {
+          const updated = [...truncatedMessages, aiMsg];
+          if (activeConversationId) messagesCache.current[activeConversationId] = updated;
+          return updated;
+        });
+        setStreamingContent("");
+
+        if (activeConversationId) {
+          fetch("/api/ai/conversations", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "addMessage",
+              conversationId: activeConversationId,
+              role: "assistant",
+              content: cleanedContent,
+              modelId: modelInfo?.modelId || modelToUse,
+              modelDisplayName: finalModelDisplayName,
+              sourcesUsed: modelInfo?.sourcesUsed || [],
+              isTemporary: isTemporaryChat || activeConversationId.startsWith("temp_"),
+            }),
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        setErrorMsg("Failed to get AI response.");
+      }
+    } finally {
+      setIsGenerating(false);
+      isSendingRef.current = false;
+      setAbortController(null);
+    }
+  }, [messages, isGenerating, selectedModelId, activeConversationId, isTemporaryChat, availableModels]);
 
   // ─── Copy message ──────────────────────────────────────────
   const handleCopy = useCallback((text, index) => {
@@ -865,36 +1273,93 @@ export default function AiTutorWorkspace({ userProfile }) {
     setTimeout(() => setCopiedIndex(null), 2000);
   }, []);
 
+  // ─── Share Modal Trigger & Logic (ChatGPT Style) ─────────
+  const openShareModal = useCallback(({ type = "response", title, content, shareUrl }) => {
+    const defaultTitle = type === "prompt" ? "Share prompt" : "IB Nexus";
+    let baseUrl = "";
+    if (typeof window !== "undefined") {
+      baseUrl = window.location.origin + window.location.pathname;
+    }
+    const defaultUrl = activeConversationId ? `${baseUrl}?c=${activeConversationId}` : baseUrl;
+
+    setShareModalData({
+      type,
+      title: title || defaultTitle,
+      content: content || "",
+      shareUrl: shareUrl || defaultUrl,
+    });
+    setShareCopied(false);
+    setCardCopied(false);
+  }, [activeConversationId]);
+
+  const handleShare = useCallback((msgOrContent, type = "response") => {
+    const content = typeof msgOrContent === "string" ? msgOrContent : (msgOrContent?.content || "");
+    const currentConv = conversations.find(c => c.id === activeConversationId);
+    const title = type === "prompt" 
+      ? "Share prompt" 
+      : (currentConv?.title || "IB Nexus");
+
+    openShareModal({ type, title, content });
+  }, [conversations, activeConversationId, openShareModal]);
+
   // ─── Feedback ──────────────────────────────────────────────
   const handleFeedbackSubmit = useCallback(
-    async (rating) => {
-      if (!feedbackModal) return;
+    async (rating, explicitMessage = null) => {
+      const targetMsg = explicitMessage || feedbackModal;
+      if (!targetMsg) return;
 
       const payload = {
         action: "feedback",
         conversationId: activeConversationId,
-        messageId: feedbackModal.id || null,
+        messageId: targetMsg.id || null,
         rating,
         category: feedbackCategory,
         comment: feedbackComment,
-        modelId: feedbackModal.model_id || selectedModelId,
+        modelId: targetMsg.model_id || selectedModelId,
       };
 
+      setFeedbackStatus("submitting");
+
       try {
-        await fetch("/api/ai/conversations", {
+        const res = await fetch("/api/ai/conversations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        setSubmittedFeedback((prev) => new Set([...prev, feedbackModal.id || "unknown"]));
-      } catch {}
+        
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          console.error("[handleFeedbackSubmit] API error:", res.status, errData);
+          throw new Error(errData.error || "Failed");
+        }
 
-      setFeedbackModal(null);
-      setFeedbackCategory(null);
-      setFeedbackComment("");
+        // Update local messages state to reflect feedback instantly
+        setMessages((prev) => {
+          const updated = prev.map(m => {
+            if ((targetMsg.id && m.id === targetMsg.id) || m === targetMsg) {
+              return { ...m, feedback: rating };
+            }
+            return m;
+          });
+          if (activeConversationId) messagesCache.current[activeConversationId] = updated;
+          return updated;
+        });
+
+        setFeedbackStatus("success");
+      } catch (err) {
+        console.error("[handleFeedbackSubmit] catch:", err);
+        setFeedbackStatus("error");
+      }
     },
     [feedbackModal, feedbackCategory, feedbackComment, activeConversationId, selectedModelId]
   );
+
+  const resetFeedbackModal = useCallback(() => {
+    setFeedbackModal(null);
+    setFeedbackCategory(null);
+    setFeedbackComment("");
+    setFeedbackStatus("idle");
+  }, []);
 
   // ─── TTS Speech ──────────────────────────────────────────
   const toggleTTSPreference = useCallback(() => {
@@ -939,7 +1404,9 @@ export default function AiTutorWorkspace({ userProfile }) {
     setDeleteConfirm(null);
     setContextMenu(null);
 
-    // 2. Execute backend deletion
+    // 2. Execute backend deletion (skip DB for temp IDs)
+    if (convId && convId.startsWith("temp_")) return;
+
     try {
       const res = await fetch("/api/ai/conversations", {
         method: "POST",
@@ -983,6 +1450,8 @@ export default function AiTutorWorkspace({ userProfile }) {
     setConversations((prev) =>
       prev.map((c) => (c.id === convId ? { ...c, is_pinned: isPinned } : c))
     );
+    setContextMenu(null);
+    if (convId && convId.startsWith("temp_")) return;
     try {
       await fetch("/api/ai/conversations", {
         method: "POST",
@@ -990,23 +1459,29 @@ export default function AiTutorWorkspace({ userProfile }) {
         body: JSON.stringify({ action: "pin", conversationId: convId, isPinned }),
       });
     } catch {}
-    setContextMenu(null);
   }, []);
 
-  const handleRename = useCallback(async (convId) => {
-    if (!renameValue.trim()) return;
+  const handleRename = useCallback(async (convId, newTitleOverride) => {
+    const valToUse = typeof newTitleOverride === "string" ? newTitleOverride : renameValue;
+    const trimmed = valToUse ? valToUse.trim() : "";
+    if (!trimmed) {
+      setRenameId(null);
+      setRenameValue("");
+      return;
+    }
     setConversations((prev) =>
-      prev.map((c) => (c.id === convId ? { ...c, title: renameValue } : c))
+      prev.map((c) => (c.id === convId ? { ...c, title: trimmed } : c))
     );
     setRenameId(null);
+    setRenameValue("");
+    if (convId && convId.startsWith("temp_")) return;
     try {
       await fetch("/api/ai/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "rename", conversationId: convId, title: renameValue }),
+        body: JSON.stringify({ action: "rename", conversationId: convId, title: trimmed }),
       });
     } catch {}
-    setRenameValue("");
   }, [renameValue]);
 
   const handleArchive = useCallback(async (convId, isArchived) => {
@@ -1016,6 +1491,8 @@ export default function AiTutorWorkspace({ userProfile }) {
       setActiveConversationId(null);
       setMessages([]);
     }
+    setContextMenu(null);
+    if (convId && convId.startsWith("temp_")) return;
     try {
       await fetch("/api/ai/conversations", {
         method: "POST",
@@ -1023,7 +1500,6 @@ export default function AiTutorWorkspace({ userProfile }) {
         body: JSON.stringify({ action: "archive", conversationId: convId, isArchived }),
       });
     } catch {}
-    setContextMenu(null);
   }, [activeConversationId]);
 
   // ─── Textarea auto-resize & keypress ──────────────────────
@@ -1066,9 +1542,22 @@ export default function AiTutorWorkspace({ userProfile }) {
 
         <div className="sidebar-content">
           {/* New Chat button */}
-          <button className="new-chat-btn" onClick={handleNewChat}>
+          <button className="new-chat-btn" onClick={() => handleNewChat(false)}>
             <Plus size={18} />
             <span>New Chat</span>
+          </button>
+
+          {/* Temporary Chat Toggle Button */}
+          <button
+            className={`temporary-chat-toggle-btn ${isTemporaryChat ? 'active' : ''}`}
+            onClick={handleToggleTemporaryChat}
+            title={isTemporaryChat ? "Turn off temporary chat — unsaved messages in this conversation will be lost" : "Start a temporary chat where messages aren't saved to history"}
+          >
+            <div className="flex items-center gap-2">
+              <Ghost size={15} />
+              <span>Temporary Chat</span>
+            </div>
+            <div className={`temp-toggle-switch ${isTemporaryChat ? 'on' : 'off'}`} />
           </button>
 
           {/* Search (Searches ONLY titles per Req 19) */}
@@ -1174,9 +1663,34 @@ export default function AiTutorWorkspace({ userProfile }) {
                 onError={(e) => { e.target.style.display = "none"; }}
               />
               <h1 className="ai-title">Nexus AI</h1>
+              {isTemporaryChat && (
+                <div className="header-temp-badge">
+                  <Ghost size={12} />
+                  <span>Temporary</span>
+                </div>
+              )}
             </div>
           </div>
         </header>
+
+        {/* Temporary Chat Warning Banner */}
+        {isTemporaryChat && (
+          <div className="temporary-chat-banner">
+            <div className="temp-banner-info">
+              <Ghost size={16} className="temp-banner-icon" />
+              <span>
+                <strong>Temporary Chat</strong> — Messages in this chat aren't saved in history, trained on, or used for personalization.
+              </span>
+            </div>
+            <button 
+              className="temp-banner-close" 
+              onClick={handleToggleTemporaryChat}
+              title="Turn off temporary chat — unsaved messages in this conversation will be lost"
+            >
+              Turn off
+            </button>
+          </div>
+        )}
 
         {/* Chat Area */}
         <div
@@ -1240,7 +1754,7 @@ export default function AiTutorWorkspace({ userProfile }) {
                 return (
                   <div
                     key={i}
-                    className={`ai-message ${msg.role === "user" ? "user-msg" : "ai-msg"}`}
+                    className={`ai-message ${msg.role === "user" ? "user-msg group" : "ai-msg"}`}
                   >
                     <div className="msg-avatar">
                       {msg.role === "user" ? (
@@ -1255,6 +1769,7 @@ export default function AiTutorWorkspace({ userProfile }) {
                           <img
                             src={userAvatarUrl}
                             alt="User Avatar"
+                            referrerPolicy="no-referrer"
                             className="avatar-img"
                             onError={(e) => {
                               e.currentTarget.style.display = "none";
@@ -1319,7 +1834,81 @@ export default function AiTutorWorkspace({ userProfile }) {
 
                       {/* TEXT CONTENT */}
                       {msg.role === "user" ? (
-                        msg.content ? <div className="msg-text">{msg.content}</div> : null
+                        editingMessageId === msg.id ? (
+                          <div className="msg-edit-mode w-full max-w-2xl rounded-2xl bg-[var(--surface-hover)] border border-[var(--border)] p-3.5 shadow-lg my-1">
+                            <textarea
+                              autoFocus
+                              className="w-full bg-transparent text-[var(--foreground)] text-sm resize-none outline-none font-sans leading-relaxed"
+                              value={editContent}
+                              onChange={(e) => {
+                                setEditContent(e.target.value);
+                                e.target.style.height = "auto";
+                                e.target.style.height = Math.min(e.target.scrollHeight, 300) + "px";
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleEditSubmit(msg.id, editContent);
+                                }
+                                if (e.key === "Escape") {
+                                  setEditingMessageId(null);
+                                  setEditContent("");
+                                }
+                              }}
+                              rows={2}
+                              style={{ minHeight: "64px" }}
+                            />
+                            <div className="flex justify-end items-center gap-2 mt-3">
+                              <button
+                                className="px-4 py-1.5 rounded-full text-xs font-medium text-[var(--text-secondary)] bg-[var(--surface)] hover:bg-[var(--border)] hover:text-[var(--foreground)] border border-[var(--border)] transition-all cursor-pointer"
+                                onClick={() => {
+                                  setEditingMessageId(null);
+                                  setEditContent("");
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                className="px-4 py-1.5 rounded-full text-xs font-semibold text-black bg-white hover:bg-white/90 active:scale-95 transition-all shadow-sm cursor-pointer"
+                                onClick={() => handleEditSubmit(msg.id, editContent)}
+                              >
+                                Send
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-end">
+                            {msg.content ? <div className="msg-text">{msg.content}</div> : null}
+
+                            {/* Hover-only Icon Toolbar under sent message (ChatGPT style) */}
+                            <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-[var(--muted)]">
+                              <button
+                                onClick={() => handleCopy(msg.content, `user-${i}`)}
+                                className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                                title="Copy text"
+                              >
+                                {copiedIndex === `user-${i}` ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                              </button>
+                              <button
+                                onClick={() => handleShare(msg.content, `user-${i}`)}
+                                className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                                title="Share message"
+                              >
+                                {sharedIndex === `user-${i}` ? <Check size={13} className="text-emerald-400" /> : <Share2 size={13} />}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingMessageId(msg.id);
+                                  setEditContent(msg.content);
+                                }}
+                                className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                                title="Edit message"
+                              >
+                                <Pencil size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        )
                       ) : (
                         <div
                           className="msg-text ai-rendered"
@@ -1330,7 +1919,7 @@ export default function AiTutorWorkspace({ userProfile }) {
                       )}
 
                       {/* Message Timestamp */}
-                      <div className="msg-timestamp" style={{ display: 'block', width: '100%', textAlign: msg.role === 'user' ? 'right' : 'left', marginTop: '4px', fontSize: '11px', color: 'rgba(255, 255, 255, 0.45)' }}>
+                      <div className="msg-timestamp" style={{ display: 'flex', width: '100%', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', alignItems: 'center', marginTop: '2px', fontSize: '11px', color: 'rgba(255, 255, 255, 0.45)', gap: '8px' }}>
                         {formatMessageTime(msg.created_at || new Date().toISOString())}
                       </div>
 
@@ -1360,48 +1949,87 @@ export default function AiTutorWorkspace({ userProfile }) {
                         </div>
                       )}
 
-                      {/* Message actions */}
+                      {/* Message actions toolbar + Try again control (ChatGPT style) */}
                       {msg.role === "assistant" && (
-                        <div className="msg-actions">
-                          <button
-                            className="msg-action-btn"
-                            onClick={() => handleCopy(msg.content, i)}
-                            title="Copy"
-                          >
-                            {copiedIndex === i ? <Check size={13} /> : <Copy size={13} />}
-                          </button>
-                          
-                          <button
-                            className={`msg-action-btn ${speakingMsgId === (msg.id || "msg-" + i) ? "done" : ""}`}
-                            onClick={() => handleSpeak(msg.id || "msg-" + i, msg.content)}
-                            title={speakingMsgId === (msg.id || "msg-" + i) ? "Stop speaking" : "Read aloud"}
-                          >
-                            {speakingMsgId === (msg.id || "msg-" + i) ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                          </button>
+                        <div className="flex flex-col gap-2 mt-2">
+                          <div className="flex flex-wrap items-center gap-1 text-[var(--muted)]">
+                            <button
+                              className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                              onClick={() => handleCopy(msg.content, `ai-${i}`)}
+                              title="Copy response"
+                            >
+                              {copiedIndex === `ai-${i}` ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                            </button>
 
-                          <button
-                            className={`msg-action-btn ${submittedFeedback.has(msg.id) ? "done" : ""}`}
-                            onClick={() => {
-                              handleFeedbackSubmit("positive");
-                              setSubmittedFeedback((prev) => new Set([...prev, msg.id || "msg-" + i]));
-                            }}
-                            title="Good response"
-                          >
-                            <ThumbsUp size={13} />
-                          </button>
-                          <button
-                            className="msg-action-btn"
-                            onClick={() => setFeedbackModal(msg)}
-                            title="Report issue"
-                          >
-                            <ThumbsDown size={13} />
-                          </button>
+                            <button
+                              className={`p-1.5 rounded-md hover:bg-[var(--surface-hover)] transition-colors cursor-pointer ${
+                                msg.feedback === 'positive' ? "text-emerald-400" : "hover:text-[var(--foreground)]"
+                              }`}
+                              onClick={() => handleFeedbackSubmit("positive", msg)}
+                              title="Good response"
+                            >
+                              <ThumbsUp size={13} fill={msg.feedback === 'positive' ? "currentColor" : "none"} />
+                            </button>
 
-                          {actualName && (
-                            <span className="msg-model-badge">
-                              {actualName}
-                            </span>
-                          )}
+                            <button
+                              className={`p-1.5 rounded-md hover:bg-[var(--surface-hover)] transition-colors cursor-pointer ${
+                                msg.feedback === 'negative' ? "text-rose-400" : "hover:text-[var(--foreground)]"
+                              }`}
+                              onClick={() => setFeedbackModal(msg)}
+                              title="Bad response"
+                            >
+                              <ThumbsDown size={13} fill={msg.feedback === 'negative' ? "currentColor" : "none"} />
+                            </button>
+
+                            <button
+                              className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                              onClick={() => handleShare(msg.content, `ai-${i}`)}
+                              title="Share response"
+                            >
+                              {sharedIndex === `ai-${i}` ? <Check size={13} className="text-emerald-400" /> : <Share2 size={13} />}
+                            </button>
+
+                            <button
+                              className={`p-1.5 rounded-md hover:bg-[var(--surface-hover)] transition-colors cursor-pointer ${
+                                speakingMsgId === (msg.id || "msg-" + i) ? "text-indigo-400" : "hover:text-[var(--foreground)]"
+                              }`}
+                              onClick={() => handleSpeak(msg.id || "msg-" + i, msg.content)}
+                              title={speakingMsgId === (msg.id || "msg-" + i) ? "Stop speaking" : "Read aloud"}
+                            >
+                              {speakingMsgId === (msg.id || "msg-" + i) ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                            </button>
+
+                            <button
+                              className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                              onClick={() => handleRetry()}
+                              title="Regenerate"
+                            >
+                              <RotateCcw size={13} />
+                            </button>
+                          </div>
+
+                          {/* ChatGPT-style "Try again · Used [Model]" pill */}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--muted)] hover:border-indigo-500/30 transition-all">
+                              <button
+                                onClick={() => handleRetry()}
+                                className="flex items-center gap-1.5 hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                                title="Regenerate with same model"
+                              >
+                                <RotateCcw size={12} />
+                                <span className="font-medium text-[var(--foreground)]">Try again</span>
+                              </button>
+                              <span>·</span>
+                              <button
+                                onClick={() => setShowModelPicker(true)}
+                                className="flex items-center gap-1 hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                                title="Switch model in selector"
+                              >
+                                <span>Used {actualName || currentModel?.displayName || "Nexus AI"}</span>
+                                <ChevronDown size={12} className="opacity-60" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1463,9 +2091,115 @@ export default function AiTutorWorkspace({ userProfile }) {
                 <div className="ai-error">
                   <AlertCircle size={16} />
                   <span>{errorMsg}</span>
-                  <button onClick={handleRetry} className="retry-btn">
-                    <RefreshCw size={14} /> Retry
-                  </button>
+                  <div className="retry-split-container" ref={errorModelPickerRef}>
+                    <div className="retry-split-btn-group">
+                      <button onClick={() => handleRetry()} className="retry-btn retry-main-btn" title="Retry with current model">
+                        <RefreshCw size={14} /> Retry
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowErrorModelPicker((p) => !p);
+                        }}
+                        className={`retry-btn retry-chevron-btn ${showErrorModelPicker ? 'active' : ''}`}
+                        title="Retry with a different model"
+                      >
+                        <ChevronDown size={13} className={`transition-transform duration-200 ${showErrorModelPicker ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+
+                    {showErrorModelPicker && (
+                      <div
+                        className="picker-dropdown model-dropdown error-model-dropdown"
+                        style={{ bottom: "calc(100% + 6px)", right: 0, left: "auto", top: "auto" }}
+                      >
+                        {["google", "openai", "groq", "together", "remote_qwen", "ollama"].map((providerId) => {
+                          const providerModels = availableModels.filter(
+                            (m) => m.provider === providerId
+                          );
+                          if (providerModels.length === 0) return null;
+                          const providerLabel =
+                            providerId === "google"
+                              ? "GOOGLE GEMINI"
+                              : providerId === "openai"
+                              ? "OPENAI"
+                              : providerId === "groq"
+                              ? "GROQ (LPU)"
+                              : providerId === "together"
+                              ? "TOGETHER AI"
+                              : providerId === "remote_qwen" || providerId === "ollama"
+                              ? "LOCAL / QWEN"
+                              : providerId.toUpperCase();
+
+                          return (
+                            <div key={providerId} className="picker-section">
+                              <div className="picker-section-label">{providerLabel}</div>
+                              {providerModels.map((model) => {
+                                const isSelected = selectedModelId === model.id;
+                                const isPaused = !!(model.isPaused || model.is_paused || model.status === "Paused");
+                                const isSelectable = model.isAvailable !== false && !isPaused;
+                                const statusLabel = model.status || (!isSelectable ? (isPaused ? "Paused" : "Offline") : null);
+
+                                return (
+                                  <button
+                                    key={model.id}
+                                    type="button"
+                                    className={`picker-option ${isSelected ? "active" : ""} ${
+                                      !isSelectable ? "disabled" : ""
+                                    }`}
+                                    onClick={() => {
+                                      if (!isSelectable) return;
+                                      setSelectedModelId(model.id);
+                                      setShowErrorModelPicker(false);
+                                      handleRetry(model.id);
+                                    }}
+                                    disabled={!isSelectable}
+                                    title={
+                                      isPaused
+                                        ? `${model.displayName} (Paused): Locked by administrator.`
+                                        : !isSelectable
+                                        ? `${model.displayName}: ${model.description}`
+                                        : model.description
+                                    }
+                                  >
+                                    <Zap
+                                      size={15}
+                                      className={`model-icon ${isSelected ? "selected" : ""}`}
+                                    />
+                                    <div className="picker-option-text">
+                                      <div className="picker-option-header">
+                                        <span className="picker-option-name">
+                                          {model.displayName}
+                                        </span>
+                                        {statusLabel && statusLabel !== "Available" && (
+                                          <span
+                                            className={`offline-badge ${
+                                              statusLabel === "Mock Mode"
+                                                ? "mock-badge"
+                                                : isPaused
+                                                ? "paused-badge"
+                                                : ""
+                                            }`}
+                                          >
+                                            {statusLabel}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <span className="picker-option-meta">
+                                        {model.description}
+                                      </span>
+                                    </div>
+                                    {isSelected && <Check size={14} className="check-icon" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1578,24 +2312,28 @@ export default function AiTutorWorkspace({ userProfile }) {
                         <div className="picker-section-label">{providerLabel}</div>
                         {providerModels.map((model) => {
                           const isSelected = selectedModelId === model.id;
-                          const isAvailable = model.isAvailable !== false;
-                          const statusLabel = model.status || (!isAvailable ? "Offline" : null);
+                          const isPaused = !!(model.isPaused || model.is_paused || model.status === "Paused");
+                          // Paused models are listed in the dropdown for visibility, but strictly locked & unselectable
+                          const isSelectable = model.isAvailable !== false && !isPaused;
+                          const statusLabel = model.status || (!isSelectable ? (isPaused ? "Paused" : "Offline") : null);
 
                           return (
                             <button
                               key={model.id}
                               type="button"
                               className={`picker-option ${isSelected ? "active" : ""} ${
-                                !isAvailable ? "disabled" : ""
+                                !isSelectable ? "disabled" : ""
                               }`}
                               onClick={() => {
-                                if (!isAvailable) return;
+                                if (!isSelectable) return;
                                 setSelectedModelId(model.id);
                                 setShowModelPicker(false);
                               }}
-                              disabled={!isAvailable}
+                              disabled={!isSelectable}
                               title={
-                                !isAvailable
+                                isPaused
+                                  ? `${model.displayName} (Paused): Locked by administrator.`
+                                  : !isSelectable
                                   ? `${model.displayName}: ${model.description}`
                                   : model.description
                               }
@@ -1612,7 +2350,11 @@ export default function AiTutorWorkspace({ userProfile }) {
                                   {statusLabel && statusLabel !== "Available" && (
                                     <span
                                       className={`offline-badge ${
-                                        statusLabel === "Mock Mode" ? "mock-badge" : ""
+                                        statusLabel === "Mock Mode"
+                                          ? "mock-badge"
+                                          : isPaused
+                                          ? "paused-badge"
+                                          : ""
                                       }`}
                                     >
                                       {statusLabel}
@@ -1677,44 +2419,403 @@ export default function AiTutorWorkspace({ userProfile }) {
         </div>
       )}
 
-      {/* ═══ FEEDBACK MODAL ═══ */}
-      {feedbackModal && (
-        <div className="modal-overlay" onClick={() => setFeedbackModal(null)}>
-          <div className="modal-content feedback-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>What went wrong?</h3>
-            <div className="feedback-categories">
-              {NEGATIVE_FEEDBACK_CATEGORIES.map((cat) => (
-                <button
-                  key={cat}
-                  className={`feedback-cat-btn ${feedbackCategory === cat ? "active" : ""}`}
-                  onClick={() => setFeedbackCategory(cat)}
-                >
-                  {cat}
-                </button>
-              ))}
+      {/* ═══ TURN OFF TEMPORARY CHAT CONFIRMATION MODAL ═══ */}
+      {showTurnOffTempModal && (
+        <div className="modal-overlay" onClick={() => setShowTurnOffTempModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-2 text-amber-500 font-semibold">
+              <Ghost size={18} />
+              <h3 style={{ margin: 0 }}>Turn Off Temporary Chat?</h3>
             </div>
-            <textarea
-              className="feedback-textarea"
-              placeholder="Additional comments (optional)"
-              value={feedbackComment}
-              onChange={(e) => setFeedbackComment(e.target.value)}
-              rows={3}
-            />
+            <p style={{ marginTop: 8 }}>
+              Are you sure you want to turn off Temporary Chat? This conversation is off-the-record, so all messages and content in this temporary session will be <strong>permanently lost</strong> and cannot be recovered.
+            </p>
             <div className="modal-actions">
-              <button className="modal-btn cancel" onClick={() => setFeedbackModal(null)}>
+              <button className="modal-btn cancel" onClick={() => setShowTurnOffTempModal(false)}>
                 Cancel
               </button>
               <button
-                className="modal-btn primary"
-                onClick={() => handleFeedbackSubmit("negative")}
-                disabled={!feedbackCategory}
+                className="modal-btn danger"
+                onClick={() => {
+                  setShowTurnOffTempModal(false);
+                  confirmTurnOffTemporaryChat();
+                }}
               >
-                Submit Feedback
+                Turn Off & Delete Session
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ═══ DISLIKE FEEDBACK MODAL ═══ */}
+      <AnimatePresence>
+        {feedbackModal && (
+          <div className="feedback-modal-overlay" onClick={resetFeedbackModal}>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: "spring", bounce: 0.3, duration: 0.3 }}
+              className="feedback-modal-panel overflow-hidden" 
+              onClick={(e) => e.stopPropagation()}
+            >
+              {feedbackStatus === "success" ? (
+                <div className="flex flex-col items-center justify-center p-8 text-center min-h-[220px]">
+                  <motion.div 
+                    initial={{ scale: 0 }} 
+                    animate={{ scale: 1 }} 
+                    transition={{ type: "spring", bounce: 0.5, delay: 0.1 }}
+                    className="w-16 h-16 bg-emerald-500/10 text-emerald-400 rounded-full flex items-center justify-center mb-4 border border-emerald-500/20"
+                  >
+                    <CheckCircle2 size={32} />
+                  </motion.div>
+                  <h3 className="text-xl font-bold text-[var(--foreground)] mb-2">Feedback received</h3>
+                  <p className="text-sm text-[var(--muted)] mb-6">Thanks for helping improve Nexus AI.</p>
+                  <button
+                    onClick={resetFeedbackModal}
+                    className="px-6 py-2 rounded-xl bg-[var(--surface)] border border-[var(--border)] hover:bg-[var(--surface-hover)] text-[var(--foreground)] font-semibold transition-all"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="feedback-modal-header">
+                    <h3>Help improve this response</h3>
+                    <button className="feedback-modal-close" onClick={resetFeedbackModal} disabled={feedbackStatus === "submitting"}><X size={16} /></button>
+                  </div>
+                  
+                  {feedbackStatus === "error" && (
+                    <div className="mx-5 mt-2 px-3 py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 flex items-center gap-2 text-rose-400 text-xs font-semibold">
+                      <AlertTriangle size={14} />
+                      Could not send feedback. Please try again.
+                    </div>
+                  )}
+
+                  <div className="feedback-reasons">
+                    {NEGATIVE_FEEDBACK_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        className={`feedback-reason-btn ${feedbackCategory === cat ? "active" : ""}`}
+                        onClick={() => setFeedbackCategory(cat)}
+                        disabled={feedbackStatus === "submitting"}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  <textarea
+                    className="feedback-modal-textarea"
+                    placeholder="Tell us more (optional)"
+                    value={feedbackComment}
+                    onChange={(e) => setFeedbackComment(e.target.value)}
+                    rows={2}
+                    disabled={feedbackStatus === "submitting"}
+                  />
+                  <div className="feedback-modal-footer">
+                    <button
+                      className="feedback-modal-submit flex items-center justify-center gap-2"
+                      onClick={() => handleFeedbackSubmit("negative")}
+                      disabled={!feedbackCategory || feedbackStatus === "submitting"}
+                    >
+                      {feedbackStatus === "submitting" ? (
+                        <>
+                          <div className="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin"></div>
+                          Submitting...
+                        </>
+                      ) : (
+                        "Submit"
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ CHATGPT-STYLE SHARE PROMPT / SHARE RESPONSE MODAL ═══ */}
+      <AnimatePresence>
+        {shareModalData && (
+          <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md"
+            onClick={() => setShareModalData(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", bounce: 0.25, duration: 0.3 }}
+              className="w-full max-w-[560px] bg-[#18181b] border border-[#2e2e33] rounded-[20px] p-6 sm:p-7 text-white shadow-2xl overflow-hidden flex flex-col gap-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-white tracking-tight">
+                  {shareModalData.type === "prompt" ? "Share prompt" : (shareModalData.title || "IB Nexus")}
+                </h2>
+                <button
+                  onClick={() => setShareModalData(null)}
+                  className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  aria-label="Close modal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Preview Card (The Card Visual) */}
+              <div className="relative w-full min-h-[240px] max-h-[320px] bg-gradient-to-b from-[#27272a] to-[#18181b] border border-white/10 rounded-2xl p-6 flex flex-col justify-between overflow-hidden shadow-inner group">
+                {/* Copy Snippet Button (Upper Right) */}
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(shareModalData.content);
+                    setCardCopied(true);
+                    setTimeout(() => setCardCopied(false), 2000);
+                  }}
+                  className="absolute top-4 right-4 z-10 px-2.5 py-1 rounded-lg bg-black/40 hover:bg-black/60 border border-white/10 text-xs font-medium text-zinc-300 hover:text-white transition-all flex items-center gap-1.5 cursor-pointer backdrop-blur-sm opacity-90 hover:opacity-100"
+                  title="Copy content"
+                >
+                  {cardCopied ? (
+                    <>
+                      <Check size={12} className="text-emerald-400" />
+                      <span className="text-emerald-400 font-semibold">Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Content Area */}
+                <div className="overflow-y-auto pr-2 max-h-[220px] custom-scrollbar text-sm leading-relaxed">
+                  {shareModalData.type === "prompt" ? (
+                    <div className="flex justify-end pt-2 pb-6">
+                      <div className="bg-[#2f2f32] text-white px-4 py-3 rounded-2xl rounded-tr-md max-w-[88%] shadow-md font-normal text-sm leading-snug">
+                        {shareModalData.content}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pt-2 pb-6 text-zinc-200 font-mono text-[13px] leading-relaxed whitespace-pre-wrap word-break-break-word">
+                      {shareModalData.content}
+                    </div>
+                  )}
+                </div>
+
+                {/* Brand Watermark (Bottom Right) */}
+                <div className="flex items-center justify-end gap-1.5 pt-3 text-xs font-semibold text-white/70 tracking-wide select-none">
+                  <img src="/brand/ib-nexus-icon.png" alt="Nexus AI" className="w-4 h-4 object-contain opacity-80" onError={(e) => { e.target.style.display = 'none'; }} />
+                  <span>Nexus AI</span>
+                </div>
+              </div>
+
+              {/* Social Sharing Actions */}
+              <div className="flex items-center justify-center gap-6 sm:gap-8 pt-1">
+                {/* Copy link */}
+                <div className="flex flex-col items-center gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(shareModalData.shareUrl);
+                      setShareCopied(true);
+                      setTimeout(() => setShareCopied(false), 2000);
+                    }}
+                    className="w-12 h-12 rounded-full bg-[#2563eb] hover:bg-[#1d4ed8] active:scale-95 text-white flex items-center justify-center transition-all shadow-md cursor-pointer"
+                    title="Copy share link"
+                  >
+                    {shareCopied ? <Check size={20} className="text-emerald-300" /> : <Link2 size={20} />}
+                  </button>
+                  <span className="text-xs text-zinc-400 font-medium">
+                    {shareCopied ? "Copied!" : "Copy link"}
+                  </span>
+                </div>
+
+                {/* X */}
+                <div className="flex flex-col items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const url = `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareModalData.shareUrl)}&text=${encodeURIComponent(shareModalData.title)}`;
+                      window.open(url, "_blank", "width=600,height=400");
+                    }}
+                    className="w-12 h-12 rounded-full bg-[#2563eb] hover:bg-[#1d4ed8] active:scale-95 text-white flex items-center justify-center transition-all shadow-md cursor-pointer"
+                    title="Share on X"
+                  >
+                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                    </svg>
+                  </button>
+                  <span className="text-xs text-zinc-400 font-medium">X</span>
+                </div>
+
+                {/* LinkedIn */}
+                <div className="flex flex-col items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const url = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareModalData.shareUrl)}`;
+                      window.open(url, "_blank", "width=600,height=600");
+                    }}
+                    className="w-12 h-12 rounded-full bg-[#2563eb] hover:bg-[#1d4ed8] active:scale-95 text-white flex items-center justify-center transition-all shadow-md cursor-pointer"
+                    title="Share on LinkedIn"
+                  >
+                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                  </button>
+                  <span className="text-xs text-zinc-400 font-medium">LinkedIn</span>
+                </div>
+
+                {/* Reddit */}
+                <div className="flex flex-col items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const url = `https://www.reddit.com/submit?url=${encodeURIComponent(shareModalData.shareUrl)}&title=${encodeURIComponent(shareModalData.title)}`;
+                      window.open(url, "_blank", "width=600,height=600");
+                    }}
+                    className="w-12 h-12 rounded-full bg-[#2563eb] hover:bg-[#1d4ed8] active:scale-95 text-white flex items-center justify-center transition-all shadow-md cursor-pointer"
+                    title="Share on Reddit"
+                  >
+                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                      <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.056 1.598.04.27.06.544.06.824 0 3.328-3.957 6.02-8.837 6.02-4.88 0-8.837-2.692-8.837-6.02 0-.28.02-.554.06-.824A1.76 1.76 0 0 1 1.79 12.04c0-.968.786-1.754 1.754-1.754.477 0 .899.182 1.207.491 1.194-.856 2.85-1.419 4.674-1.488l.968-4.542 3.32.7a1.25 1.25 0 0 1 1.3-.703zM9.25 13.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm5.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm-5.467 4.19a.466.466 0 0 0-.329.796c.995.995 2.872 1.053 3.046 1.053.174 0 2.051-.058 3.046-1.053a.466.466 0 0 0-.659-.658c-.687.687-2.079.791-2.387.791-.308 0-1.7-.104-2.387-.791a.46.46 0 0 0-.33-.138z"/>
+                    </svg>
+                  </button>
+                  <span className="text-xs text-zinc-400 font-medium">Reddit</span>
+                </div>
+              </div>
+
+              {/* Footer Disclaimer */}
+              <div className="text-center text-xs text-zinc-400/80 pt-1">
+                Memory sources won't be shared with viewers.{" "}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowLearnMoreModal(true);
+                  }}
+                  className="underline hover:text-zinc-200 transition-colors cursor-pointer"
+                >
+                  Learn more
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══ NEXUS AI PRIVACY & SHARED CONTENT LEARN MORE MODAL ═══ */}
+      <AnimatePresence>
+        {showLearnMoreModal && (
+          <div
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+            onClick={() => setShowLearnMoreModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", bounce: 0.2, duration: 0.3 }}
+              className="w-full max-w-[620px] bg-[#18181b] border border-[#2e2e33] rounded-[22px] p-6 sm:p-8 text-white shadow-2xl overflow-hidden flex flex-col gap-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-start justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center flex-shrink-0">
+                    <ShieldCheck size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white tracking-tight">
+                      Nexus AI Privacy & Shared Content
+                    </h2>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      How IB Nexus protects your private memory, sessions, and study material.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowLearnMoreModal(false)}
+                  className="p-1.5 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                  aria-label="Close modal"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="space-y-4 text-sm text-zinc-300 leading-relaxed overflow-y-auto max-h-[380px] custom-scrollbar pr-1">
+                <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-start gap-3 text-indigo-200 text-xs">
+                  <Sparkles size={16} className="text-indigo-400 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="font-semibold text-white block mb-0.5">Privacy First Learning</strong>
+                    IB Nexus AI is designed to simplify your revision while giving you complete ownership over what you store and share.
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex gap-3 items-start">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">1</div>
+                    <div>
+                      <h4 className="font-semibold text-white text-xs sm:text-sm">Isolated Memory & Context</h4>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        When you generate a share link for a prompt or response, only the specific content snippet shown in the preview is shared. Your custom memory sources, personal Knowledge Lens, notes, and account data remain strictly private and are never accessible to external viewers.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 items-start">
+                    <div className="w-6 h-6 rounded-lg bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">2</div>
+                    <div>
+                      <h4 className="font-semibold text-white text-xs sm:text-sm">Off-the-Record Temporary Sessions</h4>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        When Temporary Chat is enabled, your messages and AI responses are transient. They are never written to permanent database storage, never added to your sidebar history, and are completely purged when you end the session or turn off temporary chat.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 items-start">
+                    <div className="w-6 h-6 rounded-lg bg-blue-500/15 text-blue-400 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">3</div>
+                    <div>
+                      <h4 className="font-semibold text-white text-xs sm:text-sm">Full Granular Control</h4>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        Sharing a snippet does not publish your entire chat history or allow third parties to view other prompts in your thread. You can copy or delete your chat history at any time.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 items-start">
+                    <div className="w-6 h-6 rounded-lg bg-purple-500/15 text-purple-400 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">4</div>
+                    <div>
+                      <h4 className="font-semibold text-white text-xs sm:text-sm">Academic Guidance</h4>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        Nexus AI is built to clarify complex IB subjects (DP/MYP). AI outputs are designed for revision and understanding — please verify critical details against your IB subject guides and teacher notes.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between border-t border-white/10 pt-4 text-xs text-zinc-400">
+                <a
+                  href="/privacy#ai-features"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-400 hover:text-indigo-300 underline font-medium transition-colors"
+                >
+                  Read Full IB Nexus Privacy Policy →
+                </a>
+                <button
+                  onClick={() => setShowLearnMoreModal(false)}
+                  className="px-5 py-2 rounded-xl bg-white text-black hover:bg-zinc-200 font-semibold text-xs transition-all cursor-pointer shadow-sm"
+                >
+                  Got it
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 
@@ -1726,16 +2827,22 @@ export default function AiTutorWorkspace({ userProfile }) {
         className={`conv-item ${activeConversationId === conv.id ? "active" : ""}`}
       >
         {renameId === conv.id ? (
-          <div className="conv-rename">
+          <div className="conv-rename" onClick={(e) => e.stopPropagation()}>
             <input
               autoFocus
               value={renameValue}
               onChange={(e) => setRenameValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleRename(conv.id);
-                if (e.key === "Escape") setRenameId(null);
+                if (e.key === "Enter") {
+                  e.stopPropagation();
+                  handleRename(conv.id, e.target.value);
+                }
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setRenameId(null);
+                }
               }}
-              onBlur={() => handleRename(conv.id)}
+              onBlur={(e) => handleRename(conv.id, e.target.value)}
             />
           </div>
         ) : (
@@ -1761,13 +2868,26 @@ export default function AiTutorWorkspace({ userProfile }) {
           </button>
 
           {contextMenu === conv.id && (
-            <div className="conv-context-menu">
-              <button onClick={() => handlePin(conv.id, !conv.is_pinned)}>
+            <div
+              ref={contextMenuRef}
+              className="conv-context-menu"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePin(conv.id, !conv.is_pinned);
+                }}
+              >
                 {conv.is_pinned ? <PinOff size={14} /> : <Pin size={14} />}
                 {conv.is_pinned ? "Unpin" : "Pin"}
               </button>
               <button
-                onClick={() => {
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
                   setRenameId(conv.id);
                   setRenameValue(conv.title);
                   setContextMenu(null);
@@ -1775,12 +2895,20 @@ export default function AiTutorWorkspace({ userProfile }) {
               >
                 <Pencil size={14} /> Rename
               </button>
-              <button onClick={() => handleArchive(conv.id, true)}>
+              <button
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleArchive(conv.id, true);
+                }}
+              >
                 <Archive size={14} /> Archive
               </button>
               <button
                 className="danger"
-                onClick={() => {
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
                   setDeleteConfirm(conv.id);
                   setContextMenu(null);
                 }}
@@ -1874,6 +3002,113 @@ const workspaceStyles = `
     background: rgba(99,102,241,0.15);
     border-color: rgba(99,102,241,0.6);
   }
+
+  /* Temporary Chat Sidebar Toggle */
+  .temporary-chat-toggle-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .temporary-chat-toggle-btn:hover {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.3);
+    color: #f59e0b;
+  }
+  .temporary-chat-toggle-btn.active {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.4);
+    color: #f59e0b;
+  }
+  .temp-toggle-switch {
+    width: 28px;
+    height: 16px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.18);
+    position: relative;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+  }
+  .temp-toggle-switch.on {
+    background: #f59e0b;
+  }
+  .temp-toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s ease;
+  }
+  .temp-toggle-switch.on::after {
+    transform: translateX(12px);
+  }
+
+  /* Temporary Chat Banner */
+  .temporary-chat-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 18px;
+    background: rgba(245, 158, 11, 0.08);
+    border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+    backdrop-filter: blur(12px);
+    color: #fef3c7;
+    font-size: 12px;
+    z-index: 5;
+  }
+  .temp-banner-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .temp-banner-icon {
+    color: #f59e0b;
+    flex-shrink: 0;
+  }
+  .temp-banner-close {
+    background: rgba(245, 158, 11, 0.18);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #f59e0b;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+  .temp-banner-close:hover {
+    background: rgba(245, 158, 11, 0.3);
+    color: #fff;
+  }
+
+  /* Header Temp Badge */
+  .header-temp-badge {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #f59e0b;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
   
   .sidebar-search {
     display: flex;
@@ -1954,9 +3189,10 @@ const workspaceStyles = `
   align-items: center;
   gap: 2px;
   border-radius: 8px;
-  transition: background 0.15s;
+  transition: all 0.15s;
   position: relative;
 }
+.conv-item:active:not(:has(.conv-context-menu)) { transform: scale(0.97); }
 .conv-item:hover { background: var(--hover); }
 .conv-item.active { background: rgba(99,102,241,0.12); }
 
@@ -2134,8 +3370,9 @@ const workspaceStyles = `
   border-radius: 6px;
   font-size: 11px;
   font-weight: 500;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
+.model-selector-btn:active { transform: scale(0.97); }
 .model-selector-btn:hover {
   background: var(--border);
   color: var(--text-secondary);
@@ -2253,6 +3490,18 @@ const workspaceStyles = `
   border: 1px solid rgba(239, 68, 68, 0.3);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.offline-badge.paused-badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.offline-badge.mock-badge {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.3);
 }
 
 .ai-chat-area {
@@ -2584,6 +3833,7 @@ const workspaceStyles = `
   align-items: center;
   transition: all 0.15s;
 }
+.msg-action-btn:active { transform: scale(0.92); }
 .msg-action-btn:hover { background: var(--border); color: var(--foreground); }
 .msg-action-btn.done { color: #10b981; }
 
@@ -2637,6 +3887,14 @@ const workspaceStyles = `
   margin: 0 24px;
   border-radius: 8px;
 }
+.retry-split-container {
+  position: relative;
+  margin-left: auto;
+}
+.retry-split-btn-group {
+  display: flex;
+  align-items: center;
+}
 .retry-btn {
   display: flex;
   align-items: center;
@@ -2648,9 +3906,29 @@ const workspaceStyles = `
   color: #ef4444;
   font-size: 11px;
   cursor: pointer;
-  margin-left: auto;
+}
+.retry-main-btn {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+  padding: 4px 8px 4px 10px;
+}
+.retry-chevron-btn {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 4px 6px;
+  border-left: 1px solid rgba(248,113,113,0.2);
 }
 .retry-btn:hover { background: rgba(248,113,113,0.1); }
+.retry-chevron-btn:hover, .retry-chevron-btn.active {
+  background: rgba(248,113,113,0.15);
+}
+.error-model-dropdown {
+  min-width: 260px;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 60;
+}
 
 .scroll-bottom-btn {
   position: absolute;
@@ -2727,7 +4005,7 @@ const workspaceStyles = `
   border-radius: 14px;
   border: 1px solid var(--hover);
   background: var(--hover);
-  transition: border-color 0.2s;
+  transition: border-color 0.15s;
 }
 .composer-inner:focus-within {
   border-color: rgba(99,102,241,0.4);
@@ -2760,8 +4038,9 @@ const workspaceStyles = `
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
 }
+.composer-btn:active:not(:disabled) { transform: scale(0.92); }
 .attach-btn {
   background: none;
   color: var(--muted);
@@ -2852,43 +4131,129 @@ const workspaceStyles = `
 .modal-btn.primary:hover { background: var(--accent); }
 .modal-btn.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.feedback-modal { max-width: 420px; }
-.feedback-categories {
+/* ═══ DISLIKE MODAL (New Elegant) ═══ */
+.feedback-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(8px);
   display: flex;
-  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh;
+  z-index: 250;
+  animation: fadeIn 0.15s ease;
+}
+
+.feedback-modal-panel {
+  background: var(--surface);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 12px;
+  padding: 20px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  animation: slideDownFade 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDownFade {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.feedback-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.feedback-modal-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+
+.feedback-modal-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.feedback-modal-close:hover {
+  background: var(--hover);
+  color: var(--foreground);
+}
+
+.feedback-reasons {
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   margin-bottom: 12px;
 }
-.feedback-cat-btn {
-  padding: 5px 12px;
-  border-radius: 20px;
-  border: 1px solid var(--hover);
-  background: var(--hover);
-  color: var(--muted);
-  font-size: 11.5px;
+
+.feedback-reason-btn {
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
   cursor: pointer;
   transition: all 0.15s;
 }
-.feedback-cat-btn:hover { background: var(--border); }
-.feedback-cat-btn.active {
-  border-color: rgba(99,102,241,0.4);
-  background: rgba(99,102,241,0.12);
-  color: var(--accent);
-}
-.feedback-textarea {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--hover);
-  background: var(--hover);
+.feedback-reason-btn:hover { background: var(--hover); }
+.feedback-reason-btn.active {
+  border-color: rgba(99,102,241,0.5);
+  background: rgba(99,102,241,0.1);
   color: var(--foreground);
-  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.feedback-modal-textarea {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
   resize: none;
   outline: none;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   font-family: inherit;
 }
-.feedback-textarea::placeholder { color: var(--muted); }
+.feedback-modal-textarea:focus {
+  border-color: rgba(99,102,241,0.4);
+}
+.feedback-modal-textarea::placeholder { color: var(--muted); }
+
+.feedback-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.feedback-modal-submit {
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.feedback-modal-submit:hover { opacity: 0.9; }
+.feedback-modal-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }

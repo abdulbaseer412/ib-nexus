@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { 
   ArrowLeft, BrainCircuit, MoreHorizontal, Save, Sparkles, 
   Trash2, Star, Pin, Archive, Settings2, BookOpen, Clock, 
-  CalendarDays, Lightbulb, Target, ArrowRight, LayoutList, CheckCircle2
+  CalendarDays, Lightbulb, Target, ArrowRight, LayoutList, CheckCircle2, Copy
 } from "lucide-react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -226,23 +226,23 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
             </span>
             <div className="h-4 w-px bg-divider mx-1"></div>
             
-            <button onClick={() => handleToggleState("is_favorite")} className={`p-2 rounded-lg transition ${note.is_favorite ? 'text-yellow-500 bg-yellow-500/10' : 'text-muted hover:bg-[var(--surface-alt)] hover:text-primary'}`}>
-              <Star size={18} className={note.is_favorite ? 'fill-current' : ''} />
+            <button onClick={() => handleToggleState("is_favorite")} className={`p-2 rounded-lg transition interactive-hover interactive-press-subtle ${note.is_favorite ? 'text-yellow-500 bg-yellow-500/10' : 'text-muted hover:bg-[var(--surface-alt)] hover:text-primary'}`}>
+              <Star size={16} className={note.is_favorite ? "fill-yellow-500" : ""} />
             </button>
             <Dropdown label={<MoreHorizontal size={18} />}>
               <div className="p-1 space-y-0.5 min-w-[180px]">
-                <button onClick={() => handleToggleState("is_pinned")} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-[var(--surface-alt)] flex items-center justify-between">
-                  {note.is_pinned ? "Unpin Note" : "Pin Note"} <Pin size={14} className="text-muted" />
+                <button onClick={() => handleToggleState("is_pinned")} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-[var(--surface-alt)] flex items-center justify-between interactive-hover interactive-press-subtle">
+                  <span>{note.is_pinned ? "Unpin Note" : "Pin Note"}</span> <Pin size={14} className={note.is_pinned ? "text-accent fill-accent/20" : ""} />
                 </button>
-                <button onClick={() => duplicateNote(note.id)} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-[var(--surface-alt)] flex items-center justify-between">
-                  Duplicate <Sparkles size={14} className="text-muted" />
+                <button onClick={() => duplicateNote(note.id)} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-[var(--surface-alt)] flex items-center justify-between interactive-hover interactive-press-subtle">
+                  <span>Duplicate</span> <Copy size={14} />
                 </button>
-                <button onClick={() => handleToggleState("is_archived")} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-[var(--surface-alt)] flex items-center justify-between">
-                  {note.is_archived ? "Restore Note" : "Archive Note"} <Archive size={14} className="text-muted" />
+                <button onClick={() => handleToggleState("is_archived")} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-[var(--surface-alt)] flex items-center justify-between interactive-hover interactive-press-subtle">
+                  <span>{note.is_archived ? "Restore Note" : "Archive Note"}</span> <Archive size={14} />
                 </button>
                 <div className="h-px bg-divider my-1"></div>
-                <button onClick={() => setIsDeleteModalOpen(true)} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-danger/10 text-danger flex items-center justify-between">
-                  Delete Note <Trash2 size={14} />
+                <button onClick={() => setIsDeleteModalOpen(true)} className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-danger/10 text-danger flex items-center justify-between interactive-hover interactive-press-subtle">
+                  <span>Delete Note</span> <Trash2 size={14} />
                 </button>
               </div>
             </Dropdown>
@@ -292,19 +292,19 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
             
             {/* Formatting Toolbar */}
             <div className="flex flex-wrap items-center gap-1 p-1 mb-8 bg-[var(--surface-alt)] border border-divider rounded-xl sticky top-4 z-10 shadow-sm backdrop-blur-md bg-opacity-80">
-              <button onClick={() => editor.chain().focus().toggleBold().run()} className={`p-1.5 rounded-lg text-sm font-semibold w-8 h-8 flex items-center justify-center transition ${editor.isActive('bold') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>B</button>
-              <button onClick={() => editor.chain().focus().toggleItalic().run()} className={`p-1.5 rounded-lg text-sm italic font-serif w-8 h-8 flex items-center justify-center transition ${editor.isActive('italic') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>I</button>
-              <button onClick={() => editor.chain().focus().toggleStrike().run()} className={`p-1.5 rounded-lg text-sm line-through w-8 h-8 flex items-center justify-center transition ${editor.isActive('strike') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>S</button>
+              <button onClick={() => editor.chain().focus().toggleBold().run()} className={`p-1.5 rounded-lg text-sm font-semibold w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('bold') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>B</button>
+              <button onClick={() => editor.chain().focus().toggleItalic().run()} className={`p-1.5 rounded-lg text-sm italic font-serif w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('italic') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>I</button>
+              <button onClick={() => editor.chain().focus().toggleStrike().run()} className={`p-1.5 rounded-lg text-sm line-through w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('strike') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>S</button>
               <div className="w-px h-5 bg-divider mx-1"></div>
-              <button onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} className={`p-1.5 rounded-lg text-sm font-bold w-8 h-8 flex items-center justify-center transition ${editor.isActive('heading', { level: 1 }) ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>H1</button>
-              <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={`p-1.5 rounded-lg text-sm font-bold w-8 h-8 flex items-center justify-center transition ${editor.isActive('heading', { level: 2 }) ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>H2</button>
+              <button onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} className={`p-1.5 rounded-lg text-sm font-bold w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('heading', { level: 1 }) ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>H1</button>
+              <button onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} className={`p-1.5 rounded-lg text-sm font-bold w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('heading', { level: 2 }) ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>H2</button>
               <div className="w-px h-5 bg-divider mx-1"></div>
-              <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={`p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition ${editor.isActive('bulletList') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>•</button>
-              <button onClick={() => editor.chain().focus().toggleOrderedList().run()} className={`p-1.5 rounded-lg text-sm font-mono w-8 h-8 flex items-center justify-center transition ${editor.isActive('orderedList') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>1.</button>
-              <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={`p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition ${editor.isActive('taskList') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>☑</button>
+              <button onClick={() => editor.chain().focus().toggleBulletList().run()} className={`p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('bulletList') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>•</button>
+              <button onClick={() => editor.chain().focus().toggleOrderedList().run()} className={`p-1.5 rounded-lg text-sm font-mono w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('orderedList') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>1.</button>
+              <button onClick={() => editor.chain().focus().toggleTaskList().run()} className={`p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('taskList') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>☑</button>
               <div className="w-px h-5 bg-divider mx-1"></div>
-              <button onClick={() => editor.chain().focus().toggleBlockquote().run()} className={`p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition ${editor.isActive('blockquote') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>"</button>
-              <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={`p-1.5 rounded-lg text-sm font-mono w-8 h-8 flex items-center justify-center transition ${editor.isActive('codeBlock') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>{'</>'}</button>
+              <button onClick={() => editor.chain().focus().toggleBlockquote().run()} className={`p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('blockquote') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>"</button>
+              <button onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={`p-1.5 rounded-lg text-sm font-mono w-8 h-8 flex items-center justify-center transition interactive-hover interactive-press-subtle ${editor.isActive('codeBlock') ? 'bg-accent/20 text-accent' : 'text-muted hover:bg-[var(--surface)] hover:text-primary'}`}>{'</>'}</button>
               
               <div className="w-px h-5 bg-divider mx-1"></div>
               <input 
@@ -315,11 +315,18 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
                 accept="image/*,.pdf,.doc,.docx,.txt"
               />
               <button 
+                onClick={insertLineBreak} 
+                className="p-1.5 rounded-lg text-sm w-8 h-8 flex items-center justify-center transition text-muted hover:bg-[var(--surface)] hover:text-primary interactive-hover interactive-press-subtle"
+                title="Insert Line Break (Shift+Enter)"
+              >
+                <CornerDownLeft size={14} />
+              </button>
+              <button 
                 onClick={() => fileInputRef.current?.click()} 
                 disabled={isUploading}
-                className="p-1.5 rounded-lg text-sm w-auto px-3 h-8 flex items-center gap-1.5 justify-center text-muted hover:bg-[var(--surface)] hover:text-primary transition"
+                className="p-1.5 rounded-lg text-sm w-auto px-3 h-8 flex items-center gap-1.5 justify-center text-muted hover:bg-[var(--surface)] hover:text-primary transition interactive-hover interactive-press-subtle"
               >
-                {isUploading ? <Clock size={14} className="animate-spin" /> : <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>}
+                {isUploading ? <Clock size={14} className="animate-spin" /> : <Paperclip size={14} />}
                 {isUploading ? "Uploading..." : "Attach"}
               </button>
             </div>
@@ -397,7 +404,7 @@ export default function NoteEditorClient({ initialNote, allNotes }) {
                 <span className="block text-xs text-muted mt-0.5">Schedule a task for later</span>
               </div>
             </a>
-            <button onClick={() => setIsFlashcardModalOpen(true)} className="text-left p-3 rounded-xl border border-divider hover:border-accent hover:bg-accent/5 transition flex items-start gap-3 group">
+            <button onClick={() => setIsFlashcardModalOpen(true)} className="text-left p-3 rounded-xl border border-divider hover:border-accent hover:bg-accent/5 transition flex items-start gap-3 group interactive-hover interactive-press-subtle">
               <BrainCircuit size={16} className="text-accent shrink-0 mt-0.5" />
               <div>
                 <span className="block text-sm font-semibold text-primary group-hover:text-accent transition">Generate Flashcards</span>

@@ -83,6 +83,8 @@ SOURCE RULES:
  * @param {Array}  options.masterRules — Active admin AI instructions / Nexus Core from DB
  * @param {Array}  options.attachments — Current message attachments
  * @param {Array}  options.conversationContext — Previous conversation messages for context
+ * @param {Object} options.userPreferences - Learned user preferences
+ * @param {boolean} options.isTemporary - Whether current session is a temporary (off-the-record) chat
  * @returns {string} Complete system prompt
  */
 export function buildSystemPrompt({
@@ -92,27 +94,74 @@ export function buildSystemPrompt({
   masterRules = [],
   attachments = [],
   conversationContext = [],
+  userPreferences = {},
+  isTemporary = false,
 }) {
   const sections = [];
+
+  if (isTemporary) {
+    sections.push(`[CHAT PRIVACY & MODE — TEMPORARY CHAT]
+- THIS IS A TEMPORARY CHAT SESSION (Off-the-Record / Private).
+- Messages in this conversation ARE NOT saved in history, trained on, stored permanently, or used for personalization.
+- If the user asks whether this chat is temporary, private, or saved, you MUST state clearly: "This is a Temporary Chat. Your messages in this session are private, off-the-record, and not saved to your conversation history."
+- Never claim that this chat is saved or that the user can return to it later.`);
+  }
 
   // ── 1. NEXUS CORE ──────────────────────────────────────────────────────────
   // Use admin-configured core if available, otherwise use default
   if (masterRules && masterRules.length > 0) {
-    const coreText = masterRules
-      .map((r) => `[Category: ${r.category}]\n${r.rule_text}`)
-      .join("\n\n");
-    sections.push(coreText);
+    const mainRule = masterRules[0];
+    const compiled = mainRule.compiled_constitution || mainRule.meta?.compiled_constitution;
+
+    if (compiled && compiled.categories) {
+      const vNum = mainRule.version_number ? `VERSION ${mainRule.version_number}` : "ACTIVE";
+      let coreText = `[NEXUS CORE CONSTITUTION — ${vNum}]\n`;
+      coreText += `IDENTITY: You are ${compiled.identity?.ai_name || "Nexus"}, the AI assistant embedded within the IB Nexus platform.\n\n`;
+
+      Object.entries(compiled.categories).forEach(([catKey, rules]) => {
+        if (Array.isArray(rules) && rules.length > 0) {
+          coreText += `[${catKey.toUpperCase()}]\n`;
+          rules.forEach((r) => {
+            coreText += `- ${r}\n`;
+          });
+          coreText += `\n`;
+        }
+      });
+      sections.push(coreText.trim());
+    } else {
+      const coreText = masterRules
+        .map((r) => `[Category: ${r.category}]\n${r.rule_text}`)
+        .join("\n\n");
+      sections.push(coreText);
+    }
   } else {
     sections.push(DEFAULT_NEXUS_CORE);
   }
 
-  // ── 2. STUDENT PROFILE ─────────────────────────────────────────────────────
+  // Always append critical system limitations
+  sections.push(`[SYSTEM LIMITATIONS]
+- You DO NOT have the technical ability to rename the chat or conversation.
+- If the user asks you to rename, change, or save the chat name, you MUST explicitly decline.
+- Inform the user that they must rename the chat manually by hovering over the chat name in the left sidebar, clicking the three dots (...), and selecting "Rename".`);
+
+  // ── 2. STUDENT PROFILE & PREFERENCES ───────────────────────────────────────
   const name = userProfile?.display_name || userProfile?.full_name || null;
   const subjectContext = buildSubjectContext(userProfile, subjectFilter);
 
   const nameStr = name ? `- Name: ${name}\n` : "";
+  
+  let prefsStr = "";
+  if (userPreferences && Object.keys(userPreferences).length > 0) {
+    prefsStr = `\n[LEARNED USER PREFERENCES]\n`;
+    if (userPreferences.response_style) prefsStr += `- Style: ${userPreferences.response_style}\n`;
+    if (userPreferences.detail_level) prefsStr += `- Detail: ${userPreferences.detail_level}\n`;
+    if (userPreferences.formatting_preference) prefsStr += `- Formatting: ${userPreferences.formatting_preference}\n`;
+    if (userPreferences.recurring_positive_patterns?.length) prefsStr += `- Preferred patterns: ${userPreferences.recurring_positive_patterns.join(", ")}\n`;
+    if (userPreferences.recurring_negative_patterns?.length) prefsStr += `- Patterns to avoid: ${userPreferences.recurring_negative_patterns.join(", ")}\n`;
+  }
+
   sections.push(`[STUDENT PROFILE]
-${nameStr}${subjectContext}`);
+${nameStr}${subjectContext}${prefsStr}`);
 
   // ── 3. CURRENT ATTACHMENTS ─────────────────────────────────────────────────
   if (attachments && attachments.length > 0) {

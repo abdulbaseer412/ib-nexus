@@ -127,7 +127,28 @@ export async function bootstrapAiTables() {
       category TEXT DEFAULT NULL,
       comment TEXT DEFAULT NULL,
       model_id TEXT DEFAULT NULL,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+      admin_status TEXT DEFAULT 'reported',
+      admin_note TEXT DEFAULT NULL,
+      reviewed_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+      reviewed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      resolved_at TIMESTAMP WITH TIME ZONE DEFAULT NULL,
+      resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+      UNIQUE(user_id, message_id)
+    );
+
+    ALTER TABLE public.ai_feedback ADD COLUMN IF NOT EXISTS admin_status TEXT DEFAULT 'reported';
+    ALTER TABLE public.ai_feedback ADD COLUMN IF NOT EXISTS admin_note TEXT DEFAULT NULL;
+    ALTER TABLE public.ai_feedback ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+    ALTER TABLE public.ai_feedback ADD COLUMN IF NOT EXISTS reviewed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+    ALTER TABLE public.ai_feedback ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
+    ALTER TABLE public.ai_feedback ADD COLUMN IF NOT EXISTS resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL;
+
+    -- AI User Preferences (Feedback Learning Layer)
+    CREATE TABLE IF NOT EXISTS public.ai_user_preferences (
+      user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+      preferences JSONB DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
     );
 
     -- Indexes for performance
@@ -144,6 +165,7 @@ export async function bootstrapAiTables() {
     ALTER TABLE public.ai_messages ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.ai_knowledge_items ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.ai_feedback ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE public.ai_user_preferences ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.ai_training_queue ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.ai_instructions ENABLE ROW LEVEL SECURITY;
     ALTER TABLE public.ai_evaluations ENABLE ROW LEVEL SECURITY;
@@ -203,6 +225,9 @@ export async function bootstrapAiTables() {
     DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage own feedback' AND tablename = 'ai_feedback') THEN
         CREATE POLICY "Users can manage own feedback" ON public.ai_feedback FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage own preferences' AND tablename = 'ai_user_preferences') THEN
+        CREATE POLICY "Users can manage own preferences" ON public.ai_user_preferences FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
       END IF;
     END $$;
   `;
@@ -354,7 +379,57 @@ export async function getConversationMessages(conversationId, { limit = 50, offs
     return [];
   }
 
-  return (data || []).map((m) => ({
+  const rawMessages = data || [];
+  
+  // Deduplicate consecutive assistant messages (keep only the latest assistant response per prompt turn)
+  const messages = [];
+  const staleMessageIdsToDelete = [];
+
+  for (let i = 0; i < rawMessages.length; i++) {
+    const current = rawMessages[i];
+    const next = rawMessages[i + 1];
+
+    if (current.role === "assistant" && next && next.role === "assistant") {
+      staleMessageIdsToDelete.push(current.id);
+    } else {
+      messages.push(current);
+    }
+  }
+
+  if (staleMessageIdsToDelete.length > 0) {
+    adminSupabase
+      .from("ai_messages")
+      .delete()
+      .in("id", staleMessageIdsToDelete)
+      .then(({ error: delErr }) => {
+        if (delErr) console.error("[getConversationMessages] Cleanup stale responses error:", delErr);
+      })
+      .catch(() => {});
+  }
+  
+  if (messages.length > 0) {
+    // Fetch user feedback for these messages
+    const { data: feedbackData, error: fbError } = await adminSupabase
+      .from("ai_feedback")
+      .select("message_id, rating")
+      .eq("user_id", user.id)
+      .in("message_id", messages.map(m => m.id));
+      
+    if (!fbError && feedbackData) {
+      const feedbackMap = feedbackData.reduce((acc, curr) => {
+        acc[curr.message_id] = curr.rating;
+        return acc;
+      }, {});
+      
+      return messages.map((m) => ({
+        ...m,
+        attachments: m.attachments || [],
+        feedback: feedbackMap[m.id] || null
+      }));
+    }
+  }
+
+  return messages.map((m) => ({
     ...m,
     attachments: m.attachments || [],
   }));
@@ -585,28 +660,212 @@ export async function submitFeedback({
   modelId = null,
 }) {
   const user = await requireAuth();
+
+  // If temporary conversation or message, do not save feedback to database
+  if (
+    (typeof conversationId === "string" && conversationId.startsWith("temp_")) ||
+    (typeof messageId === "string" && messageId.startsWith("temp_"))
+  ) {
+    return { id: "temp_fb_" + Date.now(), rating, category, comment, transient: true };
+  }
+
+  const supabase = createAdminClient();
+
+  // Check if an existing feedback entry exists for this user and message/conversation
+  let existing = null;
+  if (messageId) {
+    const { data: ex } = await supabase
+      .from("ai_feedback")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("message_id", messageId)
+      .maybeSingle();
+    existing = ex;
+  } else if (conversationId) {
+    const { data: ex } = await supabase
+      .from("ai_feedback")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("conversation_id", conversationId)
+      .is("message_id", null)
+      .maybeSingle();
+    existing = ex;
+  }
+
+  let result;
+  if (existing?.id) {
+    result = await supabase
+      .from("ai_feedback")
+      .update({
+        rating,
+        category,
+        comment,
+        model_id: modelId,
+      })
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+  } else {
+    result = await supabase
+      .from("ai_feedback")
+      .insert({
+        user_id: user.id,
+        conversation_id: conversationId,
+        message_id: messageId,
+        rating,
+        category,
+        comment,
+        model_id: modelId,
+      })
+      .select("*")
+      .single();
+  }
+
+  if (result.error) {
+    console.error("[submitFeedback]", result.error);
+    throw new Error("Failed to submit feedback: " + (result.error.message || result.error.details));
+  }
+
+  return result.data;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PREFERENCES & EDITING
+// ═══════════════════════════════════════════════════════════════
+
+/** Get user AI preferences */
+export async function getUserPreferences(userId) {
+  const supabase = await createServerClient();
+  const { data } = await supabase
+    .from("ai_user_preferences")
+    .select("preferences")
+    .eq("user_id", userId)
+    .single();
+  return data?.preferences || {};
+}
+
+/** Update user AI preferences */
+export async function updateUserPreferences(userId, newPreferences) {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("ai_user_preferences")
+    .upsert(
+      {
+        user_id: userId,
+        preferences: newPreferences,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'user_id' }
+    );
+  if (error) console.error("[updateUserPreferences]", error);
+}
+
+/** Edit a message and truncate the conversation from that point */
+export async function editMessageAndTruncate(conversationId, messageId, newContent) {
+  const user = await requireAuth();
   const supabase = await createServerClient();
 
-  const { data, error } = await supabase
-    .from("ai_feedback")
-    .insert({
-      user_id: user.id,
-      conversation_id: conversationId,
-      message_id: messageId,
-      rating,
-      category,
-      comment,
-      model_id: modelId,
-    })
+  // 1. Get the target message to find its timestamp
+  const { data: targetMsg, error: getErr } = await supabase
+    .from("ai_messages")
+    .select("created_at, role")
+    .eq("id", messageId)
+    .eq("conversation_id", conversationId)
+    .single();
+
+  if (getErr || !targetMsg) throw new Error("Message not found");
+  if (targetMsg.role !== "user") throw new Error("Can only edit user messages");
+
+  // 2. Delete all messages in the conversation strictly AFTER this message's created_at
+  const { error: delErr } = await supabase
+    .from("ai_messages")
+    .delete()
+    .eq("conversation_id", conversationId)
+    .gt("created_at", targetMsg.created_at);
+    
+  if (delErr) console.error("[editMessageAndTruncate] Delete downstream error:", delErr);
+
+  // 3. Update the target message content
+  const { data: updatedMsg, error: updateErr } = await supabase
+    .from("ai_messages")
+    .update({ content: newContent })
+    .eq("id", messageId)
     .select("*")
     .single();
 
-  if (error) {
-    console.error("[submitFeedback]", error);
-    throw new Error("Failed to submit feedback");
+  return updatedMsg;
+}
+
+/** Truncate all messages after a given message or timestamp in a conversation */
+export async function truncateAfterMessage(conversationId, messageId = null, createdAt = null) {
+  const user = await requireAuth();
+  const supabase = await createServerClient();
+  const adminSupabase = createAdminClient();
+
+  // 1. Verify ownership
+  const { data: conv } = await supabase
+    .from("ai_conversations")
+    .select("id")
+    .eq("id", conversationId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!conv) {
+    console.error("[truncateAfterMessage] Conversation not found or access denied:", conversationId);
+    return false;
   }
 
-  return data;
+  let targetCreatedAt = createdAt;
+  let isAssistantTarget = false;
+
+  if (messageId) {
+    const { data: targetMsg } = await adminSupabase
+      .from("ai_messages")
+      .select("created_at, role")
+      .eq("id", messageId)
+      .eq("conversation_id", conversationId)
+      .maybeSingle();
+
+    if (targetMsg) {
+      targetCreatedAt = targetMsg.created_at;
+      if (targetMsg.role === "assistant") {
+        isAssistantTarget = true;
+      }
+    }
+  }
+
+  if (!targetCreatedAt) {
+    const { data: userMsgs } = await adminSupabase
+      .from("ai_messages")
+      .select("created_at")
+      .eq("conversation_id", conversationId)
+      .eq("role", "user")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (userMsgs && userMsgs.length > 0) {
+      targetCreatedAt = userMsgs[0].created_at;
+    }
+  }
+
+  if (targetCreatedAt) {
+    const { error: delErr } = isAssistantTarget
+      ? await adminSupabase.from("ai_messages").delete().eq("conversation_id", conversationId).gte("created_at", targetCreatedAt)
+      : await adminSupabase.from("ai_messages").delete().eq("conversation_id", conversationId).gt("created_at", targetCreatedAt);
+
+    if (delErr) console.error("[truncateAfterMessage] Delete downstream error:", delErr);
+  } else {
+    // Fallback: Delete all assistant messages in this conversation if no timestamp found
+    const { error: delErr } = await adminSupabase
+      .from("ai_messages")
+      .delete()
+      .eq("conversation_id", conversationId)
+      .eq("role", "assistant");
+
+    if (delErr) console.error("[truncateAfterMessage] Fallback delete assistant error:", delErr);
+  }
+
+  return true;
 }
 
 // ═══════════════════════════════════════════════════════════════

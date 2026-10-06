@@ -132,6 +132,18 @@ export default function UserMenu({ displayName, email, avatarUrl }) {
                 {item.label}
               </Link>
             ))}
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                closeMenu();
+                window.dispatchEvent(new CustomEvent("nexus:open-scholar-intro"));
+              }}
+              className="w-full text-left px-3 py-2 rounded-lg text-[13px] font-medium text-secondary hover:bg-[var(--hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer flex items-center justify-between"
+            >
+              <span>Scholar Orientation</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--surface-alt)] text-[var(--accent)] border border-[var(--border)]">Tour</span>
+            </button>
           </div>
 
           <div className="p-1.5 border-t border-[var(--divider)]">

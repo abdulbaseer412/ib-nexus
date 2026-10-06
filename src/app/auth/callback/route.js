@@ -11,6 +11,8 @@ import {
   isIdentityConflictError,
   validateGoogleLinkOwnership,
 } from "@/lib/auth-linking";
+import { fetchDirectLockStatus } from "@/lib/website-lock";
+import { isUserApprovedForLockedSite } from "@/lib/website-access-allowlist";
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { appendFileSync } from "fs";
@@ -33,14 +35,25 @@ function securityRedirect(origin, params) {
   return NextResponse.redirect(url.toString());
 }
 
-function loginRedirect(origin, message, nextPath = null) {
+function loginRedirect(origin, message, nextPath = null, isLocked = false, rejectedEmail = null) {
+  if (isLocked) {
+    const url = new URL("/", origin);
+    url.searchParams.set("lock_error", message);
+    if (rejectedEmail) url.searchParams.set("rejected_email", rejectedEmail);
+    return NextResponse.redirect(url.toString());
+  }
   const url = new URL("/login", origin);
   url.searchParams.set("error", message);
   if (nextPath) url.searchParams.set("next", nextPath);
   return NextResponse.redirect(url.toString());
 }
 
-function signupRedirect(origin, message) {
+function signupRedirect(origin, message, isLocked = false) {
+  if (isLocked) {
+    const url = new URL("/", origin);
+    url.searchParams.set("lock_error", message);
+    return NextResponse.redirect(url.toString());
+  }
   const url = new URL("/signup", origin);
   url.searchParams.set("error", message);
   return NextResponse.redirect(url.toString());
@@ -178,6 +191,8 @@ async function clearRejectedSignupAuthorization(request, response) {
 
 export async function GET(request) {
   try {
+    const lockStatus = await fetchDirectLockStatus();
+    const isLocked = Boolean(lockStatus?.is_locked);
     const { searchParams, origin } = new URL(request.url);
     const code = searchParams.get("code");
     const next = searchParams.get("next");
@@ -215,6 +230,23 @@ export async function GET(request) {
 
     // ── BRANCH A: OAuth provider error (no code in URL) ────────────────────────
     if (rawError) {
+      const isSuspension =
+        rawErrorCode === "user_banned" ||
+        (rawErrorDescription && /banned|suspended/i.test(rawErrorDescription)) ||
+        (rawError && /banned|suspended/i.test(rawError));
+
+      if (isSuspension) {
+        flog("[CALLBACK:BRANCH-A:SUSPENDED]", {
+          rawError,
+          rawErrorDescription,
+          rawErrorCode,
+        });
+        return clearAuthCookies(
+          request,
+          NextResponse.redirect(`${origin}/suspended`)
+        );
+      }
+
       let message;
       if (rawError === "access_denied") {
         if (!isLinkFlow && intent === "signin") {
@@ -246,9 +278,9 @@ export async function GET(request) {
         return clearAuthCookies(request, securityRedirect(origin, { error: message }));
       }
       if (intent === "signup") {
-        return clearAuthCookies(request, signupRedirect(origin, message));
+        return clearAuthCookies(request, signupRedirect(origin, message, isLocked));
       }
-      return clearAuthCookies(request, loginRedirect(origin, message));
+      return clearAuthCookies(request, loginRedirect(origin, message, null, isLocked));
     }
 
     // ── BRANCH B: No code and no error ─────────────────────────────────────────
@@ -270,9 +302,9 @@ export async function GET(request) {
         return clearAuthCookies(request, securityRedirect(origin, { error: message }));
       }
       if (intent === "signup") {
-        return clearAuthCookies(request, signupRedirect(origin, message));
+        return clearAuthCookies(request, signupRedirect(origin, message, isLocked));
       }
-      return clearAuthCookies(request, loginRedirect(origin, message));
+      return clearAuthCookies(request, loginRedirect(origin, message, null, isLocked));
     }
 
     // ── BRANCH C: Exchange code for session ────────────────────────────────────
@@ -288,6 +320,20 @@ export async function GET(request) {
     const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
     if (exchangeError) {
+      const isSuspendedExchange =
+        exchangeError.code === "user_banned" ||
+        /banned|suspended/i.test(exchangeError.message || "");
+
+      if (isSuspendedExchange) {
+        flog("[CALLBACK:BRANCH-C:SUSPENDED]", {
+          exchangeError: exchangeError.message,
+        });
+        return clearAuthCookies(
+          request,
+          NextResponse.redirect(`${origin}/suspended`)
+        );
+      }
+
       flog("[CALLBACK:EXCHANGE:FAILED]", {
         status: "FAILED",
         intent,
@@ -319,7 +365,8 @@ export async function GET(request) {
             origin,
             isPkceLoss
               ? "Sign-up was interrupted. Please try again."
-              : mapAuthError(exchangeError)
+              : mapAuthError(exchangeError),
+            isLocked
           )
         );
       }
@@ -327,11 +374,11 @@ export async function GET(request) {
       if (isPkceLoss) {
         return clearAuthCookies(
           request,
-          loginRedirect(origin, "Google sign-in was interrupted. Please try again.")
+          loginRedirect(origin, "Google sign-in was interrupted. Please try again.", null, isLocked)
         );
       }
 
-      return clearAuthCookies(request, loginRedirect(origin, mapAuthError(exchangeError)));
+      return clearAuthCookies(request, loginRedirect(origin, mapAuthError(exchangeError), null, isLocked));
     }
 
     const user = data.user;
@@ -384,8 +431,19 @@ export async function GET(request) {
           accountAgeMs,
           signInSpreadMs,
           deleteUserExecuted: false,
-          redirectUrl: "/signup?google_exists=1",
+          redirectUrl: isLocked ? "/" : "/signup?google_exists=1",
         });
+        if (isLocked) {
+          await supabase.auth.signOut({ scope: "local" });
+          const res = loginRedirect(
+            origin,
+            "This account is not on the authorized clearance allowlist for this locked workspace.",
+            null,
+            true,
+            user.email
+          );
+          return clearAuthCookies(request, res);
+        }
         const url = new URL("/signup", origin);
         url.searchParams.set("google_exists", "1");
         const response = NextResponse.redirect(url.toString());
@@ -418,6 +476,26 @@ export async function GET(request) {
           });
           isNewUser = false;
         } else {
+          if (isLocked) {
+            await deleteUser(user.id, {
+              email: user.email,
+              intent,
+              isNewUser,
+              redirectTarget: "/",
+              reason: "Google sign-in during locked workspace",
+            });
+            return clearAuthCookies(
+              request,
+              loginRedirect(
+                origin,
+                "This account is not registered or authorized on the allowlist for this locked workspace.",
+                null,
+                true,
+                user.email
+              )
+            );
+          }
+
           const redirectTarget = loginRedirect(origin, GOOGLE_NO_ACCOUNT_MESSAGE).headers.get("location");
           flog("[CALLBACK:BRANCH-F] BLOCKED: unregistered Google sign-in — deleting orphan", {
             branch: "F",
@@ -486,6 +564,41 @@ export async function GET(request) {
     let destination = getPostAuthRedirect(profile);
     flog("[CALLBACK:DESTINATION-INITIAL]", { destination });
 
+    // ── SUSPENSION CHECK ──────────────────────────────────────────────────────
+    const isUserSuspended = Boolean(
+      (profile?.preferences?.is_suspended === true) ||
+      (profile?.preferences?.is_suspended !== false && user.user_metadata?.is_suspended === true) ||
+      (user.banned_until && new Date(user.banned_until).getTime() > Date.now())
+    );
+
+    if (isUserSuspended) {
+      flog("[CALLBACK:BRANCH-H:SUSPENDED]", { userId: user.id, email: user.email });
+      await supabase.auth.signOut({ scope: "local" });
+      return clearAuthCookies(
+        request,
+        NextResponse.redirect(`${origin}/suspended?email=${encodeURIComponent(user.email || "")}`)
+      );
+    }
+
+    // ── WEBSITE LOCK CHECK ────────────────────────────────────────────────────
+    if (isLocked) {
+      const isApproved = await isUserApprovedForLockedSite(user, profile);
+      if (!isApproved) {
+        flog("[CALLBACK:LOCK-REJECTED]", { email: user.email });
+        await supabase.auth.signOut({ scope: "local" });
+        return clearAuthCookies(
+          request,
+          loginRedirect(
+            origin,
+            `This account is not on the authorized clearance allowlist for this locked workspace.`,
+            null,
+            true,
+            user.email
+          )
+        );
+      }
+    }
+
     flog("[CALLBACK:SETTINGS:STARTING]", { step: "✓ Loading user settings", userId: user.id });
     const { data: settings, error: settingsError } = await supabase
       .from("user_auth_settings")
@@ -520,12 +633,21 @@ export async function GET(request) {
       } else {
         const providerUsed = oauthProvider || user.app_metadata?.provider;
         if (providerUsed === "google" && settings.google_enabled === false) {
-          flog("[CALLBACK:BRANCH-I] Google disabled for account", { userId: user.id });
-          await supabase.auth.signOut({ scope: "local" });
-          return clearAuthCookies(
-            request,
-            loginRedirect(origin, "Google sign-in has been disabled for this account.")
-          );
+          if (isLocked) {
+            // User was already verified as approved (Super Admin / allowlist),
+            // automatically enable Google so they are not blocked!
+            await supabase
+              .from("user_auth_settings")
+              .update({ google_enabled: true, updated_at: new Date().toISOString() })
+              .eq("user_id", user.id);
+          } else {
+            flog("[CALLBACK:BRANCH-I] Google disabled for account", { userId: user.id });
+            await supabase.auth.signOut({ scope: "local" });
+            return clearAuthCookies(
+              request,
+              loginRedirect(origin, "Google sign-in has been disabled for this account.", null, isLocked)
+            );
+          }
         }
       }
     }
@@ -560,7 +682,7 @@ export async function GET(request) {
     const origin = new URL(request.url).origin;
     return clearAuthCookies(
       request,
-      loginRedirect(origin, err?.message || "Authentication issue")
+      loginRedirect(origin, err?.message || "Authentication issue", null, isLocked)
     );
   }
 }
