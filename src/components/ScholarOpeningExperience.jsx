@@ -174,11 +174,11 @@ export default function ScholarOpeningExperience({
   ];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#050811]/90 backdrop-blur-2xl">
+    <div className="fixed inset-0 z-[100] bg-[#050811]/90 backdrop-blur-2xl overflow-y-auto overflow-x-hidden nexus-custom-slider scroll-smooth">
       {/* Cyber-Academic Ambience Lighting */}
-      <div className="absolute top-1/4 -left-1/4 w-[45vw] h-[45vw] bg-[var(--accent)]/15 blur-[140px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-1/4 w-[45vw] h-[45vw] bg-indigo-600/15 blur-[150px] rounded-full pointer-events-none" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(5,8,17,0.7)_100%)] pointer-events-none" />
+      <div className="fixed top-1/4 -left-1/4 w-[45vw] h-[45vw] bg-[var(--accent)]/15 blur-[140px] rounded-full pointer-events-none" />
+      <div className="fixed bottom-1/4 -right-1/4 w-[45vw] h-[45vw] bg-indigo-600/15 blur-[150px] rounded-full pointer-events-none" />
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(5,8,17,0.7)_100%)] pointer-events-none" />
 
       {/* Floating HUD Controls */}
       <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
@@ -186,7 +186,7 @@ export default function ScholarOpeningExperience({
           <button
             type="button"
             onClick={handleSkip}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-white font-mono transition-all backdrop-blur-md"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-white font-mono transition-all backdrop-blur-md shadow-lg"
           >
             <span>Skip Tour</span>
             <FastForward size={13} />
@@ -195,7 +195,7 @@ export default function ScholarOpeningExperience({
           <button
             type="button"
             onClick={handleReplay}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-white font-mono transition-all backdrop-blur-md"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-white font-mono transition-all backdrop-blur-md shadow-lg"
           >
             <RotateCcw size={13} />
             <span>Replay</span>
@@ -205,7 +205,7 @@ export default function ScholarOpeningExperience({
         <button
           type="button"
           onClick={handleDismiss}
-          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all backdrop-blur-md"
+          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white flex items-center justify-center transition-all backdrop-blur-md shadow-lg"
           aria-label="Enter Dashboard"
           title="Enter Dashboard (Esc)"
         >
@@ -213,8 +213,9 @@ export default function ScholarOpeningExperience({
         </button>
       </div>
 
-      <div className="relative w-full max-w-2xl text-center flex flex-col items-center">
-        <AnimatePresence mode="wait">
+      <div className="min-h-full w-full flex flex-col items-center justify-start pt-10 pb-16 sm:py-14 px-4 relative z-10">
+        <div className="relative w-full max-w-2xl text-center flex flex-col items-center my-auto">
+          <AnimatePresence mode="wait">
           {/* ============================================================ */}
           {/* STAGE 0 & 1: SCHOLAR IDENTITY & BIOMETRIC INITIALIZATION     */}
           {/* ============================================================ */}
@@ -435,6 +436,7 @@ export default function ScholarOpeningExperience({
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
     </div>
   );

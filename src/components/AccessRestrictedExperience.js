@@ -20,7 +20,7 @@ export default function AccessRestrictedExperience({ user, profile }) {
   const email = profile?.email || user?.email || "";
 
   return (
-    <div className="w-full min-h-[calc(100vh-140px)] flex flex-col items-center justify-center p-4">
+    <div className="w-full min-h-[calc(100vh-100px)] flex flex-col items-center justify-start pt-8 pb-16 sm:py-12 px-4 nexus-custom-slider">
       <div className="w-full max-w-lg p-6 sm:p-9 rounded-3xl border border-rose-500/30 bg-gradient-to-b from-rose-950/40 via-slate-900/95 to-slate-950 shadow-[0_0_70px_rgba(244,63,94,0.18)] text-center space-y-6 animate-in fade-in zoom-in-95 duration-300 relative overflow-hidden my-auto">
         
         {/* Ambient Glow */}

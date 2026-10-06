@@ -123,17 +123,17 @@ export default function VisitorOpeningExperience({ isOpen = false, onClose = () 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xl">
+    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl overflow-y-auto overflow-x-hidden nexus-custom-slider scroll-smooth">
       {/* Ambient Radial Lights */}
-      <div className="absolute top-1/4 left-1/4 w-[35vw] h-[35vw] bg-amber-500/10 blur-[120px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[35vw] h-[35vw] bg-indigo-500/10 blur-[120px] rounded-full pointer-events-none" />
+      <div className="fixed top-1/4 left-1/4 w-[35vw] h-[35vw] bg-amber-500/10 blur-[120px] rounded-full pointer-events-none" />
+      <div className="fixed bottom-1/4 right-1/4 w-[35vw] h-[35vw] bg-indigo-500/10 blur-[120px] rounded-full pointer-events-none" />
 
       {/* Top Floating Control Bar */}
       <div className="fixed top-6 right-6 z-50 flex items-center gap-2">
         {stage < 3 ? (
           <button
             onClick={handleSkip}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-slate-200 font-mono transition-all backdrop-blur-md"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-slate-200 font-mono transition-all backdrop-blur-md shadow-lg"
           >
             <span>Skip Tour</span>
             <FastForward size={13} />
@@ -141,7 +141,7 @@ export default function VisitorOpeningExperience({ isOpen = false, onClose = () 
         ) : (
           <button
             onClick={handleReplay}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-slate-200 font-mono transition-all backdrop-blur-md"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-slate-200 font-mono transition-all backdrop-blur-md shadow-lg"
           >
             <RotateCcw size={13} />
             <span>Replay</span>
@@ -150,15 +150,16 @@ export default function VisitorOpeningExperience({ isOpen = false, onClose = () 
 
         <button
           onClick={onClose}
-          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-slate-200 flex items-center justify-center transition-all backdrop-blur-md"
+          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-slate-200 flex items-center justify-center transition-all backdrop-blur-md shadow-lg"
           aria-label="Close intro"
         >
           <X size={16} />
         </button>
       </div>
 
-      <div className="relative w-full max-w-2xl text-center flex flex-col items-center">
-        <AnimatePresence mode="wait">
+      <div className="min-h-full w-full flex flex-col items-center justify-start pt-10 pb-16 sm:py-14 px-4 relative z-10">
+        <div className="relative w-full max-w-2xl text-center flex flex-col items-center my-auto">
+          <AnimatePresence mode="wait">
           {/* ============================================================ */}
           {/* STAGE 0 & 1: 3D Academic Codex Opening Experience            */}
           {/* ============================================================ */}
@@ -364,6 +365,7 @@ export default function VisitorOpeningExperience({ isOpen = false, onClose = () 
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
     </div>
   );

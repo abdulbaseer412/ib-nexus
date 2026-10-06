@@ -251,7 +251,7 @@ export default function NexusOpeningExperience({
       : "We are currently performing scheduled maintenance to upgrade the IB Nexus Academic Workspace. All user accounts, study materials, notes, and academic tools remain completely safe and will be restored immediately upon completion.";
 
   return (
-    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-start sm:justify-center bg-[#07070a] text-white overflow-y-auto overflow-x-hidden select-none font-sans py-8 px-4">
+    <div className="fixed inset-0 z-[9999] bg-[#07070a] text-white overflow-y-auto overflow-x-hidden select-none font-sans nexus-custom-slider scroll-smooth">
       {/* Background Ambient Lighting Mesh */}
       <div className="fixed inset-0 pointer-events-none">
         <div
@@ -270,7 +270,7 @@ export default function NexusOpeningExperience({
         <button
           type="button"
           onClick={skipToLockedCard}
-          className="fixed top-6 right-6 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-slate-300 font-mono transition-all backdrop-blur-md cursor-pointer active:scale-95"
+          className="fixed top-6 right-6 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-xs text-slate-300 font-mono transition-all backdrop-blur-md cursor-pointer active:scale-95 shadow-lg"
           title="Skip intro to lock screen"
         >
           <span>Skip Intro</span>
@@ -278,8 +278,10 @@ export default function NexusOpeningExperience({
         </button>
       )}
 
-      <div className="relative z-10 flex flex-col items-center w-full max-w-xl text-center my-auto">
-        <AnimatePresence mode="wait">
+      {/* Full-height scrollable inner canvas that ensures header is never cut off */}
+      <div className="min-h-full w-full flex flex-col items-center justify-start pt-10 pb-16 sm:py-14 px-4 relative z-10">
+        <div className="relative z-10 flex flex-col items-center w-full max-w-xl text-center my-auto">
+          <AnimatePresence mode="wait">
           {/* ============================================================ */}
           {/* STAGE 0 & 1: 3D Book Opening Animation (Plays First on Entry) */}
           {/* ============================================================ */}
@@ -401,8 +403,8 @@ export default function NexusOpeningExperience({
               className="flex flex-col items-center space-y-6 w-full"
             >
               {/* Brand Header */}
-              <div className="flex flex-col items-center space-y-3">
-                <div className="relative group">
+              <div className="flex flex-col items-center space-y-3 shrink-0 pt-1 sm:pt-2">
+                <div className="relative group shrink-0">
                   <div
                     className={`absolute -inset-1 rounded-3xl blur-xl opacity-75 group-hover:opacity-100 transition duration-1000 ${
                       isRestricted
@@ -410,21 +412,21 @@ export default function NexusOpeningExperience({
                         : "bg-gradient-to-r from-amber-500/30 via-indigo-500/30 to-cyan-500/30"
                     }`}
                   />
-                  <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-black/60 border border-white/15 backdrop-blur-2xl flex items-center justify-center p-3 shadow-2xl">
+                  <div className="relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-black/70 border border-white/20 backdrop-blur-2xl flex items-center justify-center p-2.5 sm:p-3 shadow-2xl shrink-0">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src="/brand/ib-nexus-icon.png"
                       alt="IB Nexus"
-                      className="w-10 h-10 sm:w-12 sm:h-12 object-contain"
+                      className="w-9 h-9 sm:w-10 sm:h-10 object-contain shrink-0 drop-shadow-[0_0_12px_rgba(255,255,255,0.2)]"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-0.5 text-center">
-                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">
+                <div className="space-y-0.5 text-center shrink-0">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent drop-shadow-sm">
                     IB NEXUS
                   </h1>
-                  <p className="text-[10px] sm:text-xs font-medium text-slate-400 tracking-wider uppercase">
+                  <p className="text-[10px] sm:text-xs font-semibold text-slate-400 tracking-[0.2em] uppercase">
                     Academic Workspace
                   </p>
                 </div>
@@ -936,6 +938,7 @@ export default function NexusOpeningExperience({
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
       </div>
     </div>
   );
