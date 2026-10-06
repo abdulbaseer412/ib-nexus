@@ -1,6 +1,6 @@
 "use server";
 
-import { createServerClient } from "@/lib/supabase/server";
+import { createServerClient, createAdminClient } from "@/lib/supabase/server";
 import { getPostAuthRedirect } from "@/lib/auth";
 import { ensureProfile } from "@/lib/profile-service";
 import {
@@ -11,11 +11,8 @@ import {
 } from "@/lib/validation";
 import { isOAuthOnly, hasPasswordLogin } from "@/lib/auth-providers";
 import { getAuthErrorDetails } from "@/lib/auth-errors";
-import { headers } from "next/headers";
-import { revalidatePath } from "next/cache";
-
-
 async function getOrigin() {
+  const { headers } = await import("next/headers");
   const headersList = await headers();
   const host = headersList.get("x-forwarded-host") || headersList.get("host");
   const protocol = headersList.get("x-forwarded-proto") || "http";
@@ -59,6 +56,44 @@ export async function resolveSignInError(email) {
     return { type: "validation", message: emailResult.error, providers: [] };
   }
 
+  // Check if account is suspended or has disabled sign-in methods
+  try {
+    const adminSupabase = createAdminClient();
+    const { data: profile } = await adminSupabase
+      .from("profiles")
+      .select("id, preferences, is_restricted")
+      .eq("email", emailResult.value)
+      .maybeSingle();
+
+    if (profile?.preferences?.is_suspended) {
+      return {
+        type: "suspended",
+        title: "Account Access Suspended",
+        message: "Your IB Nexus account access has been suspended by an administrator. All your notes and study data remain securely preserved.",
+        providers: [],
+      };
+    }
+
+    if (profile?.id) {
+      const { data: authSettings } = await adminSupabase
+        .from("user_auth_settings")
+        .select("email_password_enabled, google_enabled")
+        .eq("user_id", profile.id)
+        .maybeSingle();
+
+      if (authSettings && authSettings.email_password_enabled === false) {
+        return {
+          type: "disabled_method",
+          title: "Sign-In Method Disabled",
+          message: "Email & password sign-in has been disabled for this account. Please sign in using Google.",
+          providers: authSettings.google_enabled ? ["google"] : ["google"],
+        };
+      }
+    }
+  } catch (err) {
+    console.error("[resolveSignInError] error checking profile/settings:", err);
+  }
+
   const providers = await getEmailProviders(emailResult.value);
 
   if (providers.length === 0) {
@@ -85,6 +120,51 @@ export async function resolveSignInError(email) {
     message: "The password you entered is incorrect.",
     providers,
   };
+}
+
+/**
+ * Authoritatively verifies whether a user is allowed to sign in with a given method.
+ * Runs with admin privileges to bypass RLS.
+ */
+export async function verifyUserAuthMethod(userId, method = "email") {
+  if (!userId) return { allowed: false, error: "No user ID provided" };
+  try {
+    const admin = createAdminClient();
+    const { data: settings, error } = await admin
+      .from("user_auth_settings")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error || !settings) {
+      return { allowed: true };
+    }
+
+    if (method === "email" && settings.email_password_enabled === false) {
+      return {
+        allowed: false,
+        type: "disabled_method",
+        title: "Sign-In Method Disabled",
+        message: "Email & password sign-in has been disabled for this account. Please sign in using Google.",
+        providers: settings.google_enabled ? ["google"] : ["google"],
+      };
+    }
+
+    if (method === "google" && settings.google_enabled === false) {
+      return {
+        allowed: false,
+        type: "disabled_method",
+        title: "Sign-In Method Disabled",
+        message: "Google sign-in has been disabled for this account. Please use Email & Password.",
+        providers: settings.email_password_enabled ? ["email"] : ["email"],
+      };
+    }
+
+    return { allowed: true };
+  } catch (err) {
+    console.error("[verifyUserAuthMethod] error:", err);
+    return { allowed: true };
+  }
 }
 
 /**
@@ -208,8 +288,9 @@ export async function resolvePostAuthRedirect(signInMethod = null) {
 
   if (!user) return "/login";
 
-  // Check user_auth_settings
-  const { data: settings, error: settingsError } = await supabase
+  // Check user_auth_settings using admin client to bypass RLS reliably
+  const admin = createAdminClient();
+  const { data: settings, error: settingsError } = await admin
     .from("user_auth_settings")
     .select("*")
     .eq("user_id", user.id)
@@ -280,143 +361,226 @@ export async function sendPasswordReset(formData) {
  * OAuth-only users (create password for the first time).
  */
 export async function updatePassword(formData) {
-  const password = formData.get("password")?.toString() ?? "";
-  const confirmPassword = formData.get("confirm_password")?.toString() ?? "";
+  try {
+    const password = formData.get("password")?.toString() ?? "";
+    const confirmPassword = formData.get("confirm_password")?.toString() ?? "";
 
-  const passwordResult = validatePassword(password);
-  if (!passwordResult.valid) return { error: passwordResult.error };
+    const passwordResult = validatePassword(password);
+    if (!passwordResult.valid) return { error: passwordResult.error };
 
-  const matchResult = validatePasswordMatch(password, confirmPassword);
-  if (!matchResult.valid) return { error: matchResult.error };
+    const matchResult = validatePasswordMatch(password, confirmPassword);
+    if (!matchResult.valid) return { error: matchResult.error };
 
-  const supabase = await createServerClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const supabase = await createServerClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-  if (userError || !user) {
-    return { error: "Not authenticated" };
-  }
-
-  const { error } = await supabase.auth.updateUser({ password });
-
-  if (error) {
-    const msg = error.message.toLowerCase();
-    if (
-      msg.includes("same password") ||
-      msg.includes("should be different") ||
-      msg.includes("different from") ||
-      msg.includes("must be different") ||
-      msg.includes("same_password")
-    ) {
-      return { error: "Your new password must be different from your current password.", type: "warning" };
+    if (userError || !user) {
+      return { error: "Not authenticated. Please sign in again." };
     }
-    return { error: "Could not update password. Please try again." };
+
+    let updateErr = null;
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      updateErr = error;
+    } catch (clientErr) {
+      updateErr = clientErr;
+    }
+
+    // Fallback to service role admin client if client updateUser fails
+    // (Crucial for OAuth-only users where GoTrue requires admin privileges to create password)
+    if (updateErr) {
+      console.warn("[updatePassword] Standard updateUser failed, attempting admin client:", updateErr.message);
+      const admin = createAdminClient();
+      const { error: adminErr } = await admin.auth.admin.updateUserById(user.id, { password });
+
+      if (adminErr) {
+        console.error("[updatePassword] Admin updateUserById also failed:", adminErr.message);
+        const msg = adminErr.message.toLowerCase();
+        if (
+          msg.includes("same password") ||
+          msg.includes("should be different") ||
+          msg.includes("different from") ||
+          msg.includes("must be different") ||
+          msg.includes("same_password")
+        ) {
+          return { error: "Your new password must be different from your current password.", type: "warning" };
+        }
+        return { error: adminErr.message || "Could not update password. Please try again." };
+      }
+    }
+
+    // Synchronize user_auth_settings with admin client so email_password_enabled is true
+    const admin = createAdminClient();
+
+    // Guarantee email identity and providers list in GoTrue for OAuth accounts
+    try {
+      await admin.rpc("ensure_email_identity", {
+        p_user_id: user.id,
+        p_email: user.email,
+      });
+    } catch (rpcErr) {
+      console.warn("[updatePassword] ensure_email_identity warning:", rpcErr?.message);
+    }
+
+    await admin
+      .from("user_auth_settings")
+      .upsert(
+        {
+          user_id: user.id,
+          email_password_enabled: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+    revalidatePath("/settings/security");
+    return { success: "Password updated successfully." };
+  } catch (err) {
+    console.error("[updatePassword] Unexpected exception:", err);
+    return { error: err?.message || "An unexpected error occurred. Please try again." };
   }
-
-  // Synchronize user_auth_settings so email_password_enabled is true
-  await supabase
-    .from("user_auth_settings")
-    .update({
-      email_password_enabled: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", user.id);
-
-  revalidatePath("/settings/security");
-  return { success: "Password updated successfully." };
 }
 
 /**
  * Fetches the user_auth_settings row for the current user.
- * If it doesn't exist, it creates one (self-healing backfill).
+ * If it doesn't exist, it creates one (self-healing backfill) using the admin client.
  */
 export async function getUserAuthSettings() {
-  const supabase = await createServerClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  try {
+    const supabase = await createServerClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-  if (userError || !user) {
-    return { error: "Not authenticated" };
-  }
-
-  // Fetch settings
-  let { data, error } = await supabase
-    .from("user_auth_settings")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  // Self-healing backfill if row is missing
-  if (!data) {
-    const providers = await getEmailProviders(user.email);
-    const hasGoogle = providers.includes("google");
-    const hasEmail = providers.includes("email");
-
-    const { data: inserted, error: insertError } = await supabase
-      .from("user_auth_settings")
-      .insert({
-        user_id: user.id,
-        google_enabled: hasGoogle,
-        email_password_enabled: hasEmail,
-      })
-      .select("*")
-      .single();
-
-    if (insertError) {
-      return { error: insertError.message };
+    if (userError || !user) {
+      return { error: "Not authenticated" };
     }
-    data = inserted;
-  }
 
-  return { data };
+    const admin = createAdminClient();
+
+    // Fetch settings
+    let { data, error } = await admin
+      .from("user_auth_settings")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    // Self-healing backfill if row is missing
+    if (!data) {
+      const providers = await getEmailProviders(user.email);
+      const hasGoogle =
+        providers.includes("google") ||
+        user.app_metadata?.providers?.includes("google") ||
+        (user.identities && user.identities.some((i) => i.provider === "google"));
+      const hasEmail =
+        providers.includes("email") ||
+        user.app_metadata?.providers?.includes("email") ||
+        (user.identities && user.identities.some((i) => i.provider === "email"));
+
+      const { data: inserted, error: insertError } = await admin
+        .from("user_auth_settings")
+        .upsert(
+          {
+            user_id: user.id,
+            google_enabled: Boolean(hasGoogle),
+            email_password_enabled: Boolean(hasEmail),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        )
+        .select("*")
+        .single();
+
+      if (insertError) {
+        return { error: insertError.message };
+      }
+      data = inserted;
+    }
+
+    return { data };
+  } catch (err) {
+    console.error("[getUserAuthSettings] error:", err);
+    return { error: err?.message || "Failed to load authentication settings." };
+  }
 }
 
 /**
  * Updates the user_auth_settings row for the current user.
- * Enforces server-side lockout prevention.
+ * Enforces server-side lockout prevention and uses admin upsert for reliability.
  */
 export async function updateUserAuthSettings(googleEnabled, emailPasswordEnabled) {
-  const supabase = await createServerClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  try {
+    const supabase = await createServerClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-  if (userError || !user) {
-    return { error: "Not authenticated" };
+    if (userError || !user) {
+      return { error: "Not authenticated" };
+    }
+
+    // Lockout Prevention: At least one method must be enabled
+    if (!googleEnabled && !emailPasswordEnabled) {
+      return { error: "Security protection active: You must keep at least one secure sign-in method enabled to prevent account lockout." };
+    }
+
+    const providers = await getEmailProviders(user.email);
+    const hasGoogle =
+      providers.includes("google") ||
+      user.app_metadata?.providers?.includes("google") ||
+      (user.identities && user.identities.some((i) => i.provider === "google"));
+    const hasEmail =
+      providers.includes("email") ||
+      user.app_metadata?.providers?.includes("email") ||
+      (user.identities && user.identities.some((i) => i.provider === "email"));
+
+    if (!googleEnabled && (!hasEmail || !emailPasswordEnabled)) {
+      return { error: "You cannot disable Google sign-in without a password set up on your account." };
+    }
+
+    if (!emailPasswordEnabled && (!hasGoogle || !googleEnabled)) {
+      return { error: "You cannot disable password sign-in without a connected Google account." };
+    }
+
+    const admin = createAdminClient();
+    const { data, error } = await admin
+      .from("user_auth_settings")
+      .upsert(
+        {
+          user_id: user.id,
+          google_enabled: Boolean(googleEnabled),
+          email_password_enabled: Boolean(emailPasswordEnabled),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      )
+      .select("*")
+      .single();
+
+    if (error) {
+      return { error: error.message };
+    }
+
+    try {
+      revalidatePath("/settings/security");
+    } catch (revErr) {
+      console.warn("[updateUserAuthSettings] revalidatePath warning:", revErr?.message);
+    }
+
+    return { success: true, message: "Settings updated successfully.", data };
+  } catch (err) {
+    console.error("[updateUserAuthSettings] error:", err);
+    return { error: err?.message || "Failed to update authentication settings." };
   }
-
-  // Lockout Prevention: At least one method must be enabled
-  if (!googleEnabled && !emailPasswordEnabled) {
-    return { error: "You cannot disable your only remaining sign-in method." };
-  }
-
-  const providers = await getEmailProviders(user.email);
-  const hasGoogle = providers.includes("google");
-  const hasEmail = providers.includes("email");
-
-  if (!googleEnabled && (!hasEmail || !emailPasswordEnabled)) {
-    return { error: "You cannot disable Google sign-in without a password set up on your account." };
-  }
-
-  if (!emailPasswordEnabled && (!hasGoogle || !googleEnabled)) {
-    return { error: "You cannot disable password sign-in without a connected Google account." };
-  }
-
-  const { data, error } = await supabase
-    .from("user_auth_settings")
-    .update({
-      google_enabled: googleEnabled,
-      email_password_enabled: emailPasswordEnabled,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", user.id)
-    .select("*")
-    .single();
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  revalidatePath("/settings/security");
-  return { success: "Settings updated successfully.", data };
 }
+
+/**
+ * Signs out the current user session on the server side and invalidates auth cookies.
+ */
+export async function signOutAction() {
+  const supabase = await createServerClient();
+  await supabase.auth.signOut();
+  revalidatePath("/", "layout");
+  return { success: true };
+}
+

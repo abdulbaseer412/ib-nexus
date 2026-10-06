@@ -1,1 +1,9 @@
-export default function Loading(){return <main className="surface min-h-[calc(100vh-72px)] p-5 sm:p-8"><div className="h-8 w-56 animate-pulse rounded bg-[var(--card)]"/><div className="mt-3 h-5 w-80 animate-pulse rounded bg-[var(--card)]"/><div className="mt-8 grid gap-4 lg:grid-cols-3">{Array.from({length:6}).map((_,i)=><div key={i} className="card h-40 animate-pulse"/>)}</div></main>}
+import NexusLoadingState from "@/components/ui/NexusLoadingState";
+
+export default function Loading() {
+  return (
+    <main className="surface min-h-[calc(100vh-72px)] flex items-center justify-center">
+      <NexusLoadingState state="loading" message="Loading..." />
+    </main>
+  );
+}

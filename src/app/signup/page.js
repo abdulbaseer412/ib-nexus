@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
-import { getAuthUser } from "@/lib/auth";
+import { getAuthSession } from "@/lib/auth/session";
 import SignUpForm from "./SignUpForm";
 
 export const metadata = {
@@ -20,8 +20,18 @@ function SignUpFallback() {
 }
 
 export default async function SignUpPage() {
-  const user = await getAuthUser();
+  const { IS_APPLICATION_LOCKED } = await import("@/lib/constants");
+  const { fetchDirectLockStatus } = await import("@/lib/website-lock");
+  const lockStatus = await fetchDirectLockStatus();
+  if (IS_APPLICATION_LOCKED || Boolean(lockStatus?.is_locked)) {
+    redirect("/");
+  }
+
+  const { user, profile } = await getAuthSession();
   if (user) {
+    if (profile?.is_suspended === true || profile?.is_restricted === true) {
+      redirect("/login?error=account_suspended");
+    }
     redirect("/dashboard");
   }
 

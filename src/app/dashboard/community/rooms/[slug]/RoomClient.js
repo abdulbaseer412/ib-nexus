@@ -2,11 +2,12 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft, MessageCircle, ThumbsUp, Send, Search,
   ChevronRight, Flame, BookOpen, Radio, FolderOpen,
   HelpCircle, Plus, X, CheckCircle2, AlertCircle, Users,
-  Clock, FileText, ChevronDown
+  Clock, FileText, ChevronDown, ShieldCheck, ShieldAlert, Shield, Filter, Megaphone
 } from "lucide-react";
 import {
   createPostAction, fetchPostsBySubject, sendMessage,
@@ -14,6 +15,8 @@ import {
   deleteMessageAdmin, clearAllRoomMessagesAdmin
 } from "../../actions";
 import { Avatar } from "@/components/ui";
+import { createClient } from "@/utils/supabase-browser";
+import { motion, AnimatePresence } from "framer-motion";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
 const C = {
@@ -235,6 +238,7 @@ export default function RoomClient({
         <AskModal
           room={room}
           c={c}
+          userProfile={userProfile}
           onClose={() => setShowAskModal(false)}
         />
       )}
@@ -362,14 +366,17 @@ function OverviewTab({ room, trending, posts, presence, c, onAsk, onSwitchTab })
                 key={user.user_id}
                 className="flex items-center gap-2 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2"
               >
-                {user.user_avatar ? (
-                  <img src={user.user_avatar} alt="" className="h-6 w-6 rounded-full object-cover" />
-                ) : (
-                  <div className="h-6 w-6 rounded-full bg-white/10 flex items-center justify-center text-[10px] font-bold text-white/50">
-                    {user.user_name?.[0]?.toUpperCase() || "?"}
-                  </div>
-                )}
+                <Avatar url={user.user_avatar} name={user.user_name} size="sm" />
                 <span className="text-xs font-medium text-white/70">{user.user_name}</span>
+                {user.is_admin ? (
+                  <span className="px-1.5 py-0.5 text-[9px] font-extrabold text-indigo-300 bg-indigo-500/20 border border-indigo-500/30 rounded-full flex items-center gap-1">
+                    <ShieldCheck size={10} /> MODERATOR
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold text-white/40 bg-white/5 border border-white/10 rounded">
+                    STUDENT
+                  </span>
+                )}
               </div>
             ))}
           </div>
@@ -513,39 +520,86 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
   const [messages, setMessages] = useState(initialMessages);
   const [newMessage, setNewMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [msgFilter, setMsgFilter] = useState("all"); // "all", "moderators", "students"
+  const [isNoticePost, setIsNoticePost] = useState(false);
+  const [activeNoticeIdx, setActiveNoticeIdx] = useState(0);
+
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Extract all active official notices
+  const noticeMessages = messages.filter(m => m.is_notice === true && !m.is_deleted);
 
   // Scroll to bottom on mount and new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Poll for new messages every 5 seconds
+  // Realtime Supabase channel subscription + fallback poll
   useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`room-chat-${room.id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_messages', filter: `room_id=eq.${room.id}` }, (payload) => {
+        if (payload.new) {
+          const rawContent = payload.new.content || "";
+          const isNotice = Boolean(payload.new.is_notice) || rawContent.startsWith("🛡️ [OFFICIAL_ROOM_GUIDANCE]:");
+          const cleanContent = isNotice ? rawContent.replace(/^🛡️ \[OFFICIAL_ROOM_GUIDANCE\]:\s*/, "") : rawContent;
+          const isMod = Boolean(payload.new.is_moderator) || isNotice;
+
+          setMessages(prev => {
+            if (prev.some(m => m.id === payload.new.id)) return prev;
+            return [...prev, {
+              ...payload.new,
+              author_id: payload.new.author_id || payload.new.user_id,
+              content: cleanContent,
+              raw_content: rawContent,
+              is_moderator: isMod,
+              is_notice: isNotice,
+              is_pinned: isNotice,
+            }];
+          });
+        }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'community_messages' }, (payload) => {
+        if (payload.old?.id) {
+          setMessages(prev => prev.filter(m => m.id !== payload.old.id));
+        }
+      })
+      .subscribe();
+
     const interval = setInterval(async () => {
       try {
-        const newMsgs = await fetchRoomMessages(room.id, 80);
+        const newMsgs = await fetchRoomMessages(room.id, 100);
         setMessages(newMsgs);
       } catch {}
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 4000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
   }, [room.id]);
 
   const handleSend = async (e) => {
     e.preventDefault();
+    if (userProfile?.is_restricted) {
+      alert("Your account is currently restricted from sending live chat messages.");
+      return;
+    }
     if (!newMessage.trim() || isSending) return;
 
     setIsSending(true);
     try {
-      await sendMessage({ roomId: room.id, content: newMessage });
+      await sendMessage({ roomId: room.id, content: newMessage, isNotice: isNoticePost });
       setNewMessage("");
-      // Immediately refresh
-      const newMsgs = await fetchRoomMessages(room.id, 80);
+      setIsNoticePost(false);
+      const newMsgs = await fetchRoomMessages(room.id, 100);
       setMessages(newMsgs);
       inputRef.current?.focus();
     } catch (err) {
       console.error(err);
+      alert(err.message || "Failed to send message");
     } finally {
       setIsSending(false);
     }
@@ -555,7 +609,7 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
     if (!isAdmin || !confirm("Are you sure you want to completely clear the chat history for this room? This cannot be undone.")) return;
     try {
       await clearAllRoomMessagesAdmin(room.id);
-      setMessages([]); // locally clear immediately
+      setMessages([]);
     } catch (e) {
       console.error(e);
       alert("Failed to clear chat");
@@ -563,90 +617,282 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
   };
 
   const handleDeleteMessage = async (msgId) => {
-    if (!isAdmin || !confirm("Delete this message?")) return;
+    if (!isAdmin || !confirm("Permanently delete this message from the live room?")) return;
     try {
-      await deleteMessageAdmin(msgId);
       setMessages(prev => prev.filter(m => m.id !== msgId));
+      await deleteMessageAdmin(msgId);
     } catch (e) {
       console.error(e);
     }
   };
 
+  // Filter messages based on active filter tab
+  const filteredMessages = messages.filter(msg => {
+    if (msgFilter === "moderators") return msg.is_moderator === true || msg.is_notice === true;
+    if (msgFilter === "students") return !msg.is_moderator && !msg.is_notice;
+    return true;
+  });
+
   return (
-    <div className="flex flex-col" style={{ height: "calc(100vh - 300px)", minHeight: "400px" }}>
-      {/* Online count & Admin Controls */}
-      <div className="flex items-center justify-between mb-4 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: c.accent }} />
-            <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: c.accent }} />
-          </span>
-          <span className="text-xs font-semibold text-white/50">
-            {presence.length} {presence.length === 1 ? "student" : "students"} online
+    <div className="flex flex-col" style={{ height: "calc(100vh - 280px)", minHeight: "450px" }}>
+      
+      {/* Moderation Mode Banner for Admin */}
+      {isAdmin && (
+        <div className="mb-3 px-4 py-2.5 rounded-xl bg-indigo-950/80 border border-indigo-500/40 flex items-center justify-between shadow-lg shadow-indigo-500/10 shrink-0">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={18} className="text-indigo-400 animate-pulse" />
+            <span className="text-xs font-bold text-indigo-200">
+              🛡 Moderation Mode Active — You are moderating {room.name}
+            </span>
+          </div>
+          <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            Authorized Moderator
           </span>
         </div>
-        
+      )}
+
+      {/* 📌 PINNED OFFICIAL ROOM GUIDANCE HEADER BAR */}
+      <AnimatePresence>
+        {noticeMessages.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="mb-3 p-4 rounded-2xl bg-gradient-to-r from-amber-950/90 via-amber-900/70 to-orange-950/80 border-2 border-amber-500/60 shadow-xl shadow-amber-500/20 relative space-y-2 backdrop-blur-xl shrink-0 overflow-hidden"
+          >
+            <div className="flex items-center justify-between border-b border-amber-500/30 pb-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 rounded-lg bg-amber-500/20 flex items-center justify-center text-amber-300 border border-amber-500/40 shadow-sm">
+                  <Megaphone size={14} className="animate-bounce text-amber-300" />
+                </div>
+                <span className="text-xs font-black text-amber-300 tracking-wider">
+                  📌 PINNED OFFICIAL ROOM GUIDANCE
+                </span>
+                {noticeMessages.length > 1 && (
+                  <span className="text-[10px] font-mono text-amber-300/90 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 font-extrabold">
+                    {activeNoticeIdx + 1} of {noticeMessages.length}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {noticeMessages.length > 1 && (
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveNoticeIdx(prev => (prev > 0 ? prev - 1 : noticeMessages.length - 1))}
+                      className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-bold border border-amber-500/30 transition-all"
+                      title="Previous Notice"
+                    >
+                      &larr; Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveNoticeIdx(prev => (prev < noticeMessages.length - 1 ? prev + 1 : 0))}
+                      className="px-2 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-bold border border-amber-500/30 transition-all"
+                      title="Next Notice"
+                    >
+                      Next &rarr;
+                    </button>
+                  </div>
+                )}
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMessage(noticeMessages[activeNoticeIdx]?.id || noticeMessages[0].id)}
+                    className="px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold border border-rose-500/30 flex items-center gap-1 transition-all"
+                    title="Remove Pinned Notice"
+                  >
+                    <X size={12} />
+                    <span>Remove</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-1">
+              <p className="text-xs font-bold text-amber-100 leading-relaxed whitespace-pre-wrap">
+                {noticeMessages[activeNoticeIdx]?.content || noticeMessages[0]?.content}
+              </p>
+              <div className="flex items-center justify-between mt-2 pt-1.5 text-[10px] text-amber-400/80 border-t border-amber-500/20">
+                <span>🛡 Posted by {noticeMessages[activeNoticeIdx]?.author_name || noticeMessages[0]?.author_name} (Authorized Moderator)</span>
+                <span className="font-mono">
+                  {new Date(noticeMessages[activeNoticeIdx]?.created_at || noticeMessages[0]?.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header bar: Online count & Message Filter Tabs & Admin Clear Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: c.accent }} />
+              <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: c.accent }} />
+            </span>
+            <span className="text-xs font-semibold text-white/50">
+              {presence.length} {presence.length === 1 ? "student" : "students"} online
+            </span>
+          </div>
+
+          {/* Messages Tab */}
+          <div className="flex items-center bg-black/40 p-1 rounded-xl border border-white/10 text-xs">
+            <span className="px-3 py-1 rounded-lg font-bold bg-white/15 text-white">
+              Messages ({messages.length})
+            </span>
+          </div>
+        </div>
+
         {isAdmin && messages.length > 0 && (
           <button 
             onClick={handleClearChat}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 rounded-lg transition-colors border border-red-500/20"
           >
             <AlertCircle size={14} /> Clear Chat
           </button>
         )}
       </div>
 
-      {/* Messages */}
+      {/* Messages Feed */}
       <div className="flex-1 overflow-y-auto rounded-2xl border border-white/5 bg-white/[0.01] p-4 custom-scrollbar space-y-4">
-        {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center">
+        {filteredMessages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-12">
             <Send size={28} className="text-white/10 mb-3" />
-            <p className="text-white/30 text-sm">No messages yet. Start the conversation!</p>
+            <p className="text-white/30 text-sm">
+              {msgFilter === "moderators" ? "No moderator announcements yet." : "No messages found for this filter."}
+            </p>
           </div>
         ) : (
-          messages.map((msg, i) => {
+          filteredMessages.map((msg, i) => {
             const isOwn = msg.author_id === userId;
-            const showAuthor = i === 0 || messages[i - 1].author_id !== msg.author_id;
-            
-            // Determine border radius based on consecutive messages
-            const isLastOfGroup = i === messages.length - 1 || messages[i + 1].author_id !== msg.author_id;
-            
-            let rounded = "rounded-2xl";
-            if (!showAuthor && !isLastOfGroup) {
-              rounded = isOwn ? "rounded-2xl rounded-r-sm" : "rounded-2xl rounded-l-sm";
-            } else if (showAuthor && !isLastOfGroup) {
-              rounded = isOwn ? "rounded-2xl rounded-tr-sm" : "rounded-2xl rounded-tl-sm";
-            } else if (!showAuthor && isLastOfGroup) {
-              rounded = isOwn ? "rounded-2xl rounded-br-sm" : "rounded-2xl rounded-bl-sm";
+            const isModMsg = msg.is_moderator === true;
+            const isNoticeMsg = msg.is_notice === true;
+            const showAuthor = i === 0 || filteredMessages[i - 1].author_id !== msg.author_id || filteredMessages[i - 1].is_notice !== msg.is_notice;
+
+            // 1. OFFICIAL MODERATOR NOTICE STYLE
+            if (isNoticeMsg) {
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 10, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.25, ease: "easeOut" }}
+                  className="w-full my-5 p-5 rounded-2xl bg-gradient-to-r from-amber-950/90 via-amber-900/60 to-orange-950/70 border-2 border-amber-500/60 shadow-2xl shadow-amber-500/20 relative space-y-2 backdrop-blur-xl overflow-hidden"
+                >
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-500 animate-pulse" />
+                  <div className="flex items-center justify-between border-b border-amber-500/30 pb-2.5">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-xl bg-amber-500/20 flex items-center justify-center border border-amber-500/40 text-amber-300 shadow-sm">
+                        <Megaphone size={16} className="animate-bounce text-amber-300" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-black text-amber-300 uppercase tracking-widest block">🛡 OFFICIAL ROOM GUIDANCE</span>
+                        <span className="text-[10px] text-amber-400/80 font-bold">{msg.author_name} &bull; Authorized Moderator</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono text-amber-400/70 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          className="text-rose-400 hover:text-rose-300 p-1.5 hover:bg-rose-500/20 rounded-lg transition-colors"
+                          title="Delete official notice"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-sm font-bold text-amber-100 leading-relaxed pt-1.5 whitespace-pre-wrap">{msg.content}</p>
+                </motion.div>
+              );
             }
 
+            // 2. MODERATOR CHAT MESSAGE STYLE
+            if (isModMsg) {
+              return (
+                <motion.div
+                  key={msg.id}
+                  initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  className={`flex gap-3 max-w-[90%] ${isOwn ? "ml-auto flex-row-reverse" : ""} ${showAuthor && i > 0 ? "mt-4" : "mt-1.5"}`}
+                >
+                  <div className="shrink-0 flex items-end">
+                    <Avatar url={msg.author_avatar} name={msg.author_name} size="md" />
+                  </div>
+
+                  <div className={`flex flex-col min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
+                    {showAuthor && (
+                      <div className="flex items-center gap-2 mb-1 px-1 flex-wrap">
+                        <ShieldCheck size={14} className="text-indigo-400 animate-pulse" />
+                        <span className="text-xs font-black text-indigo-200 tracking-wide">{isOwn ? "You (Moderator)" : msg.author_name}</span>
+                        
+                        {/* Interactive Moderator Badge with Tooltip Explanation */}
+                        <div className="group/mod relative inline-flex items-center">
+                          <span className="px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase rounded-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white border border-indigo-400/50 cursor-help shadow-md shadow-indigo-500/30 flex items-center gap-1">
+                            <ShieldCheck size={11} className="text-indigo-200" />
+                            <span>MODERATOR</span>
+                          </span>
+                          <div className="pointer-events-none absolute left-0 bottom-full mb-2 w-64 p-3 bg-[#13131e] border border-indigo-500/50 rounded-2xl text-[11px] text-indigo-200 text-center opacity-0 group-hover/mod:opacity-100 transition-all duration-200 z-50 shadow-2xl backdrop-blur-xl leading-snug">
+                            🛡 Moderator — manages this live room and helps keep discussions respectful.
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] text-indigo-300/50">• {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                    )}
+
+                    <div className="group relative px-4.5 py-3 text-sm font-semibold rounded-2xl bg-gradient-to-r from-indigo-950/80 via-purple-950/60 to-indigo-900/50 text-indigo-100 border-l-4 border-l-indigo-500 border-t border-r border-b border-indigo-500/40 shadow-xl shadow-indigo-500/15 whitespace-pre-wrap break-words">
+                      {msg.content}
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          className={`absolute top-1/2 -translate-y-1/2 p-1.5 bg-rose-500/90 hover:bg-rose-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg ${isOwn ? "-left-10" : "-right-10"}`}
+                          title="Delete moderator message"
+                        >
+                          <X size={14} strokeWidth={3} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            }
+
+            // 3. REGULAR STUDENT MESSAGE STYLE
             return (
               <div key={msg.id} className={`flex gap-3 max-w-[85%] ${isOwn ? "ml-auto flex-row-reverse" : ""} ${showAuthor && i > 0 ? "mt-4" : "mt-1"}`}>
                 <div className="shrink-0 flex items-end">
-                  {isLastOfGroup ? (
-                    <Avatar url={msg.author_avatar} name={msg.author_name} size="md" />
-                  ) : (
-                    <div className="w-9" />
-                  )}
+                  <Avatar url={msg.author_avatar} name={msg.author_name} size="md" />
                 </div>
 
                 <div className={`flex flex-col min-w-0 ${isOwn ? "items-end" : "items-start"}`}>
                   {showAuthor && (
-                    <div className="flex items-baseline gap-2 mb-1 px-1">
+                    <div className="flex items-center gap-2 mb-1 px-1">
                       <span className="text-xs font-bold text-white/70">{isOwn ? "You" : msg.author_name}</span>
+                      <span className="px-1.5 py-0.2 text-[9px] font-bold tracking-wider uppercase rounded bg-white/5 text-white/40 border border-white/10">
+                        STUDENT
+                      </span>
                       <span className="text-[10px] text-white/30">
-                        {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        • {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                   )}
-                  
-                  <div className={`group relative px-4 py-2.5 text-sm ${rounded} ${
+
+                  <div className={`group relative px-4 py-2.5 text-sm rounded-2xl ${
                     isOwn 
                       ? "bg-indigo-600 text-white" 
                       : "bg-white/10 text-white/90 border border-white/5"
                   } whitespace-pre-wrap break-words`}>
                     {msg.content}
-                    
+
                     {isAdmin && (
                       <button 
                         onClick={() => handleDeleteMessage(msg.id)}
@@ -665,26 +911,88 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
         <div ref={bottomRef} className="h-2" />
       </div>
 
-      {/* Input */}
-      <form onSubmit={handleSend} className="flex gap-3 mt-4 shrink-0">
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder={`Message ${room.name}...`}
-          value={newMessage}
-          onChange={(e) => setNewMessage(e.target.value)}
-          maxLength={2000}
-          className="flex-1 bg-white/[0.03] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-white/25 focus:outline-none focus:border-white/20 transition-colors"
-        />
-        <button
-          type="submit"
-          disabled={isSending || !newMessage.trim()}
-          className="px-4 py-3 rounded-xl text-white font-semibold text-sm transition-all disabled:opacity-30 shrink-0"
-          style={{ background: c.accent }}
-        >
-          <Send size={16} />
-        </button>
-      </form>
+      {/* Input Form with Admin Toggles & Live Preview */}
+      {userProfile?.is_restricted ? (
+        <div className="mt-4 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-300 text-xs font-semibold shrink-0">
+          <ShieldAlert size={18} className="text-amber-400 shrink-0" />
+          <span>Your account is currently restricted from sending live chat messages. You can still read chat messages freely.</span>
+        </div>
+      ) : (
+        <form onSubmit={handleSend} className="flex flex-col gap-2.5 mt-4 shrink-0">
+          {isAdmin && (
+            <div className="flex items-center justify-between px-1">
+              <label className="flex items-center gap-2 text-xs font-bold text-amber-300 cursor-pointer select-none group">
+                <input
+                  type="checkbox"
+                  checked={isNoticePost}
+                  onChange={(e) => setIsNoticePost(e.target.checked)}
+                  className="rounded border-amber-500/50 text-amber-500 focus:ring-amber-500 bg-black/40 w-4 h-4"
+                />
+                <Megaphone size={15} className={`text-amber-400 ${isNoticePost ? "animate-bounce" : ""}`} />
+                <span className={isNoticePost ? "text-amber-300 font-extrabold" : "text-white/70 group-hover:text-white"}>
+                  Post as Official Room Guidance Notice 🛡
+                </span>
+              </label>
+
+              <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                isNoticePost
+                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                  : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+              }`}>
+                {isNoticePost ? "OFFICIAL NOTICE MODE" : "MODERATOR MODE"}
+              </span>
+            </div>
+          )}
+
+          {/* Live Preview Callout when Official Notice mode is active */}
+          {isAdmin && isNoticePost && (
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-950/80 to-orange-950/70 border border-amber-500/50 flex items-center justify-between text-amber-200 text-xs shadow-lg">
+              <div className="flex items-center gap-2">
+                <Megaphone size={15} className="text-amber-400 animate-bounce" />
+                <span className="font-extrabold text-amber-300">
+                  📌 Live Preview: OFFICIAL ROOM GUIDANCE NOTICE
+                </span>
+              </div>
+              <span className="text-[10px] font-bold text-amber-400/80">
+                Will be automatically pinned to top room header bar
+              </span>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder={
+                isNoticePost
+                  ? "Write an Official Room Guidance Notice..."
+                  : isAdmin
+                  ? "Type message as Moderator..."
+                  : `Message ${room.name}...`
+              }
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              maxLength={2000}
+              className={`flex-1 bg-white/[0.03] border rounded-xl px-4 py-3 text-sm text-white placeholder-white/30 focus:outline-none transition-colors ${
+                isNoticePost
+                  ? "border-amber-500/60 bg-amber-500/10 focus:border-amber-400"
+                  : isAdmin
+                  ? "border-indigo-500/50 bg-indigo-950/30 focus:border-indigo-400"
+                  : "border-white/10 focus:border-indigo-500/50"
+              }`}
+            />
+            <button
+              type="submit"
+              disabled={isSending || !newMessage.trim()}
+              className="px-5 py-3 rounded-xl text-white font-bold text-sm transition-all disabled:opacity-30 shrink-0 flex items-center gap-2 shadow-lg hover:scale-105"
+              style={{ background: isNoticePost ? "linear-gradient(to right, #f59e0b, #d97706)" : isAdmin ? "linear-gradient(to right, #4f46e5, #7c3aed)" : c.accent }}
+            >
+              {isAdmin && <ShieldCheck size={16} />}
+              <Send size={16} />
+            </button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }
@@ -692,7 +1000,8 @@ function LiveChatTab({ room, initialMessages, presence, userId, userProfile, c, 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /*  ASK MODAL                                                               */
 /* ══════════════════════════════════════════════════════════════════════════ */
-function AskModal({ room, c, onClose }) {
+function AskModal({ room, c, userProfile, onClose }) {
+  const router = useRouter();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [postType, setPostType] = useState("question");
@@ -701,6 +1010,10 @@ function AskModal({ room, c, onClose }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (userProfile?.is_restricted) {
+      setErrorMsg("Your account is currently restricted from asking questions or creating discussions.");
+      return;
+    }
     if (!title.trim()) { setErrorMsg("Please enter a title."); return; }
     if (!content.trim()) { setErrorMsg("Please enter content."); return; }
 
@@ -721,6 +1034,28 @@ function AskModal({ room, c, onClose }) {
     }
   };
 
+  if (userProfile?.is_restricted) {
+    return (
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="bg-[#121217] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden">
+          <div className="h-16 w-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Communication Restricted</h3>
+          <p className="text-white/60 text-sm mb-6 leading-relaxed">
+            Your account is currently restricted from creating discussions or asking questions. All other areas of IB Nexus remain fully accessible to you.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white text-sm font-bold rounded-xl transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (status === "success") {
     return (
       <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
@@ -735,7 +1070,7 @@ function AskModal({ room, c, onClose }) {
           <button
             onClick={() => {
               onClose();
-              window.location.reload();
+              router.refresh();
             }}
             className="w-full py-3 bg-white hover:bg-white/90 text-black text-sm font-bold rounded-xl transition-all"
           >
@@ -747,8 +1082,9 @@ function AskModal({ room, c, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-2xl relative overflow-hidden my-auto">
         {/* Accent glow */}
         <div
           className="absolute top-0 left-1/2 -translate-x-1/2 w-[80%] h-24 blur-[80px] opacity-20 pointer-events-none"
@@ -853,6 +1189,7 @@ function AskModal({ room, c, onClose }) {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

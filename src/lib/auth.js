@@ -7,5 +7,7 @@ export {
   getAuthSession,
   requireAuth,
   requireCompleteProfile,
+  requireAdmin,
+  isCurrentUserAdmin,
   getPostAuthRedirect,
 } from "@/lib/auth/session";

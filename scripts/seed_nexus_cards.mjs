@@ -1,7 +1,22 @@
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-const supabaseUrl = 'https://zdzeajqqxecyvvfrizmp.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpkemVhanFxeGVjeXZ2ZnJpem1wIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NDEzMDk5MiwiZXhwIjoyMDk5NzA2OTkyfQ.D8u--NUPHF8-ZRTHnjJF4GCF-t9UJdpgM09GVeN4toE';
+// Read .env.local for credentials (ESM-compatible)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const envPath = resolve(__dirname, '../.env.local');
+const envFile = readFileSync(envPath, 'utf-8');
+const env = {};
+envFile.split('\n').forEach(line => {
+  const [key, ...values] = line.split('=');
+  if (key && values.length) {
+    env[key.trim()] = values.join('=').trim().replace(/(^"|"$)/g, '');
+  }
+});
+
+const supabaseUrl = env['NEXT_PUBLIC_SUPABASE_URL'];
+const supabaseKey = env['SUPABASE_SERVICE_ROLE_KEY'];
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 

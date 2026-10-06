@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Send, Users, LogOut, MessageCircle, AlertCircle, X } from "lucide-react";
+import { ArrowLeft, Send, Users, LogOut, MessageCircle, AlertCircle, X, ShieldAlert } from "lucide-react";
 import { sendMessage, updatePresence, removePresence, leaveStudyGroup, fetchRoomMessages, fetchRoomPresence, deleteMessageAdmin, clearAllRoomMessagesAdmin } from "../../actions";
 import { Avatar } from "@/components/ui";
 
@@ -234,6 +234,10 @@ function LiveChat({ roomId, initialMessages, userId, userProfile, c, isAdmin }) 
 
   const handleSend = async (e) => {
     e?.preventDefault();
+    if (userProfile?.is_restricted) {
+      alert("Your account is currently restricted from sending messages in study groups.");
+      return;
+    }
     if (!draft.trim() || isSending) return;
 
     const content = draft.trim();
@@ -409,27 +413,34 @@ function LiveChat({ roomId, initialMessages, userId, userProfile, c, isAdmin }) 
       </div>
 
       <div className="p-4 bg-black/40 border-t border-white/5 backdrop-blur-xl shrink-0">
-        <form 
-          onSubmit={handleSend}
-          className="max-w-4xl mx-auto relative flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl p-2 focus-within:border-indigo-500/50 focus-within:bg-white/10 transition-all"
-        >
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Send a message..."
-            className="flex-1 max-h-32 min-h-[40px] bg-transparent border-none resize-none px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none custom-scrollbar"
-            rows={1}
-            maxLength={2000}
-          />
-          <button
-            type="submit"
-            disabled={!draft.trim() || isSending}
-            className="shrink-0 h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all disabled:opacity-50 disabled:hover:bg-indigo-600 mb-[2px] mr-[2px]"
+        {userProfile?.is_restricted ? (
+          <div className="max-w-4xl mx-auto p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-300 text-xs font-semibold">
+            <ShieldAlert size={18} className="text-amber-400 shrink-0" />
+            <span>Your account is currently restricted from sending messages in study groups. You can still read messages freely.</span>
+          </div>
+        ) : (
+          <form 
+            onSubmit={handleSend}
+            className="max-w-4xl mx-auto relative flex items-end gap-2 bg-white/5 border border-white/10 rounded-2xl p-2 focus-within:border-indigo-500/50 focus-within:bg-white/10 transition-all"
           >
-            <Send size={16} className={isSending ? "animate-pulse" : ""} />
-          </button>
-        </form>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Send a message..."
+              className="flex-1 max-h-32 min-h-[40px] bg-transparent border-none resize-none px-3 py-2 text-sm text-white placeholder-white/30 focus:outline-none custom-scrollbar"
+              rows={1}
+              maxLength={2000}
+            />
+            <button
+              type="submit"
+              disabled={!draft.trim() || isSending}
+              className="shrink-0 h-10 w-10 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-all disabled:opacity-50 disabled:hover:bg-indigo-600 mb-[2px] mr-[2px]"
+            >
+              <Send size={16} className={isSending ? "animate-pulse" : ""} />
+            </button>
+          </form>
+        )}
         <p className="text-center text-[10px] text-white/30 mt-2 font-medium">
           Messages in this room are temporary and may be cleared periodically.
         </p>

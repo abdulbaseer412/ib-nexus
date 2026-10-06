@@ -16,6 +16,26 @@ export function getAuthErrorDetails(error, context = null) {
   const message = rawMessage.toLowerCase();
   const code = (error?.code || "").toString().toLowerCase();
 
+  // Account Suspended / Restricted / Banned
+  if (
+    message.includes("account_suspended") ||
+    message.includes("account suspended") ||
+    message.includes("suspended") ||
+    message.includes("banned") ||
+    message.includes("user is banned") ||
+    message.includes("user_banned") ||
+    message.includes("restricted") ||
+    message.includes("account_restricted") ||
+    code === "account_suspended" ||
+    code === "user_banned"
+  ) {
+    return {
+      type: "account_suspended",
+      title: "Account Suspended & Access Restricted",
+      message: "Your IB Nexus account access has been suspended by an administrator. All your notes, AI chats, and data are safely stored.",
+    };
+  }
+
   // Network / Server problems (Scenario 6)
   if (
     message.includes("network") ||
@@ -171,9 +191,12 @@ export function getAuthErrorDetails(error, context = null) {
 
   // OAuth Cancelled
   if (
-    message.includes("access_denied") ||
+    (message.includes("access_denied") ||
     message.includes("cancelled") ||
-    message.includes("canceled")
+    message.includes("canceled")) &&
+    !message.includes("banned") &&
+    !message.includes("suspended") &&
+    !message.includes("restricted")
   ) {
     return {
       type: "info",
@@ -267,6 +290,15 @@ export function getAuthErrorDetails(error, context = null) {
       title: "Server error",
       message:
         "Something went wrong on our end. Please try again in a moment.",
+    };
+  }
+
+  // If the message is already a clean user-facing sentence (e.g. from validation or custom logic)
+  if (rawMessage && !rawMessage.includes("{") && !rawMessage.includes("code:") && !rawMessage.includes("PostgrestError") && !rawMessage.toLowerCase().includes("fatal") && rawMessage.length < 160) {
+    return {
+      type: "error",
+      title: "Password Notice",
+      message: rawMessage,
     };
   }
 

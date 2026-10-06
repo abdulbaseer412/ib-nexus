@@ -1,4 +1,4 @@
-import { requireAuth } from "@/lib/auth";
+import { requireAuth, requireCompleteProfile } from "@/lib/auth";
 import { getNotes } from "./actions";
 import NotesClient from "./NotesClient";
 
@@ -9,7 +9,8 @@ export const metadata = {
 
 export default async function NotesPage() {
   await requireAuth();
+  const { profile } = await requireCompleteProfile();
   const notes = await getNotes();
   
-  return <NotesClient initialNotes={notes} />;
+  return <NotesClient initialNotes={notes} userProgram={profile?.ib_program?.toLowerCase()} />;
 }

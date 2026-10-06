@@ -16,9 +16,10 @@
  */
 
 import { createClient } from "@/utils/supabase-browser";
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { updatePassword, getUserAuthSettings, updateUserAuthSettings } from "@/app/auth/actions";
+import { updatePassword, getUserAuthSettings, updateUserAuthSettings, getEmailProviders } from "@/app/auth/actions";
+import { updateSettingsAction } from "@/app/settings/profile/actions";
 import { PROVIDER_LABELS, hasPasswordLogin, isOAuthProvider } from "@/lib/auth-providers";
 import PasswordInput from "@/components/auth/PasswordInput";
 import FormMessage from "@/components/auth/FormMessage";
@@ -164,7 +165,7 @@ function PasswordForm({ hasExistingPassword, onSuccess }) {
       }
     } catch (err) {
       setLoading(false);
-      setError("An unexpected error occurred. Please try again.");
+      setError(err?.message || "Could not set password. Please try again.");
     }
   }
 
@@ -249,9 +250,9 @@ function PasswordForm({ hasExistingPassword, onSuccess }) {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function SecurityClient({ userEmail, initialProviders }) {
-  const [providers, setProviders] = useState(initialProviders);
-  const [authSettings, setAuthSettings] = useState(null);
+export default function SecurityClient({ userEmail, initialProviders, initialAuthSettings, profile }) {
+  const [providers, setProviders] = useState(initialProviders || []);
+  const [authSettings, setAuthSettings] = useState(initialAuthSettings || null);
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -272,7 +273,17 @@ export default function SecurityClient({ userEmail, initialProviders }) {
     }
   };
 
+  useEffect(() => {
+    if (initialAuthSettings) {
+      setAuthSettings(initialAuthSettings);
+    }
+  }, [initialAuthSettings]);
 
+  useEffect(() => {
+    if (initialProviders) {
+      setProviders(initialProviders);
+    }
+  }, [initialProviders]);
 
   useEffect(() => {
     const run = async () => {
@@ -304,7 +315,9 @@ export default function SecurityClient({ userEmail, initialProviders }) {
         window.history.replaceState(null, "", url.toString());
       }
 
-      await fetchAuthSettings();
+      if (!initialAuthSettings) {
+        await fetchAuthSettings();
+      }
 
       if (window.location.pathname === "/settings/security") {
         await (async () => {
@@ -316,7 +329,6 @@ export default function SecurityClient({ userEmail, initialProviders }) {
             setProviders(data);
           }
         })();
-        router.refresh();
       }
     };
     run();
@@ -366,11 +378,10 @@ export default function SecurityClient({ userEmail, initialProviders }) {
   const handlePasswordSuccess = async () => {
     await refreshProviders();
     // If they added a password, we should also enable email in user_auth_settings
-    if (authSettings) {
-      const result = await updateUserAuthSettings(authSettings.google_enabled, true);
-      if (result?.data) {
-        setAuthSettings(result.data);
-      }
+    const currentGoogle = authSettings ? authSettings.google_enabled : true;
+    const result = await updateUserAuthSettings(currentGoogle, true);
+    if (result?.data) {
+      setAuthSettings(result.data);
     }
   };
 
@@ -418,32 +429,39 @@ export default function SecurityClient({ userEmail, initialProviders }) {
     setUnlinkError("");
     setUnlinkSuccess("");
 
-    if (provider === "google") {
-      if (providers.includes("google")) {
-        const nextEmailEnabled = authSettings?.email_password_enabled ?? true;
-        const result = await updateUserAuthSettings(true, nextEmailEnabled);
+    try {
+      if (provider === "google") {
+        if (providers.includes("google")) {
+          const nextEmailEnabled = authSettings?.email_password_enabled ?? true;
+          const result = await updateUserAuthSettings(true, nextEmailEnabled);
+          if (result?.error) {
+            setUnlinkError(result.error);
+            return;
+          }
+          if (result?.data) {
+            setAuthSettings(result.data);
+            setUnlinkSuccess("Google sign-in has been enabled.");
+            router.refresh();
+          }
+        } else {
+          await handleConnect("google");
+        }
+      } else if (provider === "email") {
+        const nextGoogleEnabled = authSettings?.google_enabled ?? true;
+        const result = await updateUserAuthSettings(nextGoogleEnabled, true);
         if (result?.error) {
           setUnlinkError(result.error);
           return;
         }
         if (result?.data) {
           setAuthSettings(result.data);
-          setUnlinkSuccess("Google sign-in has been enabled.");
+          setUnlinkSuccess("Email & password sign-in has been enabled.");
+          router.refresh();
         }
-      } else {
-        await handleConnect("google");
       }
-    } else if (provider === "email") {
-      const nextGoogleEnabled = authSettings?.google_enabled ?? true;
-      const result = await updateUserAuthSettings(nextGoogleEnabled, true);
-      if (result?.error) {
-        setUnlinkError(result.error);
-        return;
-      }
-      if (result?.data) {
-        setAuthSettings(result.data);
-        setUnlinkSuccess("Email & password sign-in has been enabled.");
-      }
+    } catch (err) {
+      console.error("[SecurityClient] handleEnable error:", err);
+      setUnlinkError(err?.message || "Failed to enable sign-in method. Please try again.");
     }
   };
 
@@ -479,41 +497,43 @@ export default function SecurityClient({ userEmail, initialProviders }) {
     setUnlinkError("");
     setUnlinkSuccess("");
 
+    try {
+      const nextGoogleEnabled = confirmUnlink === "google" ? false : authSettings?.google_enabled ?? true;
+      const nextEmailEnabled = confirmUnlink === "email" ? false : authSettings?.email_password_enabled ?? true;
 
-    const nextGoogleEnabled = confirmUnlink === "google" ? false : authSettings?.google_enabled ?? true;
-    const nextEmailEnabled = confirmUnlink === "email" ? false : authSettings?.email_password_enabled ?? true;
+      debugLog("security.disable.updateUserAuthSettings.before", {
+        nextGoogleEnabled,
+        nextEmailEnabled,
+        confirmUnlink,
+      });
 
-    debugLog("security.disable.updateUserAuthSettings.before", {
-      nextGoogleEnabled,
-      nextEmailEnabled,
-      confirmUnlink,
-    });
+      const result = await updateUserAuthSettings(nextGoogleEnabled, nextEmailEnabled);
 
-    const result = await updateUserAuthSettings(nextGoogleEnabled, nextEmailEnabled);
+      debugLog("security.disable.updateUserAuthSettings.after", safeJson(result));
 
-    debugLog("security.disable.updateUserAuthSettings.after", safeJson(result));
+      if (result?.error) {
+        debugLog("security.disable.updateUserAuthSettings.error", { error: result.error });
+        setUnlinkError(result.error);
+        return;
+      }
 
+      if (result?.data) {
+        setAuthSettings(result.data);
+      }
 
-    setUnlinkLoading(false);
+      const disabledName = confirmUnlink === "email" ? "Email & password" : "Google";
+      setUnlinkSuccess(
+        `${disabledName} sign-in has been disabled. Your account remains active.`
+      );
 
-    if (result?.error) {
-      debugLog("security.disable.updateUserAuthSettings.error", { error: result.error });
-      setUnlinkError(result.error);
-      return;
+      setConfirmUnlink(null);
+      router.refresh();
+    } catch (err) {
+      console.error("[SecurityClient] handleUnlink error:", err);
+      setUnlinkError(err?.message || "An unexpected error occurred while disabling sign-in method.");
+    } finally {
+      setUnlinkLoading(false);
     }
-
-
-    if (result?.data) {
-      setAuthSettings(result.data);
-    }
-
-    setUnlinkSuccess(
-      confirmUnlink === "email"
-        ? "Email & password sign-in has been disabled. Your account remains active."
-        : "Google sign-in has been disabled. Your account remains active."
-    );
-
-    setConfirmUnlink(null);
   };
 
   // Dynamically display all linked providers, plus standard "google" and "email"
@@ -577,7 +597,6 @@ export default function SecurityClient({ userEmail, initialProviders }) {
           onSuccess={handlePasswordSuccess}
         />
       </div>
-
       {/* Account linking explanation */}
       {!hasPassword && providers.includes("google") && (
         <div className="rounded-2xl border border-info-strong bg-info-soft p-4">
@@ -592,8 +611,9 @@ export default function SecurityClient({ userEmail, initialProviders }) {
 
       {/* Confirmation Dialog Modal */}
       {confirmUnlink && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-subtle bg-elevated p-6 space-y-4 shadow-float">
+        <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/60 backdrop-blur-sm">
+          <div className="min-h-full flex items-center justify-center py-6">
+            <div className="w-full max-w-md rounded-2xl border border-subtle bg-elevated p-6 space-y-4 shadow-float my-auto">
             <h3 className="text-lg font-bold text-primary">
               {confirmUnlink === "email"
                 ? "Disable Email & Password Sign-in?"
@@ -622,6 +642,11 @@ export default function SecurityClient({ userEmail, initialProviders }) {
                   ))}
               </div>
             </div>
+            {unlinkError && (
+              <div className="pt-1">
+                <FormMessage type="error" message={unlinkError} />
+              </div>
+            )}
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
@@ -631,16 +656,22 @@ export default function SecurityClient({ userEmail, initialProviders }) {
               >
                 {unlinkLoading
                   ? "Disabling…"
+                  : unlinkError
+                  ? "Try Again"
                   : "Disable Access"}
               </button>
               <button
                 type="button"
                 disabled={unlinkLoading}
-                onClick={() => setConfirmUnlink(null)}
+                onClick={() => {
+                  setConfirmUnlink(null);
+                  setUnlinkError("");
+                }}
                 className="flex-1 py-2.5 rounded-xl border border-subtle text-sm text-secondary hover:bg-hover hover:text-primary transition-colors"
               >
                 Cancel
               </button>
+            </div>
             </div>
           </div>
         </div>

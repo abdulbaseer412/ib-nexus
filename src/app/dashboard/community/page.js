@@ -3,6 +3,8 @@ import { fetchApprovedPosts, fetchRooms, fetchActiveStudentsPerSubject, fetchStu
 import CommunityClient from "./CommunityClient";
 
 export const metadata = { title: "Nexus Network — IB Nexus" };
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function CommunityPage() {
   const { user, profile } = await requireCompleteProfile();

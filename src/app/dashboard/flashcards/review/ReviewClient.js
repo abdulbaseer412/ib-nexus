@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { X, ArrowLeft, Loader2, Sparkles, AlertCircle, TrendingUp, HelpCircle } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { submitReviewAction } from "../actions";
 import { useRouter } from "next/navigation";
 
@@ -137,44 +138,45 @@ export default function ReviewClient({ initialCards, mode, deckId }) {
            )}
         </div>
 
-        <div 
-          className="flex-1 flex flex-col w-full bg-[var(--background)] border border-white/10 rounded-3xl p-8 md:p-12 shadow-2xl relative transition-all duration-300 transform-gpu"
+        <motion.div 
+          initial={false}
+          animate={{ rotateY: isFlipped ? 180 : 0 }}
+          transition={{ type: "spring", stiffness: 260, damping: 20 }}
+          style={{ transformStyle: "preserve-3d" }}
+          className="flex-1 w-full relative"
         >
           {/* Front */}
-          <div className="flex-1 flex items-center justify-center text-center">
+          <div 
+            style={{ backfaceVisibility: "hidden" }}
+            className="absolute inset-0 flex flex-col bg-[var(--background)] border border-white/10 rounded-3xl p-8 md:p-12 shadow-2xl items-center justify-center text-center"
+          >
             <h2 className="text-2xl md:text-4xl font-semibold text-white leading-tight">
               {currentCard.front}
             </h2>
           </div>
 
-          {/* Divider */}
-          {isFlipped && (
-            <div className="w-full h-[1px] bg-white/10 my-8 shrink-0 relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-            </div>
-          )}
-
           {/* Back */}
-          <div className={`flex-1 flex flex-col items-center justify-center text-center transition-all duration-500 ${isFlipped ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none absolute'}`}>
-            {isFlipped && (
-              <div className="w-full h-full flex flex-col items-center justify-center animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <p className="text-lg md:text-2xl text-white/80 leading-relaxed font-medium">
-                  {currentCard.back}
-                </p>
-                
-                {currentCard.note_id && (
-                  <Link 
-                    href={`/dashboard/notes/${currentCard.note_id}`} 
-                    target="_blank"
-                    className="mt-8 inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-xl text-sm font-bold transition-colors"
-                  >
-                    <ArrowLeft size={14} className="rotate-180" /> Open Source Note
-                  </Link>
-                )}
-              </div>
-            )}
+          <div 
+            style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+            className="absolute inset-0 flex flex-col bg-[var(--background)] border border-white/10 rounded-3xl p-8 md:p-12 shadow-2xl items-center justify-center text-center"
+          >
+            <div className="w-full h-full flex flex-col items-center justify-center">
+              <p className="text-lg md:text-2xl text-white/80 leading-relaxed font-medium">
+                {currentCard.back}
+              </p>
+              
+              {currentCard.note_id && (
+                <Link 
+                  href={`/dashboard/notes/${currentCard.note_id}`} 
+                  target="_blank"
+                  className="mt-8 inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-xl text-sm font-bold transition-colors"
+                >
+                  <ArrowLeft size={14} className="rotate-180" /> Open Source Note
+                </Link>
+              )}
+            </div>
           </div>
-        </div>
+        </motion.div>
 
         {/* ── CONTROLS ── */}
         <div className="h-32 shrink-0 flex items-center justify-center mt-6">
@@ -185,52 +187,66 @@ export default function ReviewClient({ initialCards, mode, deckId }) {
               </span>
             </div>
           )}
-          {!isFlipped ? (
-            <button
-              onClick={handleReveal}
-              className="w-full max-w-md h-14 bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-lg rounded-2xl transition-all shadow-[0_0_40px_rgba(99,102,241,0.2)] hover:shadow-[0_0_60px_rgba(99,102,241,0.4)]"
-            >
-              Reveal Answer
-            </button>
-          ) : (
-            <div className="w-full grid grid-cols-4 gap-2 md:gap-4 max-w-2xl animate-in slide-in-from-bottom-4 duration-300">
-              <button 
-                disabled={isSubmitting}
-                onClick={() => handleRate('again')}
-                className="flex flex-col items-center justify-center h-20 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-2xl transition-colors disabled:opacity-50"
+          <AnimatePresence mode="wait">
+            {!isFlipped ? (
+              <motion.button
+                key="reveal"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.15 }}
+                onClick={handleReveal}
+                className="w-full max-w-md h-14 bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-lg rounded-2xl transition-all shadow-[0_0_40px_rgba(99,102,241,0.2)] hover:shadow-[0_0_60px_rgba(99,102,241,0.4)]"
               >
-                <span className="text-rose-400 font-bold text-lg">Again</span>
-                <span className="text-rose-400/50 text-[10px] uppercase tracking-widest mt-1">Forgot</span>
-              </button>
-              
-              <button 
-                disabled={isSubmitting}
-                onClick={() => handleRate('hard')}
-                className="flex flex-col items-center justify-center h-20 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-2xl transition-colors disabled:opacity-50"
+                Reveal Answer
+              </motion.button>
+            ) : (
+              <motion.div 
+                key="controls"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="w-full grid grid-cols-4 gap-2 md:gap-4 max-w-2xl"
               >
-                <span className="text-amber-400 font-bold text-lg">Hard</span>
-                <span className="text-amber-400/50 text-[10px] uppercase tracking-widest mt-1">Barely</span>
-              </button>
-              
-              <button 
-                disabled={isSubmitting}
-                onClick={() => handleRate('good')}
-                className="flex flex-col items-center justify-center h-20 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-2xl transition-colors disabled:opacity-50"
-              >
-                <span className="text-emerald-400 font-bold text-lg">Good</span>
-                <span className="text-emerald-400/50 text-[10px] uppercase tracking-widest mt-1">Remembered</span>
-              </button>
-              
-              <button 
-                disabled={isSubmitting}
-                onClick={() => handleRate('easy')}
-                className="flex flex-col items-center justify-center h-20 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-2xl transition-colors disabled:opacity-50"
-              >
-                <span className="text-blue-400 font-bold text-lg">Easy</span>
-                <span className="text-blue-400/50 text-[10px] uppercase tracking-widest mt-1">Instant</span>
-              </button>
-            </div>
-          )}
+                <button 
+                  disabled={isSubmitting}
+                  onClick={() => handleRate('again')}
+                  className="flex flex-col items-center justify-center h-20 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-2xl transition-colors disabled:opacity-50"
+                >
+                  <span className="text-rose-400 font-bold text-lg">Again</span>
+                  <span className="text-rose-400/50 text-[10px] uppercase tracking-widest mt-1">Forgot</span>
+                </button>
+                
+                <button 
+                  disabled={isSubmitting}
+                  onClick={() => handleRate('hard')}
+                  className="flex flex-col items-center justify-center h-20 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 rounded-2xl transition-colors disabled:opacity-50"
+                >
+                  <span className="text-amber-400 font-bold text-lg">Hard</span>
+                  <span className="text-amber-400/50 text-[10px] uppercase tracking-widest mt-1">Barely</span>
+                </button>
+                
+                <button 
+                  disabled={isSubmitting}
+                  onClick={() => handleRate('good')}
+                  className="flex flex-col items-center justify-center h-20 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-2xl transition-colors disabled:opacity-50"
+                >
+                  <span className="text-emerald-400 font-bold text-lg">Good</span>
+                  <span className="text-emerald-400/50 text-[10px] uppercase tracking-widest mt-1">Remembered</span>
+                </button>
+                
+                <button 
+                  disabled={isSubmitting}
+                  onClick={() => handleRate('easy')}
+                  className="flex flex-col items-center justify-center h-20 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-2xl transition-colors disabled:opacity-50"
+                >
+                  <span className="text-blue-400 font-bold text-lg">Easy</span>
+                  <span className="text-blue-400/50 text-[10px] uppercase tracking-widest mt-1">Instant</span>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>

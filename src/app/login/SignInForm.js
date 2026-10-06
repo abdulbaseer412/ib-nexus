@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { createClient, destroyClient, clearClientSession } from "@/utils/supabase-browser";
-import { resolvePostAuthRedirect, resolveSignInError } from "@/app/auth/actions";
+import { resolvePostAuthRedirect, resolveSignInError, verifyUserAuthMethod } from "@/app/auth/actions";
 import { validateEmail } from "@/lib/validation";
 import { getAuthErrorDetails } from "@/lib/auth-errors";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -14,6 +14,7 @@ import GoogleButton from "@/components/auth/GoogleButton";
 import PasswordInput from "@/components/auth/PasswordInput";
 import { OAuthProviderHint } from "@/components/auth/ProviderHint";
 import { buttonClassName, inputClassName } from "@/components/auth/auth-styles";
+import { ShieldAlert, LogOut } from "lucide-react";
 
 export default function SignInForm() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export default function SignInForm() {
   const [errorType, setErrorType] = useState(null);
   const [errorProviders, setErrorProviders] = useState([]);
   const [rateLimitCountdown, setRateLimitCountdown] = useState(0);
+  const [lockedAccessInfo, setLockedAccessInfo] = useState(null);
 
   const urlError = searchParams.get("error");
   const [urlErrorConsumed, setUrlErrorConsumed] = useState(false);
@@ -54,16 +56,75 @@ export default function SignInForm() {
   }, [rateLimitCountdown]);
 
   useEffect(() => {
-    // Auto-redirect if an active session already exists in browser storage/cookies
+    const rawUrlError = urlError ? decodeURIComponent(urlError) : "";
+    const disabledParam = searchParams.get("disabled_method");
+
+    // If URL signals a disabled method or explicit sign-out error, show error and do NOT auto-redirect
+    if (disabledParam === "email" || rawUrlError.toLowerCase().includes("disabled")) {
+      const supabase = createClient();
+      supabase.auth.signOut().catch(() => {});
+      setError(rawUrlError || "Email & password sign-in has been disabled for this account. Please sign in using Google.");
+      setErrorTitle("Sign-In Method Disabled");
+      setErrorType("disabled_method");
+      setErrorProviders(["google"]);
+      return;
+    }
+
+    if (rawUrlError) {
+      setError(rawUrlError);
+      setErrorType("error");
+      return;
+    }
+
+    if (searchParams.get("logout") === "true" || searchParams.get("switch") === "true") {
+      const supabase = createClient();
+      supabase.auth.signOut().catch(() => {});
+      return;
+    }
+
+    // Auto-redirect ONLY if an active, allowed session exists and no error was reported
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
+        // Authoritatively check if current session auth method is permitted
+        try {
+          const provider = user.app_metadata?.provider || "email";
+          const methodCheck = await verifyUserAuthMethod(user.id, provider);
+          if (!methodCheck.allowed) {
+            await supabase.auth.signOut();
+            setError(methodCheck.message || "Sign-in method has been disabled for this account. Please sign in using Google.");
+            setErrorTitle(methodCheck.title || "Sign-In Method Disabled");
+            setErrorType("disabled_method");
+            setErrorProviders(methodCheck.providers || ["google"]);
+            return; // Do NOT auto-redirect!
+          }
+        } catch (e) {
+          console.error("[SignInForm] Auth method check error:", e);
+        }
+
+        // Check lock status before auto-redirecting
+        try {
+          const res = await fetch("/api/auth/lock-status");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.isLocked && !data.isApproved) {
+              setLockedAccessInfo({
+                userEmail: user.email,
+                lockMessage: data.lockMessage,
+              });
+              return; // Do NOT auto-redirect to /dashboard
+            }
+          }
+        } catch (e) {
+          console.error("[SignInForm] Lock status check failed:", e);
+        }
+
         const next = searchParams.get("next");
         const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : null;
         window.location.href = safeNext || "/dashboard";
       }
     });
-  }, [searchParams]);
+  }, [searchParams, urlError]);
 
   function resetError() {
     setError("");
@@ -104,8 +165,13 @@ export default function SignInForm() {
 
     const supabase = createClient();
 
-    // Pre-flight gate: if the email has no IB Nexus account, stop immediately.
+    // Pre-flight gate: if the email has no IB Nexus account or is suspended, act immediately.
     const preflightResolved = await resolveSignInError(emailResult.value);
+
+    if (preflightResolved.type === "suspended") {
+      router.push(`/suspended?email=${encodeURIComponent(emailResult.value)}`);
+      return;
+    }
 
     if (preflightResolved.type === "no_account") {
       setError(preflightResolved.message);
@@ -117,12 +183,37 @@ export default function SignInForm() {
       return;
     }
 
+    if (preflightResolved.type === "disabled_method") {
+      setError(preflightResolved.message);
+      setErrorTitle(preflightResolved.title || "Sign-In Method Disabled");
+      setErrorType("disabled_method");
+      setErrorProviders(preflightResolved.providers?.length ? preflightResolved.providers : ["google"]);
+      setLoading(false);
+      submittingRef.current = false;
+      return;
+    }
+
+    if (preflightResolved.type === "oauth_only") {
+      setError(preflightResolved.message);
+      setErrorTitle(preflightResolved.title);
+      setErrorType("oauth_only");
+      setErrorProviders(preflightResolved.providers ?? []);
+      setLoading(false);
+      submittingRef.current = false;
+      return;
+    }
+
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: emailResult.value,
       password,
     });
 
     if (signInError) {
+      if (/banned|suspended/i.test(signInError.message || "")) {
+        router.push(`/suspended?email=${encodeURIComponent(emailResult.value)}`);
+        return;
+      }
+
       const details = getAuthErrorDetails(signInError);
 
       if (details.type === "rate_limit") {
@@ -171,6 +262,19 @@ export default function SignInForm() {
       return;
     }
 
+    // Authoritative post-auth verification against user_auth_settings
+    const methodCheck = await verifyUserAuthMethod(signInData.user.id, "email");
+    if (!methodCheck.allowed) {
+      await supabase.auth.signOut();
+      setError(methodCheck.message || "Email & password sign-in has been disabled for this account. Please sign in using Google.");
+      setErrorTitle(methodCheck.title || "Sign-In Method Disabled");
+      setErrorType("disabled_method");
+      setErrorProviders(methodCheck.providers?.length ? methodCheck.providers : ["google"]);
+      setLoading(false);
+      submittingRef.current = false;
+      return;
+    }
+
     // Success! Clear any leftover error states completely before navigating.
     resetError();
 
@@ -180,6 +284,58 @@ export default function SignInForm() {
 
     // Direct location assignment forces cookie transmission to server middleware cleanly without race conditions.
     window.location.href = target;
+  }
+
+  const rawUrlError = urlError ? decodeURIComponent(urlError) : "";
+  const handleSignOutAndExit = async () => {
+    setLoading(true);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+
+  if (lockedAccessInfo) {
+    return (
+      <div className="w-full max-w-md p-6 sm:p-8 rounded-3xl border border-amber-500/30 bg-gradient-to-b from-amber-950/40 via-slate-900/90 to-slate-950/95 backdrop-blur-2xl shadow-[0_0_50px_rgba(245,158,11,0.15)] text-center space-y-6 animate-in fade-in zoom-in-95 duration-300">
+        <div className="relative mx-auto w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/10">
+          <div className="absolute inset-0 rounded-2xl bg-amber-500/20 blur-xl animate-pulse pointer-events-none" />
+          <ShieldAlert className="w-10 h-10 text-amber-400 relative z-10" />
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="text-2xl font-extrabold text-white tracking-tight">
+            Workspace Temporarily Locked
+          </h2>
+          <p className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+            System Preservation Active
+          </p>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 text-slate-300 text-xs sm:text-sm leading-relaxed text-left space-y-2">
+          <p>
+            Signed in as: <strong className="text-amber-200 font-mono">{lockedAccessInfo.userEmail}</strong>
+          </p>
+          <p className="text-slate-400 text-xs">
+            {lockedAccessInfo.lockMessage || "This Google account is authenticated, but is not on the allowed Google access list while the website is locked."}
+          </p>
+          <p className="text-slate-400 text-xs pt-1">
+            If you need entry, please request access from an administrator or sign in with an approved Google account.
+          </p>
+        </div>
+
+        <div className="pt-2 flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={handleSignOutAndExit}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-600 to-indigo-600 hover:from-amber-500 hover:to-indigo-500 text-white font-bold text-sm shadow-lg transition-all duration-200 disabled:opacity-50"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign Out & Switch Account</span>
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // ── OAuth-only account full-page state ──────────────────────────────────────
@@ -200,6 +356,46 @@ export default function SignInForm() {
             Sign in first, then visit Settings
           </Link>
         </p>
+      </div>
+    );
+  }
+
+  // ── Disabled sign-in method full-page state ──────────────────────────────────
+
+  if (errorType === "disabled_method") {
+    return (
+      <div className="w-full max-w-sm space-y-6 animate-in fade-in zoom-in-95 duration-200">
+        <div className="text-center space-y-3">
+          <div className="mx-auto w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.15)]">
+            <ShieldAlert className="w-7 h-7 text-amber-400" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-extrabold text-primary tracking-tight">
+              {errorTitle || "Sign-In Method Disabled"}
+            </h1>
+            <p className="text-xs font-semibold uppercase tracking-wider text-amber-500 dark:text-amber-400 mt-1">
+              Account Security Active
+            </p>
+          </div>
+          <p className="text-sm text-secondary leading-relaxed px-2">
+            {error || "Email & password sign-in has been disabled for this account. Please sign in using Google."}
+          </p>
+        </div>
+
+        <OAuthProviderHint
+          providers={errorProviders?.length ? errorProviders : ["google"]}
+          context="signin"
+          onTryAnother={resetAll}
+        />
+
+        <div className="pt-2 text-center border-t border-subtle">
+          <p className="text-xs text-secondary leading-relaxed">
+            Need to change sign-in methods? Sign in with Google first, then visit{" "}
+            <Link href="/settings/security" className="font-semibold text-primary hover:underline">
+              Settings &rarr; Security
+            </Link>.
+          </p>
+        </div>
       </div>
     );
   }

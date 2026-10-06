@@ -4,13 +4,14 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, MessageCircle, ThumbsUp, MoreVertical,
-  CheckCircle2, Share, Bookmark, AlertTriangle, Send, Trash2, UserX, Clock, MessageSquare, Flame
+  CheckCircle2, Share, Bookmark, AlertTriangle, Send, Trash2, UserX, Clock, MessageSquare, Flame, ShieldAlert
 } from "lucide-react";
 import { 
   createReplyAction, toggleHelpful, toggleBookmark, reportContent, 
   toggleAnswered, deletePostAdmin, deleteReplyAdmin, restrictUserAction, deleteReplyAction, deletePostAction
 } from "../actions";
 import { useRouter } from "next/navigation";
+import { Avatar } from "@/components/ui";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
 const C = {
@@ -56,6 +57,10 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
 
   const handleReplySubmit = async (e) => {
     e.preventDefault();
+    if (userProfile?.is_restricted) {
+      alert("Your account is currently restricted from commenting or posting replies.");
+      return;
+    }
     if (!replyContent.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
@@ -121,6 +126,10 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
   };
 
   const handleRestrictUser = async (targetUserId) => {
+    if (targetUserId === userId) {
+      alert("Action Prohibited: You cannot restrict your own account.");
+      return;
+    }
     if (!confirm("Restrict this user from commenting?")) return;
     startTransition(async () => {
       try {
@@ -136,8 +145,8 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
     <main className="relative min-h-[calc(100vh-72px)] overflow-hidden bg-[#0f0f13]">
       {/* Background glowing effects */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-blue-600/10 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px]" />
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-emerald-600/10 blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-teal-600/10 blur-[120px]" />
       </div>
 
       <div className="relative z-10 max-w-3xl mx-auto p-5 sm:p-8 space-y-8">
@@ -157,13 +166,12 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
           
           <header className="relative z-10 flex flex-col sm:flex-row items-start justify-between gap-5 mb-8">
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500/40 to-blue-500/40 border border-white/10 shadow-inner flex items-center justify-center text-white font-bold text-lg shrink-0">
-                {post.author_avatar ? (
-                  <img src={post.author_avatar} alt={post.author_name} className="h-full w-full rounded-xl object-cover" />
-                ) : (
-                  post.author_name?.[0]?.toUpperCase() || "?"
-                )}
-              </div>
+              <Avatar
+                url={post.author_avatar}
+                name={post.author_name}
+                size="lg"
+                className="h-12 w-12 rounded-2xl text-2xl shadow-inner border border-white/10 shrink-0"
+              />
               <div>
                 <p className="font-bold text-white/90 text-lg leading-tight">{post.author_name}</p>
                 <div className="flex items-center gap-2 mt-1">
@@ -198,31 +206,37 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
             </div>
           </header>
 
-          {/* Status Badges */}
-          {(post.status !== "approved" || post.post_type === "question") && (
-            <div className="relative z-10 flex flex-wrap gap-3 mb-6">
-              {post.status === "pending" && (
-                <span className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold tracking-wide uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm">
-                  <Clock size={14} /> Pending Approval
-                </span>
-              )}
-              {post.status === "rejected" && (
-                <span className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold tracking-wide uppercase bg-red-500/10 text-red-400 border border-red-500/20 shadow-sm">
-                  <AlertTriangle size={14} /> Rejected
-                </span>
-              )}
-              {post.post_type === "question" && (
-                <span className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold tracking-wide uppercase border shadow-sm ${
-                  post.is_answered
-                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                    : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                }`}>
-                  {post.is_answered ? <CheckCircle2 size={14} /> : <MessageSquare size={14} />}
-                  {post.is_answered ? "Answered" : "Open Question"}
-                </span>
-              )}
-            </div>
-          )}
+          {/* Status Badges & Type Badge */}
+          <div className="relative z-10 flex flex-wrap gap-2.5 mb-6">
+            <span className={`px-3 py-1 text-xs font-black uppercase tracking-wider rounded-xl border shadow-sm ${
+              post.post_type === "question"
+                ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+            }`}>
+              {post.post_type === "question" ? "QUESTION" : "DISCUSSION"}
+            </span>
+
+            {post.status === "pending" && (
+              <span className="flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-bold tracking-wide uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-sm">
+                <Clock size={14} /> Pending Approval
+              </span>
+            )}
+            {post.status === "rejected" && (
+              <span className="flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-bold tracking-wide uppercase bg-red-500/10 text-red-400 border border-red-500/20 shadow-sm">
+                <AlertTriangle size={14} /> Rejected
+              </span>
+            )}
+            {post.post_type === "question" && (
+              <span className={`flex items-center gap-1.5 rounded-xl px-3 py-1 text-xs font-bold tracking-wide uppercase border shadow-sm ${
+                post.is_answered
+                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+              }`}>
+                {post.is_answered ? <CheckCircle2 size={14} /> : <MessageSquare size={14} />}
+                {post.is_answered ? "Answered" : "Open Question"}
+              </span>
+            )}
+          </div>
 
           <div className="relative z-10">
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white mb-6 leading-tight">{post.title}</h1>
@@ -235,14 +249,14 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
             <div className="flex gap-3">
               <button
                 onClick={() => handleToggleHelpful("post", post.id)}
-                className="group flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-blue-600/20 rounded-xl border border-white/10 hover:border-blue-500/30 text-sm font-bold text-white/80 hover:text-blue-400 transition-all shadow-sm"
+                className="group flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-emerald-600/20 rounded-xl border border-white/10 hover:border-emerald-500/30 text-sm font-bold text-white/80 hover:text-emerald-400 transition-all shadow-sm"
               >
                 <ThumbsUp size={16} className="group-hover:-translate-y-0.5 transition-transform" /> 
                 {post.helpful_count || 0} Helpful
               </button>
               <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-xl border border-white/10 text-sm font-bold text-white/60 shadow-sm">
                 <MessageCircle size={16} /> 
-                {post.reply_count || 0} Replies
+                {post.reply_count || 0} {post.post_type === "question" ? "Answers" : "Replies"}
               </div>
             </div>
 
@@ -262,43 +276,66 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
           </footer>
         </article>
 
-        {/* Replies Section */}
+        {/* Responses Section */}
         <section className="space-y-6">
           <div className="flex items-center gap-3 mb-6">
-            <div className="h-8 w-8 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+            <div className="h-8 w-8 rounded-lg bg-teal-500/10 flex items-center justify-center text-indigo-400 border border-teal-500/20">
               <MessageCircle size={16} />
             </div>
-            <h2 className="text-xl font-bold text-white/90">{post.reply_count || 0} Replies</h2>
+            <h2 className="text-xl font-bold text-white/90">
+              {post.reply_count || 0} {post.post_type === "question" ? "Answers" : "Replies"}
+            </h2>
           </div>
 
-          {/* Reply Form */}
-          <form onSubmit={handleReplySubmit} className="bg-white/[0.03] border border-white/10 rounded-3xl p-5 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.1)] backdrop-blur-sm flex gap-4 sm:gap-5 transition-all focus-within:border-indigo-500/30 focus-within:bg-white/[0.04]">
-            <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500/40 to-blue-500/40 border border-white/10 flex items-center justify-center text-white font-bold text-sm shrink-0 shadow-inner mt-1">
-              {userProfile?.display_name?.[0]?.toUpperCase() || userProfile?.full_name?.[0]?.toUpperCase() || "Y"}
-            </div>
-            <div className="flex-1">
-              <textarea
-                value={replyContent}
-                onChange={(e) => setReplyContent(e.target.value)}
-                placeholder="Share your perspective, provide an answer, or continue the discussion..."
-                className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white/90 outline-none focus:border-indigo-500/50 focus:bg-white/5 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-muted/50 font-medium text-sm shadow-inner min-h-[100px] resize-y custom-scrollbar mb-4"
-                required
-              />
-              <div className="flex justify-end">
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !replyContent.trim()}
-                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] disabled:opacity-70 disabled:cursor-not-allowed min-w-[140px]"
-                >
-                  {isSubmitting ? (
-                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  ) : (
-                    <><Send size={15} /> Post Reply</>
-                  )}
-                </button>
+          {/* Reply/Answer Form */}
+          {userProfile?.is_restricted ? (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-3xl p-6 sm:p-7 shadow-[0_8px_30px_rgba(0,0,0,0.1)] backdrop-blur-sm flex items-start gap-4">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5 shadow-sm">
+                <ShieldAlert size={20} />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-amber-200">Commenting & Replying Restricted</h3>
+                <p className="text-xs text-amber-300/80 leading-relaxed font-medium">
+                  Your account is currently restricted from commenting or replying to community questions and discussions. All other areas of IB Nexus remain fully accessible to you.
+                </p>
               </div>
             </div>
-          </form>
+          ) : (
+            <form onSubmit={handleReplySubmit} className="bg-white/[0.03] border border-white/10 rounded-3xl p-5 sm:p-6 shadow-[0_8px_30px_rgba(0,0,0,0.1)] backdrop-blur-sm flex gap-4 sm:gap-5 transition-all focus-within:border-teal-500/30 focus-within:bg-white/[0.04]">
+              <Avatar
+                url={userProfile?.avatar_url || userProfile?.avatar}
+                name={userProfile?.display_name || userProfile?.full_name || "User"}
+                size="md"
+                className="h-10 w-10 rounded-xl text-xl border border-white/10 shadow-inner shrink-0 mt-1"
+              />
+              <div className="flex-1">
+                <textarea
+                  value={replyContent}
+                  onChange={(e) => setReplyContent(e.target.value)}
+                  placeholder={
+                    post.post_type === "question"
+                      ? "Write your answer to help this student..."
+                      : "Share your perspective or continue the discussion..."
+                  }
+                  className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white/90 outline-none focus:border-teal-500/50 focus:bg-white/5 focus:ring-4 focus:ring-teal-500/10 transition-all placeholder:text-muted/50 font-medium text-sm shadow-inner min-h-[100px] resize-y custom-scrollbar mb-4"
+                  required
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSubmitting || !replyContent.trim()}
+                    className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] disabled:opacity-70 disabled:cursor-not-allowed min-w-[140px]"
+                  >
+                    {isSubmitting ? (
+                      <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <><Send size={15} /> {post.post_type === "question" ? "Post Answer" : "Post Reply"}</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
 
           {/* Replies List */}
           <div className="space-y-5">
@@ -306,13 +343,12 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
               <article key={reply.id} className={`relative bg-white/[0.02] border rounded-2xl p-6 transition-all duration-300 hover:bg-white/[0.04] hover:shadow-lg ${reply.is_accepted ? 'border-emerald-500/30' : 'border-white/10 hover:border-white/20'}`}>
                 <header className="flex flex-col sm:flex-row items-start justify-between gap-4 mb-4">
                   <div className="flex items-center gap-4">
-                    <div className="h-10 w-10 rounded-xl bg-white/5 border border-white/10 shadow-inner flex items-center justify-center text-white/90 font-bold text-sm shrink-0">
-                      {reply.author_avatar ? (
-                        <img src={reply.author_avatar} alt={reply.author_name} className="h-full w-full rounded-xl object-cover" />
-                      ) : (
-                        reply.author_name?.[0]?.toUpperCase() || "?"
-                      )}
-                    </div>
+                    <Avatar
+                      url={reply.author_avatar}
+                      name={reply.author_name}
+                      size="md"
+                      className="h-10 w-10 rounded-xl text-xl border border-white/10 shadow-inner shrink-0"
+                    />
                     <div>
                       <p className="font-bold text-white/90 text-[15px]">{reply.author_name}</p>
                       <div className="flex items-center gap-1.5 text-xs font-medium text-white/50 mt-0.5">
@@ -335,7 +371,7 @@ export default function DiscussionClient({ post, replies, userId, userProfile, i
                 <footer className="flex flex-wrap items-center justify-between gap-4 sm:pl-14 pt-4 border-t border-white/5">
                   <button
                     onClick={() => handleToggleHelpful("reply", reply.id)}
-                    className="group flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-blue-600/20 rounded-lg border border-transparent hover:border-blue-500/30 text-xs font-bold text-white/60 hover:text-blue-400 transition-all"
+                    className="group flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-emerald-600/20 rounded-lg border border-transparent hover:border-emerald-500/30 text-xs font-bold text-white/60 hover:text-emerald-400 transition-all"
                   >
                     <ThumbsUp size={14} className="group-hover:-translate-y-0.5 transition-transform" /> 
                     {reply.helpful_count || 0} Helpful

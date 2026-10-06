@@ -1,195 +1,788 @@
 "use client";
 
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowRight, BookOpen, BrainCircuit, CalendarDays, Check, ChevronRight,
   FileText, FolderOpen, GraduationCap, LineChart, ListChecks, Sparkles,
-  Layers3, MessageSquareText, LibraryBig, ShieldCheck, Clock3, Compass, Lightbulb,
-  Accessibility, RefreshCw, Search, Download, Filter, Target, BarChart2, Plus, Zap
+  Layers, MessageSquareText, LibraryBig, ShieldCheck, Clock3, Compass, Lightbulb,
+  Search, Download, Filter, Target, BarChart2, Plus, Zap,
+  Play, Eye, Award, CheckCircle2, RotateCw, Globe, HelpCircle,
+  ExternalLink, ArrowUpRight, Scale, CheckCircle, XCircle
 } from "lucide-react";
+import VisitorOpeningExperience from "@/components/VisitorOpeningExperience";
+import {
+  CANONICAL_DP_SUBJECTS,
+  CANONICAL_MYP_SUBJECTS,
+  getSubjectSupportedLevels,
+  isSLOnlySubject,
+  getSubjectLevelNote
+} from "@/lib/subject-levels";
+import { getSubjectColorTheme } from "@/lib/subject-colors";
 
-const faq = [
-  ["Who is IB Nexus built for?", "IB Nexus is for students navigating the Middle Years Programme and Diploma Programme who want a clearer way to organise material, plan revision, and build steady learning habits."],
-  ["Does it support both MYP and DP?", "Yes. The platform is structured around the IB learning journey, from MYP subject areas through DP subject groups, core components, assessments, and revision needs."],
-  ["Can I organise my own study materials?", "Yes. IB Nexus gives your own notes, class handouts, links, and revision material a consistent home without forcing a single rigid methodology."],
-  ["How does the AI Tutor work?", "The AI Tutor supports deep understanding through guided explanations, practice prompts, revision ideas, and step-by-step breakdowns designed specifically for IB subjects."],
-  ["Can I access my resources across devices?", "Your workspace is cloud-synced and available wherever you study, whether on desktop, tablet, or mobile."],
-  ["Is my data secure?", "We use enterprise-grade Supabase authentication and strict data privacy standards to keep your notes and revision data safe."]
+/* ── Comprehensive Academic FAQ ────────────────────────────────────────────── */
+const ACADEMIC_FAQ = [
+  {
+    q: "What is IB Nexus and how is it specifically tailored for the International Baccalaureate?",
+    a: "IB Nexus is an integrated academic learning environment constructed exclusively around the International Baccalaureate continuum — supporting both the Diploma Programme (DP) and Middle Years Programme (MYP). Unlike generic note-taking or flashcard applications, every component in IB Nexus is indexed to official IB subject groups, syllabus topic codes, assessment objectives, and examination formats."
+  },
+  {
+    q: "How does IB Nexus support both the Diploma Programme (DP) and Middle Years Programme (MYP)?",
+    a: "The platform provides curriculum-aware navigation. For DP scholars, materials differentiate between Higher Level (HL — 240 recommended hours) and Standard Level (SL — 150 recommended hours), including core requirements (Theory of Knowledge, Extended Essay, CAS). For MYP scholars, subjects map to the 8 official MYP subject groups with support for Criteria A, B, C, and D assessment rubrics and the Personal Project."
+  },
+  {
+    q: "How does the Spaced Repetition Flashcards engine work mathematically?",
+    a: "Our active recall system implements a customized SuperMemo SM-2 cognitive algorithm. When reviewing a card, your self-assessed rating (Again, Hard, Good, Easy) recalculates the card's ease factor (EF) and repetition count, dynamically scheduling the next review date to intersect your optimal memory retention half-life before forgetting occurs."
+  },
+  {
+    q: "How does the Educator-Moderated Community Library ensure academic integrity?",
+    a: "To eliminate unverified notes, inaccurate mark schemes, and copyright violations, IB Nexus operates a two-tiered moderation system through the central Admin Request Hub. When a user uploads a resource or discussion, it remains in a pending state until vetted and approved by a moderator before becoming visible to the student body."
+  },
+  {
+    q: "Can I manage deadlines for Internal Assessments (IAs), TOK, and Extended Essays?",
+    a: "Yes. The Academic Revision Planner features pre-configured milestone workflows for Internal Assessments across Group 1 to 6 subjects, TOK Exhibitions and Essays, and the 4,000-word Extended Essay, prioritizing daily tasks using a Next-Best-Action (NBA) urgency scoring algorithm."
+  },
+  {
+    q: "Is IB Nexus free for students and schools?",
+    a: "Yes. IB Nexus was founded by Abdul Baseer as an independent open educational initiative to dismantle commercial paywalls and provide high-caliber, structured IB learning tools to every candidate globally."
+  },
+  {
+    q: "Does IB Nexus reflect recent syllabus updates (e.g., Mathematics AA/AI, new Sciences)?",
+    a: "Yes. The curriculum database supports the current syllabus specifications, including Mathematics: Analysis & Approaches (AA), Mathematics: Applications & Interpretation (AI), and recent updates across Biology, Chemistry, Physics, and Environmental Systems & Societies."
+  },
+  {
+    q: "How is student data protected across devices?",
+    a: "All personal notes, study schedules, and flashcard progress are stored with PostgreSQL Row Level Security (RLS) via Supabase, ensuring that your private academic notes and account credentials remain strictly private and accessible only by you across all synced devices."
+  }
 ];
 
-function SectionHeader({ badge, title, copy, className = "" }) {
-  return (
-    <div className={`max-w-3xl ${className}`}>
-      {badge && (
-        <span className="inline-flex items-center rounded-full bg-accent-soft px-3.5 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-accent-bright border border-accent-soft">
-          {badge}
-        </span>
-      )}
-      <h2 className="mt-4 text-3xl font-bold tracking-[-0.04em] text-primary sm:text-4xl lg:text-5xl">
-        {title}
-      </h2>
-      {copy && (
-        <p className="mt-4 text-base leading-relaxed text-secondary sm:text-lg sm:leading-8">
-          {copy}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function SectionDivider() {
-  return (
-    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4">
-      <div className="h-px w-full bg-gradient-to-r from-transparent via-subtle to-transparent" />
-    </div>
-  );
-}
+/* ── Comparison Matrix Data (Faithful, Plain-English, Balanced) ─────────────── */
+const COMPARISON_ROWS = [
+  {
+    feature: "Full IB Syllabus & Topic Checklists",
+    note: "See exactly what can be examined without searching through 200-page guides",
+    nexus: { type: "full", label: "Built-in", text: "Official DP & MYP topics pre-loaded for all 6 subject groups" },
+    notion: { type: "manual", label: "Manual Setup", text: "Flexible blank canvas, but you must build and paste syllabi yourself" },
+    quizlet: { type: "partial", label: "Not Available", text: "Question cards only; no course syllabus structure" },
+    drives: { type: "scattered", label: "Unorganized", text: "Folders of random PDFs with no interactive topic checklist" }
+  },
+  {
+    feature: "Higher Level (HL) vs Standard Level (SL) Separation",
+    note: "Never waste hours revising HL content if you are only taking SL",
+    nexus: { type: "full", label: "Clear Tags", text: "HL-only content is clearly flagged across notes and decks" },
+    notion: { type: "manual", label: "Manual Tagging", text: "Requires custom tags or separate pages you manage yourself" },
+    quizlet: { type: "scattered", label: "Often Mixed", text: "Public decks often blend SL and HL questions together" },
+    drives: { type: "scattered", label: "Unclear", text: "Files rarely specify whether they cover SL or HL depth" }
+  },
+  {
+    feature: "Smart Memory Review (Spaced Repetition)",
+    note: "Automatically schedules reviews right before you forget a concept",
+    nexus: { type: "full", label: "Built-in", text: "Automatic review timing tied directly to your subject topics" },
+    notion: { type: "none", label: "None", text: "Static notes; you have to remember when to review on your own" },
+    quizlet: { type: "manual", label: "Paid Feature", text: "Basic flashcards are free; spaced review requires a subscription" },
+    drives: { type: "none", label: "None", text: "Static documents with zero revision scheduling" }
+  },
+  {
+    feature: "IA, Extended Essay & TOK Milestones",
+    note: "Track proposal drafts, supervisor meetings, and final deadlines",
+    nexus: { type: "full", label: "Built-in", text: "Pre-configured milestone calendars with official assessment criteria" },
+    notion: { type: "manual", label: "Manual Setup", text: "Doable, but requires setting up custom databases and kanban boards" },
+    quizlet: { type: "none", label: "None", text: "Flashcard app only; no coursework management" },
+    drives: { type: "partial", label: "Storage Only", text: "Stores your drafts, but cannot track deadlines or rubrics" }
+  },
+  {
+    feature: "Math Formulas & Science LaTeX Support",
+    note: "Write equations, fractions, and chemical reactions cleanly",
+    nexus: { type: "full", label: "Full LaTeX", text: "Smooth math formula editor plus built-in IB command term guide" },
+    notion: { type: "manual", label: "Supported", text: "Good math equation blocks ($$), but no IB command term guide" },
+    quizlet: { type: "partial", label: "Limited", text: "Basic text only; scientific symbols often distort or require paid plan" },
+    drives: { type: "partial", label: "View Only", text: "Equations only work if pre-formatted inside uploaded PDFs" }
+  },
+  {
+    feature: "Quality & Accuracy of Shared Resources",
+    note: "Ensure you are learning accurate material aligned to current exams",
+    nexus: { type: "full", label: "Vetted", text: "Every upload is reviewed to remove spam, errors, and outdated syllabi" },
+    notion: { type: "partial", label: "Solo / Private", text: "You only see your own notes or templates you purchase" },
+    quizlet: { type: "scattered", label: "Unverified", text: "Millions of public cards, but riddled with student typos and errors" },
+    drives: { type: "scattered", label: "Unmaintained", text: "Dead links, duplicate files, and abandoned shared folders" }
+  },
+  {
+    feature: "Cost & Commercial Paywalls",
+    note: "Access to serious academic tools should not depend on your wallet",
+    nexus: { type: "full", label: "100% Free", text: "All features, study engines, and tools open to every student" },
+    notion: { type: "manual", label: "Freemium", text: "Generous free personal plan; charges extra for AI add-ons" },
+    quizlet: { type: "scattered", label: "Ad-Heavy / Paid", text: "Free tier is flooded with ads; best study modes require subscription" },
+    drives: { type: "manual", label: "Free Storage", text: "Free cloud storage, but no actual study tools" }
+  }
+];
 
 export default function LandingPage() {
+  const [showVisitorTour, setShowVisitorTour] = useState(false);
+
+  // Autoplay intro for first-time visitors entering outside login
+  useEffect(() => {
+    try {
+      const seen = localStorage.getItem("ibnexus_intro_visitor_seen");
+      if (!seen) {
+        const timer = setTimeout(() => {
+          setShowVisitorTour(true);
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+    } catch {
+      // Fallback
+    }
+  }, []);
+
+  const handleCloseVisitorTour = () => {
+    setShowVisitorTour(false);
+    try {
+      localStorage.setItem("ibnexus_intro_visitor_seen", "true");
+    } catch {}
+  };
+  
+  // Interactive Curriculum Explorer State
+  const [explorerProgram, setExplorerProgram] = useState("dp");
+  const [explorerSearch, setExplorerSearch] = useState("");
+  const [selectedSubjectPreview, setSelectedSubjectPreview] = useState(null);
+
+  // Interactive Flashcard Flip State
+  const [flashcardFlipped, setFlashcardFlipped] = useState(false);
+  const [flashcardRating, setFlashcardRating] = useState(null);
+
+  // Interactive Notes Topic Switcher State
+  const [notesActiveTopic, setNotesActiveTopic] = useState("respiration");
+
+  // Get subjects for explorer
+  const availableExplorerSubjects = useMemo(() => {
+    const list = explorerProgram === "dp" ? CANONICAL_DP_SUBJECTS : CANONICAL_MYP_SUBJECTS;
+    if (!explorerSearch.trim()) return list;
+    const q = explorerSearch.toLowerCase();
+    return list.filter(
+      (s) => s.name.toLowerCase().includes(q) || (s.category && s.category.toLowerCase().includes(q))
+    );
+  }, [explorerProgram, explorerSearch]);
+
   return (
-    <main className="landing overflow-hidden bg-background text-primary">
-      {/* ── HERO SECTION ──────────────────────────────────────────────────────── */}
-      <section className="relative isolate px-4 pb-20 pt-16 sm:px-6 lg:px-8 lg:pb-28 lg:pt-20">
-        <div className="pointer-events-none absolute left-1/2 top-[-18rem] -z-10 h-[42rem] w-[42rem] -translate-x-1/2 rounded-full bg-accent-soft blur-[150px]" />
-        <div className="mx-auto max-w-7xl text-center">
-          <span className="inline-flex items-center gap-2 rounded-full bg-accent-soft px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-accent-bright border border-accent-soft">
-            <Sparkles size={14} /> The Ultimate IB Study System
-          </span>
-          <h1 className="mt-6 text-5xl font-extrabold leading-[1.02] tracking-[-0.05em] sm:text-7xl lg:text-8xl">
-            A calmer way<br />to master the IB.
+    <main className="landing overflow-hidden bg-background text-primary selection:bg-[var(--accent)] selection:text-white">
+      {/* ── VISITOR INTRO EXPERIENCE MODAL (Req 22) ─────────────────────────── */}
+      <VisitorOpeningExperience
+        isOpen={showVisitorTour}
+        onClose={handleCloseVisitorTour}
+      />
+
+      {/* ── TOP INSTITUTIONAL ACADEMIC NOTICE BAR ───────────────────────────── */}
+      <aside className="border-b border-[var(--border)] bg-[var(--surface-alt)]/90 backdrop-blur-md px-4 py-2 text-center text-xs font-semibold text-[var(--text-secondary)]">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span>
+              <strong className="text-[var(--foreground)]">IB Continuum Architecture:</strong> Diploma Programme (DP) &amp; Middle Years Programme (MYP) Fully Supported
+            </span>
+          </div>
+          <div className="flex items-center gap-4 text-[11px] text-[var(--muted)]">
+            <a href="#curriculum-explorer" className="hover:text-[var(--accent)] transition-colors underline underline-offset-2">
+              Browse Official Subjects ↓
+            </a>
+            <span>•</span>
+            <button
+              onClick={() => setShowVisitorTour(true)}
+              className="text-[var(--accent)] hover:underline font-bold flex items-center gap-1 cursor-pointer"
+            >
+              <Play size={11} className="fill-current" />
+              <span>Launch 60s Tour</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── HERO SECTION: DEFINITIVE ACADEMIC AUTHORITY ─────────────────────── */}
+      <section className="relative isolate px-4 pt-12 pb-16 sm:px-6 lg:px-8 lg:pt-16 lg:pb-24 border-b border-[var(--border)]">
+        {/* Ambient Subtle Background Grid */}
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(66,102,232,0.12),rgba(255,255,255,0))] dark:bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(66,102,232,0.18),rgba(0,0,0,0))]" />
+        
+        <div className="mx-auto max-w-6xl text-center space-y-6">
+          {/* Institutional Badge */}
+          <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full border border-[var(--border-strong)] bg-[var(--surface)] text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)] shadow-sm">
+            <GraduationCap size={15} className="text-[var(--accent)]" />
+            <span>International Baccalaureate Academic Learning Platform</span>
+          </div>
+
+          <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-[var(--foreground)] leading-[1.08]">
+            The definitive workspace for<br className="hidden sm:inline" />
+            <span className="bg-gradient-to-r from-[var(--accent)] via-indigo-600 to-[var(--info)] bg-clip-text text-transparent">
+              IB Diploma &amp; Middle Years
+            </span>{" "}
+            scholars.
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-secondary sm:text-xl">
-            IB Nexus brings your notes, flashcards, AI tutor, study planner, past papers, and progress tracking into one production-ready workspace.
+
+          <p className="mx-auto max-w-3xl text-base sm:text-xl text-[var(--text-secondary)] font-normal leading-relaxed">
+            IB Nexus unifies syllabus-mapped notes, active recall flashcards powered by the SM-2 algorithm, assessment milestone scheduling, and educator-moderated past paper resources into one authoritative, distraction-free environment.
           </p>
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
+
+          {/* Action CTAs */}
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
             <Link
               href="/signup"
-              className="btn btn-brand inline-flex items-center justify-center gap-2 rounded-xl px-7 py-4 text-base font-semibold shadow-lifted transition hover:scale-[1.02]"
+              className="btn btn-brand inline-flex items-center justify-center gap-2.5 rounded-2xl px-8 py-4 text-base font-extrabold shadow-[0_8px_25px_color-mix(in_srgb,var(--accent)_30%,transparent)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--accent)_40%,transparent)] hover:scale-[1.02] transition-all"
             >
-              Get Started Free <ArrowRight size={18} />
+              <span>Get Started Free</span>
+              <ArrowRight size={18} />
             </Link>
-            <a
-              href="#notes"
-              className="rounded-xl border border-subtle bg-card px-7 py-4 text-base font-semibold text-secondary hover:border-accent-soft hover:text-primary transition"
+
+            <button
+              type="button"
+              onClick={() => setShowVisitorTour(true)}
+              className="inline-flex items-center justify-center gap-2.5 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface)] px-7 py-4 text-base font-bold text-[var(--foreground)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--surface-alt)] transition-all shadow-sm cursor-pointer"
             >
-              Explore Workspace
+              <Play size={16} className="text-[var(--accent)] fill-current" />
+              <span>Interactive Platform Tour</span>
+            </button>
+
+            <a
+              href="#curriculum-explorer"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-transparent bg-transparent px-6 py-4 text-base font-semibold text-[var(--text-secondary)] hover:text-[var(--foreground)] transition-colors"
+            >
+              <span>Explore Curriculum Groups</span>
+              <ChevronRight size={16} />
             </a>
           </div>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-sm text-secondary">
-            <span className="flex items-center gap-2"><ShieldCheck size={16} className="text-accent-bright" /> Built for MYP & DP</span>
-            <span className="flex items-center gap-2"><Clock3 size={16} className="text-accent-bright" /> Instant Auth & Sync</span>
-            <span className="flex items-center gap-2"><Zap size={16} className="text-accent-bright" /> AI Powered</span>
+
+          {/* 4 Pillar Badges */}
+          <div className="pt-6 grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto text-left">
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm">
+              <ShieldCheck size={18} className="text-emerald-500 shrink-0" />
+              <div>
+                <div className="text-xs font-bold text-[var(--foreground)]">DP Groups 1–6 + Core</div>
+                <div className="text-[10px] text-[var(--muted)]">HL &amp; SL Syllabus Mapping</div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm">
+              <BrainCircuit size={18} className="text-[var(--ai)] shrink-0" />
+              <div>
+                <div className="text-xs font-bold text-[var(--foreground)]">SM-2 Spaced Recall</div>
+                <div className="text-[10px] text-[var(--muted)]">Calculated Interval Engine</div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm">
+              <CalendarDays size={18} className="text-[var(--warning)] shrink-0" />
+              <div>
+                <div className="text-xs font-bold text-[var(--foreground)]">Assessment Planner</div>
+                <div className="text-[10px] text-[var(--muted)]">IA, EE &amp; Exam Milestones</div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm">
+              <LibraryBig size={18} className="text-[var(--info)] shrink-0" />
+              <div>
+                <div className="text-xs font-bold text-[var(--foreground)]">Vetted Library</div>
+                <div className="text-[10px] text-[var(--muted)]">Educator-Moderated Hub</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      <SectionDivider />
-
-      {/* ── FEATURE 1: NOTES WORKSPACE ─────────────────────────────────────────── */}
-      <section id="notes" className="scroll-mt-24 px-4 py-20 sm:px-6 lg:px-8 bg-surface">
-        <div className="mx-auto max-w-7xl">
-          <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            <div>
-              <SectionHeader
-                badge="NOTES WORKSPACE"
-                title="Organise every idea in one place."
-                copy="Capture lessons, summaries, diagrams, and revision notes across every IB subject. Connect your class notes directly to syllabus points and past papers."
-              />
-              <ul className="mt-8 space-y-3 text-secondary text-base">
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Structured by IB Subject Groups (Sciences, Maths, Humanities, Arts)</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Rich formatting with code blocks, math LaTeX, and diagram embeds</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>One-click conversion into active recall flashcards</span>
-                </li>
-              </ul>
-              <div className="mt-8">
-                <Link href="/signup" className="btn btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm">
-                  Try Notes Workspace <ArrowRight size={16} />
-                </Link>
-              </div>
+      {/* ── ACADEMIC STANDARDS & ARCHITECTURAL METRICS ──────────────────────── */}
+      <section className="bg-[var(--surface)] py-12 border-b border-[var(--border)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 text-center">
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">30+</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-[var(--accent)]">IB Courses Configured</div>
+              <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
+                Official DP &amp; MYP syllabus specifications across all 6 groups.
+              </p>
             </div>
 
-            {/* Visual Mockup */}
-            <div className="card rounded-2xl border border-subtle bg-card p-6 shadow-lifted">
-              <div className="flex items-center justify-between border-b border-divider pb-4">
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">SM-2</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-[var(--ai)]">Cognitive Algorithm</div>
+              <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
+                Mathematical review intervals calculated to halt memory decay.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">100%</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-emerald-500">Moderated Repository</div>
+              <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
+                Every community document vetted by administrators prior to release.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">Free</div>
+              <div className="text-xs font-bold uppercase tracking-wider text-[var(--warning)]">Universal Access</div>
+              <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
+                Zero commercial paywalls; dedicated to global IB equity.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── INTERACTIVE CURRICULUM EXPLORER (FUNCTIONAL REQ) ────────────────── */}
+      <section id="curriculum-explorer" className="scroll-mt-24 py-20 bg-[var(--surface-alt)] border-b border-[var(--border)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+          <div className="max-w-3xl space-y-3">
+            <span className="px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-[0.2em] bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
+              Interactive Curriculum Explorer
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+              Explore the official IB Subject Directory.
+            </h2>
+            <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
+              Browse course level availability (Higher Level, Standard Level, or MYP), syllabus structures, and learning tools across the International Baccalaureate continuum.
+            </p>
+          </div>
+
+          {/* Controls: Program Switcher & Search Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 p-2 rounded-2xl bg-[var(--surface)] border border-[var(--border)] shadow-sm">
+            {/* DP vs MYP Segmented Buttons */}
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[var(--surface-alt)] border border-[var(--border)] shrink-0">
+              <button
+                type="button"
+                onClick={() => setExplorerProgram("dp")}
+                className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all ${
+                  explorerProgram === "dp"
+                    ? "bg-[var(--accent)] text-white shadow-sm"
+                    : "text-[var(--text-secondary)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                Diploma Programme (DP)
+              </button>
+              <button
+                type="button"
+                onClick={() => setExplorerProgram("myp")}
+                className={`px-4 py-2 rounded-lg text-xs font-extrabold transition-all ${
+                  explorerProgram === "myp"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-[var(--text-secondary)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                Middle Years Programme (MYP)
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
+              <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+              <input
+                type="text"
+                value={explorerSearch}
+                onChange={(e) => setExplorerSearch(e.target.value)}
+                placeholder={`Search ${explorerProgram.toUpperCase()} subjects (e.g. Mathematics, Biology, Spanish, History)...`}
+                className="w-full bg-[var(--surface-alt)] border border-[var(--border)] rounded-xl pl-10 pr-4 py-2 text-xs font-medium text-[var(--foreground)] placeholder:text-[var(--muted)] focus:outline-none focus:border-[var(--accent)]"
+              />
+              {explorerSearch && (
+                <button
+                  onClick={() => setExplorerSearch("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--muted)] hover:text-[var(--foreground)]"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Subjects Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+            {availableExplorerSubjects.map((subj) => {
+              const theme = getSubjectColorTheme(subj.name);
+              const colorVar = theme === "brand" ? "var(--accent)" : `var(--subject-${theme})`;
+              const isSLOnly = isSLOnlySubject(subj.name, explorerProgram);
+              const levelNote = getSubjectLevelNote(subj.name, explorerProgram);
+
+              return (
+                <div
+                  key={subj.id || subj.name}
+                  style={{ "--c": colorVar }}
+                  onClick={() => setSelectedSubjectPreview(subj)}
+                  className="group relative p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:border-[color:var(--c)] hover:shadow-md transition-all duration-300 flex flex-col justify-between cursor-pointer"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: colorVar }}
+                      />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-[var(--muted)] bg-[var(--surface-alt)] px-2 py-0.5 rounded border border-[var(--border)] truncate">
+                        {subj.category || "Curriculum"}
+                      </span>
+                    </div>
+
+                    <h4 className="text-sm font-bold text-[var(--foreground)] group-hover:text-[var(--accent)] transition-colors">
+                      {subj.name}
+                    </h4>
+                  </div>
+
+                  <div className="pt-3 mt-3 border-t border-[var(--border)]/60 flex items-center justify-between text-[11px]">
+                    <span className={`font-semibold ${isSLOnly ? 'text-sky-500' : 'text-[var(--text-secondary)]'}`}>
+                      {levelNote}
+                    </span>
+                    <span className="text-[var(--accent)] opacity-0 group-hover:opacity-100 transition-opacity font-bold flex items-center gap-0.5">
+                      Explore <ArrowRight size={12} />
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Quick Subject Modal / Preview Card when clicked */}
+          {selectedSubjectPreview && (
+            <div className="p-6 rounded-2xl border border-[var(--accent)]/30 bg-[var(--surface)] shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="space-y-1.5">
                 <div className="flex items-center gap-2">
-                  <BookOpen className="text-accent-bright" size={20} />
-                  <span className="font-semibold text-primary text-sm">Biology HL — Cell Respiration</span>
+                  <span className="text-xs font-black uppercase tracking-wider text-[var(--accent)]">
+                    Course Preview
+                  </span>
+                  <span className="text-[var(--border-strong)]">•</span>
+                  <span className="text-xs text-[var(--muted)]">{selectedSubjectPreview.category}</span>
                 </div>
-                <span className="text-xs rounded-md bg-accent-soft px-2.5 py-1 text-accent-bright font-medium">Topic 2.8</span>
+                <h3 className="text-xl font-bold text-[var(--foreground)]">
+                  {selectedSubjectPreview.name}
+                </h3>
+                <p className="text-xs sm:text-sm text-[var(--text-secondary)] leading-relaxed max-w-2xl">
+                  Fully supported in IB Nexus with topic-level notes architecture, SM-2 flashcard decks, formula booklet access, and moderated past paper analyses.
+                </p>
               </div>
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="rounded-xl bg-surface-alt p-3.5 border border-subtle">
-                  <p className="font-semibold text-primary text-xs uppercase tracking-wider">Key Concept: Glycolysis</p>
-                  <p className="mt-1 text-secondary leading-relaxed">
-                    Occurs in the cytoplasm. Glucose (6C) is phosphorylated using 2 ATP, then split into two triose phosphate (3C) molecules...
-                  </p>
+
+              <div className="flex items-center gap-3 shrink-0">
+                <Link
+                  href="/signup"
+                  className="btn btn-brand px-5 py-2.5 text-xs font-extrabold rounded-xl"
+                >
+                  Enroll in Subject Workspace
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSubjectPreview(null)}
+                  className="px-3.5 py-2.5 rounded-xl border border-[var(--border)] text-xs font-semibold text-[var(--muted)] hover:text-[var(--foreground)]"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* ── THE 4 CORE FUNCTIONAL STUDY ENGINES (RIGOROUSLY DEFINED) ────────── */}
+
+      {/* ── ENGINE 1: SYLLABUS NOTES ARCHITECTURE ───────────────────────────── */}
+      <section id="notes" className="scroll-mt-24 py-20 bg-[var(--surface)] border-b border-[var(--border)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-[0.18em] bg-[var(--info)]/15 text-[var(--info)] border border-[var(--info)]/30">
+                  Engine 1 • Syllabus Documentation
+                </span>
+                <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+                  The Syllabus-Mapped Notes Architecture.
+                </h2>
+              </div>
+
+              <p className="text-base text-[var(--text-secondary)] leading-relaxed">
+                Most student notes are disconnected summaries with no clear link to final examination criteria. IB Nexus binds every note directly to official IB syllabus numbers, Higher Level (HL) vs Standard Level (SL) depth, and command term requirements.
+              </p>
+
+              <div className="space-y-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--info)]/10 text-[var(--info)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Topic &amp; Sub-Topic Hierarchy</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Organized by official curriculum codes (e.g. Topic 2.8 Cell Respiration or Calculus HL derivatives) so no learning objective is missed.
+                    </p>
+                  </div>
                 </div>
-                <div className="rounded-xl bg-surface-alt p-3.5 border border-subtle">
-                  <p className="font-semibold text-primary text-xs uppercase tracking-wider">Link Reaction & Krebs Cycle</p>
-                  <p className="mt-1 text-secondary leading-relaxed">
-                    Pyruvate is actively transported into the mitochondrial matrix. Decarboxylation releases CO₂ and produces acetyl-CoA...
-                  </p>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--info)]/10 text-[var(--info)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Mathematical LaTeX &amp; Scientific Notation</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Render complex calculus integrals, stoichiometry equations, and physics formulas with crystal-clear typography.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--info)]/10 text-[var(--info)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">One-Click Active Recall Generation</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Instantly convert notes into flashcards without retyping questions or fragmenting your revision materials.
+                    </p>
+                  </div>
                 </div>
               </div>
+
+              <div className="pt-2">
+                <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                  <span>Open Notes Workspace</span>
+                  <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+
+            {/* Live Interactive Notes Preview */}
+            <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 sm:p-7 shadow-xl space-y-4">
+              {/* Header with Topic Badges */}
+              <div className="flex items-center justify-between pb-4 border-b border-[var(--border)]">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-3 h-3 rounded-full bg-emerald-500" />
+                  <span className="text-xs font-bold text-[var(--foreground)]">Biology HL — Syllabus Unit 2</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-500 border border-amber-500/25">
+                    HL Content
+                  </span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold text-[var(--muted)] bg-[var(--surface)] border border-[var(--border)]">
+                    Exam Weight: High
+                  </span>
+                </div>
+              </div>
+
+              {/* Topic Selector Tabs */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNotesActiveTopic("respiration")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    notesActiveTopic === "respiration"
+                      ? "bg-[var(--accent)] text-white"
+                      : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  Topic 2.8: Cell Respiration
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotesActiveTopic("photosynthesis")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    notesActiveTopic === "photosynthesis"
+                      ? "bg-[var(--accent)] text-white"
+                      : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  Topic 2.9: Photosynthesis
+                </button>
+              </div>
+
+              {/* Note Body */}
+              {notesActiveTopic === "respiration" ? (
+                <div className="space-y-3.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                  <div className="p-3.5 rounded-xl bg-[var(--surface-alt)] border border-[var(--border)] space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-black uppercase text-[10px] text-[var(--accent)]">
+                        Command Term: Explain (Level 3 Assessment Objective)
+                      </span>
+                      <span className="font-mono text-[10px] text-[var(--muted)]">Paper 2 Section B</span>
+                    </div>
+                    <p className="text-[var(--foreground)] font-semibold">
+                      Explain the process of aerobic respiration in eukaryotic cells:
+                    </p>
+                    <p>
+                      1. <strong>Glycolysis</strong> takes place in the cytoplasm, yielding 2 net ATP and 2 pyruvate molecules.<br />
+                      2. <strong>Link Reaction</strong> transports pyruvate into the mitochondrial matrix, forming acetyl-CoA + CO₂.<br />
+                      3. <strong>Krebs Cycle</strong> produces electron carriers (NADH, FADH₂) through cyclic decarboxylation.<br />
+                      4. <strong>Oxidative Phosphorylation</strong> utilizes the electron transport chain (ETC) along the inner cristae, generating ~32-34 ATP via chemiosmosis.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-[var(--card)] border border-[var(--border)] font-mono text-[11px] text-[var(--foreground)] flex items-center justify-between">
+                    <span>Net Reaction: C₆H₁₂O₆ + 6 O₂ ➔ 6 CO₂ + 6 H₂O + ~36 ATP</span>
+                    <span className="text-[10px] text-emerald-500 font-sans font-bold">✓ Syllabus Verified</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3.5 text-xs text-[var(--text-secondary)] leading-relaxed">
+                  <div className="p-3.5 rounded-xl bg-[var(--surface-alt)] border border-[var(--border)] space-y-1.5">
+                    <span className="font-black uppercase text-[10px] text-emerald-600">
+                      Topic 2.9 Photolysis &amp; Action Spectrum
+                    </span>
+                    <p className="text-[var(--foreground)] font-semibold">
+                      Light-dependent reactions occur within the thylakoid membranes:
+                    </p>
+                    <p>
+                      Photons excite electrons in Photosystem II (P680). Photolysis of water releases O₂ as a byproduct while generating an electrochemical proton gradient driving ATP Synthase.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      <SectionDivider />
-
-      {/* ── FEATURE 2: FLASHCARDS ─────────────────────────────────────────────── */}
-      <section id="flashcards" className="scroll-mt-24 px-4 py-20 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
+      {/* ── ENGINE 2: SM-2 ACTIVE RECALL & SPACED REPETITION ────────────────── */}
+      <section id="flashcards" className="scroll-mt-24 py-20 bg-[var(--surface-alt)] border-b border-[var(--border)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            {/* Visual Mockup first for layout variety */}
-            <div className="order-2 lg:order-1 card rounded-2xl border border-subtle bg-card p-7 shadow-lifted text-center">
-              <div className="flex justify-between items-center text-xs text-muted mb-4">
-                <span>Card 14 of 48</span>
-                <span className="text-accent-bright font-semibold">Active Recall Mode</span>
+            {/* Interactive Flippable Card Simulator */}
+            <div className="order-2 lg:order-1 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8 shadow-xl text-center space-y-5">
+              <div className="flex items-center justify-between text-xs text-[var(--muted)]">
+                <span className="font-bold text-[var(--accent)]">Mathematics AA HL • Calculus Module</span>
+                <span>Card 18 of 54 (Active Queue)</span>
               </div>
-              <div className="my-8 py-8 px-6 rounded-2xl bg-surface-alt border border-accent-soft">
-                <p className="text-xs uppercase tracking-widest text-accent-bright font-semibold mb-2">Question</p>
-                <p className="text-lg font-bold text-primary">What is the net yield of ATP produced during aerobic respiration per glucose molecule?</p>
+
+              {/* 3D Flip Card */}
+              <div
+                onClick={() => setFlashcardFlipped(!flashcardFlipped)}
+                className="p-8 sm:p-10 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border-strong)] hover:border-[var(--accent)] transition-all cursor-pointer shadow-inner min-h-[170px] flex flex-col items-center justify-center relative select-none"
+              >
+                <div className="text-[10px] font-black uppercase tracking-widest text-[var(--accent)] mb-2">
+                  {flashcardFlipped ? "Answer & Formula Specification" : "IB Exam Question (Click to Flip)"}
+                </div>
+
+                <div className="text-base sm:text-lg font-bold text-[var(--foreground)]">
+                  {flashcardFlipped ? (
+                    <div className="space-y-1">
+                      <div>f&apos;(x) = [u&apos;(x)·v(x) - u(x)·v&apos;(x)] / [v(x)]²</div>
+                      <div className="text-xs font-normal text-[var(--muted)]">
+                        Provided in Section 5.3 of the official IB Formula Booklet.
+                      </div>
+                    </div>
+                  ) : (
+                    "State the Quotient Rule formula for differentiating y = u(x) / v(x)."
+                  )}
+                </div>
+
+                <div className="text-[10px] text-[var(--muted)] mt-4 inline-flex items-center gap-1 font-semibold">
+                  <RotateCw size={11} /> {flashcardFlipped ? "Click to view front" : "Click to view answer"}
+                </div>
               </div>
-              <div className="flex justify-center gap-3">
-                <button className="px-4 py-2 rounded-xl border border-subtle text-xs font-semibold hover:bg-danger-soft hover:text-danger transition">Hard (1d)</button>
-                <button className="px-4 py-2 rounded-xl border border-subtle text-xs font-semibold hover:bg-warning-soft hover:text-warning transition">Good (3d)</button>
-                <button className="px-4 py-2 rounded-xl bg-accent-soft text-accent-bright text-xs font-semibold hover:opacity-90 transition">Easy (7d)</button>
+
+              {/* SM-2 Rating Buttons */}
+              <div className="space-y-2">
+                <div className="text-[11px] font-semibold text-[var(--text-secondary)]">
+                  Rate your recall to trigger SuperMemo SM-2 interval recalculation:
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFlashcardRating("again")}
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                      flashcardRating === "again"
+                        ? "bg-rose-500 text-white border-rose-500 shadow-sm"
+                        : "border-[var(--border)] text-rose-500 hover:bg-rose-500/10"
+                    }`}
+                  >
+                    <div>Again</div>
+                    <div className="text-[9px] opacity-75">&lt; 10m</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFlashcardRating("hard")}
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                      flashcardRating === "hard"
+                        ? "bg-amber-500 text-white border-amber-500 shadow-sm"
+                        : "border-[var(--border)] text-amber-500 hover:bg-amber-500/10"
+                    }`}
+                  >
+                    <div>Hard</div>
+                    <div className="text-[9px] opacity-75">1 day</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFlashcardRating("good")}
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                      flashcardRating === "good"
+                        ? "bg-sky-500 text-white border-sky-500 shadow-sm"
+                        : "border-[var(--border)] text-sky-500 hover:bg-sky-500/10"
+                    }`}
+                  >
+                    <div>Good</div>
+                    <div className="text-[9px] opacity-75">3 days</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFlashcardRating("easy")}
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                      flashcardRating === "easy"
+                        ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
+                        : "border-[var(--border)] text-emerald-500 hover:bg-emerald-500/10"
+                    }`}
+                  >
+                    <div>Easy</div>
+                    <div className="text-[9px] opacity-75">6 days</div>
+                  </button>
+                </div>
               </div>
             </div>
 
-            <div className="order-1 lg:order-2">
-              <SectionHeader
-                badge="FLASHCARDS"
-                title="Remember concepts faster."
-                copy="Create active recall cards connected to your notes and syllabus. Spaced repetition algorithm ensures you review material right when memory begins to fade."
-              />
-              <ul className="mt-8 space-y-3 text-secondary text-base">
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Auto-generate flashcards from your notes using AI</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Spaced repetition engine tailored for exam preparation</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Track mastery metrics per subject and topic</span>
-                </li>
-              </ul>
-              <div className="mt-8">
-                <Link href="/signup" className="btn btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm">
-                  Build Flashcards <ArrowRight size={16} />
+            {/* Engine 2 Explanatory Content */}
+            <div className="order-1 lg:order-2 space-y-6">
+              <div className="space-y-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-[0.18em] bg-[var(--ai)]/15 text-[var(--ai)] border border-[var(--ai)]/30">
+                  Engine 2 • Cognitive Retention
+                </span>
+                <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+                  SuperMemo SM-2 Spaced Repetition Engine.
+                </h2>
+              </div>
+
+              <p className="text-base text-[var(--text-secondary)] leading-relaxed">
+                The 2-year IB continuum presents an immense volume of conceptual material. Cramming causes rapid memory decay before final examination sessions. IB Nexus applies the verified SM-2 spaced repetition formula to schedule reviews at exact forgetting thresholds.
+              </p>
+
+              <div className="space-y-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--ai)]/10 text-[var(--ai)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Dynamic Ease Factor (EF) Recalculation</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Adapts difficulty based on individual card performance so difficult formulas appear frequently and mastered concepts extend out to weeks.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--ai)]/10 text-[var(--ai)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Persistent True Retention Metrics</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Tracks real 30-day retention rates, review lapses, and historical streaks without hardcoding dummy statistics.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--ai)]/10 text-[var(--ai)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Subject &amp; Deck Organization</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Decks correspond directly to enrolled courses (Group 1–6) and integrate with your personal academic profile.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                  <span>Start Active Recall Free</span>
+                  <ArrowRight size={15} />
                 </Link>
               </div>
             </div>
@@ -197,277 +790,435 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <SectionDivider />
-
-      {/* ── FEATURE 3: AI TUTOR ────────────────────────────────────────────────── */}
-      <section id="ai-tutor" className="scroll-mt-24 px-4 py-20 sm:px-6 lg:px-8 bg-surface">
-        <div className="mx-auto max-w-7xl">
+      {/* ── ENGINE 3: ACADEMIC REVISION PLANNER ─────────────────────────────── */}
+      <section id="planner" className="scroll-mt-24 py-20 bg-[var(--surface)] border-b border-[var(--border)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            <div>
-              <SectionHeader
-                badge="AI TUTOR"
-                title="Understand difficult concepts instantly."
-                copy="Receive explanations designed specifically for IB students. Ask questions, clarify markscheme criteria, or request practice problem walk-throughs 24/7."
-              />
-              <ul className="mt-8 space-y-3 text-secondary text-base">
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Trained on IB command terms (Evaluate, Discuss, Explain, Contrast)</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Step-by-step guidance for TOK, EE, and Internal Assessments</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Instant practice quiz generation per topic</span>
-                </li>
-              </ul>
-              <div className="mt-8">
-                <Link href="/signup" className="btn btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm">
-                  Ask AI Tutor <ArrowRight size={16} />
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-[0.18em] bg-[var(--warning)]/15 text-[var(--warning)] border border-[var(--warning)]/30">
+                  Engine 3 • Assessment Milestones
+                </span>
+                <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+                  Academic Revision Planner &amp; NBA Prioritizer.
+                </h2>
+              </div>
+
+              <p className="text-base text-[var(--text-secondary)] leading-relaxed">
+                Generic calendars fail in the IB because they cannot balance Internal Assessments (IAs), TOK Exhibition dates, and 6 simultaneous subject revision tracks. The IB Nexus Planner computes a real-time Next-Best-Action (NBA) score based on exam proximity and topic readiness.
+              </p>
+
+              <div className="space-y-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--warning)]/10 text-[var(--warning)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Next-Best-Action (NBA) Urgency Scoring</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Algorithmically ranks tasks so you always know precisely which course, IA draft, or past paper requires immediate focus.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--warning)]/10 text-[var(--warning)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Official Examination Countdown</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Synchronized to your cohort session (May 2027, Nov 2026, May 2028) with live days-remaining tracking on your dashboard.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-[var(--warning)]/10 text-[var(--warning)] flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Daily Study Rhythm Analytics</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Monitors real study hours, completed sessions, and card reviews through the 7-day activity graph.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                  <span>Open Assessment Planner</span>
+                  <ArrowRight size={15} />
                 </Link>
               </div>
             </div>
 
-            {/* Visual Mockup */}
-            <div className="card rounded-2xl border border-subtle bg-card p-6 shadow-lifted">
-              <div className="space-y-4 text-sm">
-                <div className="rounded-xl bg-surface-alt p-4 border border-subtle">
-                  <p className="text-xs font-semibold text-muted">You</p>
-                  <p className="mt-1 text-primary font-medium">Explain the Keynesian multiplier effect for IB Economics HL.</p>
+            {/* Planner UI Preview */}
+            <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8 shadow-xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
+                <div>
+                  <span className="text-xs font-bold text-[var(--foreground)]">Academic Revision Schedule</span>
+                  <p className="text-[10px] text-[var(--muted)]">Calculated for May 2027 Examination Cohort</p>
                 </div>
-                <div className="rounded-xl bg-accent-soft p-4 border border-accent-soft text-secondary">
-                  <p className="text-xs font-semibold text-accent-bright">IB Nexus AI Tutor</p>
-                  <p className="mt-2 leading-relaxed">
-                    The Keynesian multiplier shows how an initial injection of aggregate demand leads to a greater final increase in national income:
-                  </p>
-                  <div className="mt-3 p-2.5 rounded-lg bg-background text-primary font-mono text-xs border border-subtle">
-                    Multiplier (k) = 1 / (1 - MPC) = 1 / MPW
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="px-2.5 py-1 rounded-md bg-card text-xs text-primary font-medium border border-subtle">Generate Quiz</span>
-                    <span className="px-2.5 py-1 rounded-md bg-card text-xs text-primary font-medium border border-subtle">Create Flashcard</span>
-                  </div>
-                </div>
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold text-[var(--warning)] bg-[var(--warning)]/15 border border-[var(--warning)]/30">
+                  786 Days Remaining
+                </span>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      <SectionDivider />
-
-      {/* ── FEATURE 4: STUDY PLANNER ───────────────────────────────────────────── */}
-      <section id="planner" className="scroll-mt-24 px-4 py-20 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            {/* Visual Mockup */}
-            <div className="order-2 lg:order-1 card rounded-2xl border border-subtle bg-card p-6 shadow-lifted">
-              <div className="flex items-center justify-between border-b border-divider pb-4">
-                <div className="flex items-center gap-2">
-                  <CalendarDays className="text-accent-bright" size={20} />
-                  <span className="font-semibold text-primary text-sm">Revision Schedule</span>
-                </div>
-                <span className="text-xs text-muted">May 2026 Exams</span>
-              </div>
-              <div className="mt-4 space-y-3 text-sm">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt border border-subtle">
+              <div className="space-y-2.5">
+                <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-rose-500/30 flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-danger" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
                     <div>
-                      <p className="font-semibold text-primary text-xs">Physics HL — Paper 2 Practice</p>
-                      <p className="text-xs text-muted">Today · 16:00 - 17:30</p>
+                      <div className="text-xs font-bold text-[var(--foreground)]">Physics HL: Internal Assessment (IA) Final Draft</div>
+                      <div className="text-[11px] text-[var(--muted)]">NBA Priority Score: 94 • Due Thursday 17:00</div>
                     </div>
                   </div>
-                  <span className="px-2 py-1 rounded-md bg-danger-soft text-danger text-xs font-medium">High Priority</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-rose-500/15 text-rose-500 border border-rose-500/25 shrink-0">
+                    High Priority
+                  </span>
                 </div>
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt border border-subtle">
+
+                <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between shadow-sm">
                   <div className="flex items-center gap-3">
-                    <span className="w-2.5 h-2.5 rounded-full bg-warning" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--accent)] shrink-0" />
                     <div>
-                      <p className="font-semibold text-primary text-xs">TOK Essay — Final Draft Review</p>
-                      <p className="text-xs text-muted">Tomorrow · 10:00 - 11:30</p>
+                      <div className="text-xs font-bold text-[var(--foreground)]">Mathematics AA HL: Past Paper 1 Practice Session</div>
+                      <div className="text-[11px] text-[var(--muted)]">NBA Priority Score: 78 • Scheduled for 90 mins</div>
                     </div>
                   </div>
-                  <span className="px-2 py-1 rounded-md bg-warning-soft text-warning text-xs font-medium">Medium</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/25 shrink-0">
+                    Exam Prep
+                  </span>
                 </div>
-              </div>
-            </div>
 
-            <div className="order-1 lg:order-2">
-              <SectionHeader
-                badge="STUDY PLANNER"
-                title="Plan revision with clarity."
-                copy="Keep deadlines, study sessions, and your next best task in view. Never let an Internal Assessment or exam prep session sneak up on you."
-              />
-              <ul className="mt-8 space-y-3 text-secondary text-base">
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Pre-configured IB assessment calendar and deadline tracking</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Smart session blocks matched to your personal revision goals</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Integrates seamlessly with notes and flashcards</span>
-                </li>
-              </ul>
-              <div className="mt-8">
-                <Link href="/signup" className="btn btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm">
-                  Open Planner <ArrowRight size={16} />
-                </Link>
+                <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shrink-0" />
+                    <div>
+                      <div className="text-xs font-bold text-[var(--foreground)]">Economics HL: 24 Spaced Repetition Due Cards</div>
+                      <div className="text-[11px] text-[var(--muted)]">NBA Priority Score: 65 • Estimated 15 mins</div>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-indigo-500/15 text-indigo-400 border border-indigo-500/25 shrink-0">
+                    Active Recall
+                  </span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <SectionDivider />
-
-      {/* ── FEATURE 5: PAST PAPERS & RESOURCES ─────────────────────────────────── */}
-      <section id="resources" className="scroll-mt-24 px-4 py-20 sm:px-6 lg:px-8 bg-surface">
-        <div className="mx-auto max-w-7xl">
+      {/* ── ENGINE 4: EDUCATOR-MODERATED RESOURCE LIBRARY ───────────────────── */}
+      <section id="resources" className="scroll-mt-24 py-20 bg-[var(--surface-alt)] border-b border-[var(--border)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            <div>
-              <SectionHeader
-                badge="PAST PAPERS & RESOURCES"
-                title="Practice with confidence."
-                copy="Keep papers, markschemes, formula sheets, and study guides organized by subject. Search across years and exam zones effortlessly."
-              />
-              <ul className="mt-8 space-y-3 text-secondary text-base">
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Comprehensive repository across DP1, DP2, and MYP subjects</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Paired markschemes for instant self-correction</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Downloadable formula booklets and data packages</span>
-                </li>
-              </ul>
-              <div className="mt-8">
-                <Link href="/signup" className="btn btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm">
-                  Explore Resources <ArrowRight size={16} />
-                </Link>
+            {/* Library Mockup */}
+            <div className="order-2 lg:order-1 rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8 shadow-xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
+                <div>
+                  <span className="text-xs font-bold text-[var(--foreground)]">Verified Academic Library</span>
+                  <p className="text-[10px] text-[var(--muted)]">Moderated by Central Admin Request Hub</p>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-1">
+                  <CheckCircle2 size={11} /> 100% Vetted
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-[var(--accent)]/15 text-[var(--accent)] flex items-center justify-center font-bold text-xs shrink-0">
+                      PDF
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-[var(--foreground)]">Chemistry HL: Option B Biochemistry Syllabus Guide</div>
+                      <div className="text-[10px] text-[var(--muted)]">42 Pages • Level: DP Only • Verified Markschemes</div>
+                    </div>
+                  </div>
+                  <Download size={15} className="text-[var(--text-secondary)] hover:text-[var(--accent)] cursor-pointer" />
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/15 text-purple-400 flex items-center justify-center font-bold text-xs shrink-0">
+                      DOC
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-[var(--foreground)]">History: Authoritarian States Paper 2 Structure Matrix</div>
+                      <div className="text-[10px] text-[var(--muted)]">Exemplar Essay • Level: Both MYP + DP • Approved</div>
+                    </div>
+                  </div>
+                  <Download size={15} className="text-[var(--text-secondary)] hover:text-[var(--accent)] cursor-pointer" />
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center font-bold text-xs shrink-0">
+                      PDF
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-[var(--foreground)]">Mathematics: Comprehensive Formula Annotation Guide</div>
+                      <div className="text-[10px] text-[var(--muted)]">Section 1 to 5 • Level: DP Only • Reviewed</div>
+                    </div>
+                  </div>
+                  <Download size={15} className="text-[var(--text-secondary)] hover:text-[var(--accent)] cursor-pointer" />
+                </div>
               </div>
             </div>
 
-            {/* Visual Mockup */}
-            <div className="card rounded-2xl border border-subtle bg-card p-6 shadow-lifted">
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-alt border border-subtle text-xs text-muted mb-4">
-                <Search size={16} />
-                <span>Search Chemistry HL Past Papers 2021-2025...</span>
+            {/* Engine 4 Explanatory Content */}
+            <div className="order-1 lg:order-2 space-y-6">
+              <div className="space-y-2">
+                <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-[0.18em] bg-emerald-500/15 text-emerald-600 border border-emerald-500/30">
+                  Engine 4 • Quality Assurance
+                </span>
+                <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+                  Educator-Moderated Resource Library.
+                </h2>
               </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt border border-subtle">
-                  <div className="flex items-center gap-3">
-                    <LibraryBig className="text-accent-bright" size={18} />
-                    <div>
-                      <p className="font-semibold text-primary text-xs">May 2024 TZ2 Paper 1 (HL)</p>
-                      <p className="text-xs text-muted">Chemistry · 40 Marks</p>
-                    </div>
+
+              <p className="text-base text-[var(--text-secondary)] leading-relaxed">
+                Online study groups and student forums are often overrun by unverified notes, outdated syllabi, and low-quality summaries. IB Nexus enforces a central administrative approval workflow for all community contributions.
+              </p>
+
+              <div className="space-y-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
                   </div>
-                  <Download size={16} className="text-secondary hover:text-primary cursor-pointer" />
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt border border-subtle">
-                  <div className="flex items-center gap-3">
-                    <LibraryBig className="text-accent-bright" size={18} />
-                    <div>
-                      <p className="font-semibold text-primary text-xs">May 2024 TZ2 Markscheme</p>
-                      <p className="text-xs text-muted">Official Answer Key</p>
-                    </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Two-Tiered Review Protocol</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      User submissions generate an administrative request requiring verification before becoming publicly visible in the Community Library.
+                    </p>
                   </div>
-                  <Download size={16} className="text-secondary hover:text-primary cursor-pointer" />
                 </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Course-Level DP vs MYP Visibility</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      Uploads specify curriculum target (DP Only, MYP Only, or Both) to ensure students only see resources pertinent to their syllabus.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check size={14} strokeWidth={3} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-[var(--foreground)]">Direct Subject-Context Uploads</h4>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5 leading-relaxed">
+                      No redundant destination picker questionnaires. Uploading while inside Chemistry HL automatically associates the document with Chemistry HL.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                  <span>Browse Resource Library</span>
+                  <ArrowRight size={15} />
+                </Link>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <SectionDivider />
+      {/* ── ACADEMIC COMPARISON MATRIX ("WHY IB NEXUS") ─────────────────────── */}
+      <section className="py-20 bg-[var(--surface)] border-b border-[var(--border)]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+          <div className="text-center max-w-3xl mx-auto space-y-3">
+            <span className="px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-[0.2em] bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
+              Honest Academic Comparison
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+              How IB Nexus Compares to Your Current Study Setup.
+            </h2>
+            <p className="text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
+              Most IB students juggle three or four separate tools. Here is an honest, straightforward look at what each option actually offers without the marketing fluff.
+            </p>
+          </div>
 
-      {/* ── FEATURE 6: PROGRESS TRACKING ───────────────────────────────────────── */}
-      <section id="progress" className="scroll-mt-24 px-4 py-20 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl">
-          <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-            {/* Visual Mockup */}
-            <div className="order-2 lg:order-1 card rounded-2xl border border-subtle bg-card p-6 shadow-lifted">
-              <div className="flex items-center justify-between border-b border-divider pb-4">
-                <div className="flex items-center gap-2">
-                  <LineChart className="text-accent-bright" size={20} />
-                  <span className="font-semibold text-primary text-sm">Weekly Study Rhythm</span>
-                </div>
-                <span className="text-xs font-bold text-success">14 Day Streak 🔥</span>
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-4 text-center">
-                <div className="p-4 rounded-xl bg-surface-alt border border-subtle">
-                  <p className="text-xs text-muted">Hours Revision</p>
-                  <p className="text-2xl font-bold text-primary mt-1">18.5h</p>
-                </div>
-                <div className="p-4 rounded-xl bg-surface-alt border border-subtle">
-                  <p className="text-xs text-muted">Cards Mastered</p>
-                  <p className="text-2xl font-bold text-accent-bright mt-1">340</p>
-                </div>
-              </div>
-            </div>
+          <div className="overflow-x-auto rounded-3xl border border-[var(--border)] bg-[var(--card)] shadow-lg">
+            <table className="w-full text-left border-collapse text-xs sm:text-sm min-w-[760px]">
+              <thead>
+                <tr className="border-b border-[var(--border)] bg-[var(--surface-alt)]">
+                  <th className="py-4 px-6 font-extrabold text-[var(--foreground)] w-[28%]">
+                    Study Need &amp; Feature
+                  </th>
+                  <th className="py-4 px-5 font-black text-[var(--accent)] bg-[var(--accent)]/10 text-center w-[22%] border-x border-[var(--border)]">
+                    <div className="flex flex-col items-center">
+                      <span className="text-sm sm:text-base">IB Nexus</span>
+                      <span className="text-[10px] font-semibold text-[var(--accent)] uppercase tracking-wider">Unified Platform</span>
+                    </div>
+                  </th>
+                  <th className="py-4 px-4 font-bold text-[var(--foreground)] text-center w-[17%]">
+                    <div className="flex flex-col items-center">
+                      <span>Notion / Google Docs</span>
+                      <span className="text-[10px] font-normal text-[var(--muted)]">Custom Notes</span>
+                    </div>
+                  </th>
+                  <th className="py-4 px-4 font-bold text-[var(--foreground)] text-center w-[17%]">
+                    <div className="flex flex-col items-center">
+                      <span>Quizlet / Apps</span>
+                      <span className="text-[10px] font-normal text-[var(--muted)]">Flashcard Tools</span>
+                    </div>
+                  </th>
+                  <th className="py-4 px-4 font-bold text-[var(--foreground)] text-center w-[16%]">
+                    <div className="flex flex-col items-center">
+                      <span>Shared Drives</span>
+                      <span className="text-[10px] font-normal text-[var(--muted)]">File Folders</span>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border)]">
+                {COMPARISON_ROWS.map((row, i) => (
+                  <tr key={i} className="hover:bg-[var(--surface-alt)]/40 transition-colors">
+                    {/* Capability column */}
+                    <td className="py-5 px-6 font-semibold text-[var(--foreground)] align-top">
+                      <div className="font-bold text-sm text-[var(--foreground)] leading-snug">{row.feature}</div>
+                      <div className="text-xs font-normal text-[var(--muted)] mt-1 leading-relaxed">{row.note}</div>
+                    </td>
 
-            <div className="order-1 lg:order-2">
-              <SectionHeader
-                badge="PROGRESS TRACKING"
-                title="Understand your study rhythm."
-                copy="Notice what is working and build a more consistent study habit. Get actionable insight into subject readiness and topic confidence."
-              />
-              <ul className="mt-8 space-y-3 text-secondary text-base">
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Visual analytics for weekly study hours and card recall</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Subject confidence heatmaps identifying weak topics</span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Check size={20} className="mt-1 shrink-0 text-accent-bright" />
-                  <span>Streak & consistency feedback built for steady habit formation</span>
-                </li>
-              </ul>
-              <div className="mt-8">
-                <Link href="/signup" className="btn btn-brand inline-flex items-center gap-2 rounded-xl px-5 py-3 font-semibold text-sm">
-                  Start Tracking Progress <ArrowRight size={16} />
-                </Link>
+                    {/* IB Nexus (Featured) */}
+                    <td className="py-5 px-5 align-top bg-[var(--accent)]/[0.03] border-x border-[var(--border)]">
+                      <div className="flex flex-col items-center text-center">
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-500/15 text-emerald-500 border border-emerald-500/30 shadow-xs">
+                          <Check size={13} strokeWidth={3} className="shrink-0" />
+                          <span>{row.nexus.label}</span>
+                        </span>
+                        <p className="text-xs text-[var(--text-secondary)] mt-2 leading-relaxed max-w-[210px] font-medium">
+                          {row.nexus.text}
+                        </p>
+                      </div>
+                    </td>
+
+                    {/* Notion / Docs */}
+                    <td className="py-5 px-4 align-top">
+                      <div className="flex flex-col items-center text-center">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                          row.notion.type === "full" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" :
+                          row.notion.type === "manual" ? "bg-amber-500/15 text-amber-500 border-amber-500/30" :
+                          row.notion.type === "partial" ? "bg-sky-500/15 text-sky-500 border-sky-500/30" :
+                          "bg-slate-500/15 text-slate-400 border-slate-500/20"
+                        }`}>
+                          {row.notion.label}
+                        </span>
+                        <p className="text-[11px] text-[var(--muted)] mt-2 leading-relaxed max-w-[170px]">
+                          {row.notion.text}
+                        </p>
+                      </div>
+                    </td>
+
+                    {/* Quizlet / Flashcard apps */}
+                    <td className="py-5 px-4 align-top">
+                      <div className="flex flex-col items-center text-center">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                          row.quizlet.type === "full" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" :
+                          row.quizlet.type === "manual" ? "bg-amber-500/15 text-amber-500 border-amber-500/30" :
+                          row.quizlet.type === "partial" ? "bg-sky-500/15 text-sky-500 border-sky-500/30" :
+                          "bg-slate-500/15 text-slate-400 border-slate-500/20"
+                        }`}>
+                          {row.quizlet.label}
+                        </span>
+                        <p className="text-[11px] text-[var(--muted)] mt-2 leading-relaxed max-w-[170px]">
+                          {row.quizlet.text}
+                        </p>
+                      </div>
+                    </td>
+
+                    {/* Google Drives */}
+                    <td className="py-5 px-4 align-top">
+                      <div className="flex flex-col items-center text-center">
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                          row.drives.type === "full" ? "bg-emerald-500/15 text-emerald-500 border-emerald-500/30" :
+                          row.drives.type === "manual" ? "bg-amber-500/15 text-amber-500 border-amber-500/30" :
+                          row.drives.type === "partial" ? "bg-sky-500/15 text-sky-500 border-sky-500/30" :
+                          "bg-slate-500/15 text-slate-400 border-slate-500/20"
+                        }`}>
+                          {row.drives.label}
+                        </span>
+                        <p className="text-[11px] text-[var(--muted)] mt-2 leading-relaxed max-w-[170px]">
+                          {row.drives.text}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* ── ACADEMIC PHILOSOPHY & CREATOR STATEMENT (Req 7) ─────────────────── */}
+      <section className="py-20 bg-[var(--surface-alt)] border-b border-[var(--border)]">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 text-center">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-[0.2em] bg-indigo-500/15 text-indigo-500 border border-indigo-500/30">
+            <Award size={14} />
+            <span>Academic Philosophy &amp; Governance</span>
+          </div>
+
+          <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+            Created by Abdul Baseer for the Global IB Community.
+          </h2>
+
+          <div className="text-left p-8 sm:p-10 rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-lg space-y-4 text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
+            <p>
+              &ldquo;The International Baccalaureate continuum is one of the most rigorous secondary educational programs in the world. Yet, for years, students have been forced to juggle disparate applications — pasting syllabus notes into unformatted documents, manually computing flashcard repetitions, and searching through messy, unmoderated drives.&rdquo;
+            </p>
+            <p>
+              &ldquo;IB Nexus was architected from the ground up to solve this fragmentation. By anchoring every note, flashcard, planner item, and community resource directly to the official IB curriculum architecture, we provide scholars with a single, calm, production-grade learning environment. Our commitment is simple: rigorous tools, zero commercial paywalls, and uncompromising academic integrity for every student.&rdquo;
+            </p>
+            <div className="pt-4 border-t border-[var(--border)] flex items-center justify-between">
+              <div>
+                <div className="font-extrabold text-[var(--foreground)] text-sm sm:text-base">Abdul Baseer</div>
+                <div className="text-xs text-[var(--muted)]">Founder &amp; Chief Architect, IB Nexus</div>
+              </div>
+              <div className="px-3 py-1 rounded-full bg-[var(--surface-alt)] border border-[var(--border)] text-xs font-mono font-bold text-[var(--accent)]">
+                Established 2026
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <SectionDivider />
+      {/* ── COMPREHENSIVE ACADEMIC FAQ ───────────────────────────────────────── */}
+      <section id="faq" className="py-20 bg-[var(--surface)] border-b border-[var(--border)]">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-10">
+          <div className="text-center space-y-2">
+            <span className="px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-[0.2em] bg-[var(--accent)]/15 text-[var(--accent)] border border-[var(--accent)]/30">
+              Curriculum &amp; Platform Inquiries
+            </span>
+            <h2 className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">
+              Frequently Asked Academic Questions.
+            </h2>
+          </div>
 
-      {/* ── FAQ SECTION ───────────────────────────────────────────────────────── */}
-      <section id="faq" className="bg-surface px-4 py-20 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-5xl">
-          <SectionHeader
-            badge="FAQ"
-            title="Frequently Asked Questions"
-            copy="Everything you need to know about IB Nexus."
-            className="text-center mx-auto"
-          />
-          <div className="mt-12 space-y-4">
-            {faq.map(([question, answer]) => (
-              <details key={question} className="card group rounded-2xl border border-subtle bg-card p-5">
-                <summary className="cursor-pointer list-none font-semibold text-primary flex items-center justify-between">
-                  <span>{question}</span>
-                  <span className="text-accent-bright text-xl transition group-open:rotate-45">+</span>
+          <div className="space-y-4">
+            {ACADEMIC_FAQ.map((item, idx) => (
+              <details
+                key={idx}
+                className="group rounded-2xl border border-[var(--border)] bg-[var(--surface-alt)] p-5 transition-all duration-200 open:border-[var(--accent)]/50 open:bg-[var(--surface)] open:shadow-sm"
+              >
+                <summary className="cursor-pointer list-none font-bold text-sm sm:text-base text-[var(--foreground)] flex items-center justify-between gap-4 select-none">
+                  <span>{item.q}</span>
+                  <span className="w-6 h-6 rounded-full bg-[var(--surface)] border border-[var(--border)] text-[var(--accent)] flex items-center justify-center shrink-0 transition-transform duration-200 group-open:rotate-45">
+                    +
+                  </span>
                 </summary>
-                <p className="mt-3 text-sm leading-relaxed text-secondary border-t border-divider pt-3">
-                  {answer}
+                <p className="mt-3 text-xs sm:text-sm leading-relaxed text-[var(--text-secondary)] border-t border-[var(--border)]/70 pt-3">
+                  {item.a}
                 </p>
               </details>
             ))}
@@ -475,24 +1226,44 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── BOTTOM CTA ───────────────────────────────────────────────────────── */}
-      <section className="px-4 py-24 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-7xl rounded-3xl border border-accent-soft bg-accent-soft p-10 sm:p-16 text-center">
-          <h2 className="text-4xl font-bold tracking-tight text-primary sm:text-5xl">
-            Build a study system you can trust.
+      {/* ── BOTTOM INSTITUTIONAL CALL TO ACTION ──────────────────────────────── */}
+      <section className="py-24 bg-gradient-to-b from-[var(--surface-alt)] to-[var(--surface)] border-b border-[var(--border)]">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-[var(--accent)]/15 text-[var(--accent)]">
+            <Sparkles size={14} />
+            <span>Ready for the Examination Session</span>
+          </div>
+
+          <h2 className="text-4xl sm:text-5xl font-black text-[var(--foreground)] tracking-tight">
+            Build your personal IB study system today.
           </h2>
-          <p className="mx-auto mt-4 max-w-2xl text-lg text-secondary">
-            Join IB Nexus today and experience a calmer, more productive IB journey.
+
+          <p className="mx-auto max-w-2xl text-base sm:text-lg text-[var(--text-secondary)] leading-relaxed font-normal">
+            Join thousands of scholars navigating DP and MYP course requirements with clarity, confidence, and cognitive retention.
           </p>
-          <Link
-            href="/signup"
-            className="btn btn-brand mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-4 font-semibold text-base shadow-lifted"
-          >
-            Create Your Study Workspace <ArrowRight size={18} />
-          </Link>
+
+          <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
+            <Link
+              href="/signup"
+              className="btn btn-brand inline-flex items-center gap-2 rounded-2xl px-8 py-4 font-extrabold text-base shadow-[0_8px_25px_color-mix(in_srgb,var(--accent)_30%,transparent)] hover:scale-[1.02] transition-all"
+            >
+              <span>Create Your Student Workspace</span>
+              <ArrowRight size={18} />
+            </Link>
+
+            <button
+              type="button"
+              onClick={() => setShowVisitorTour(true)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-[var(--border-strong)] bg-[var(--card)] px-6 py-4 font-bold text-[var(--foreground)] text-base shadow-sm hover:border-[var(--accent)] hover:text-[var(--accent)] transition cursor-pointer"
+            >
+              <Play size={16} className="text-[var(--accent)] fill-current" />
+              <span>Launch 60s Tour</span>
+            </button>
+          </div>
         </div>
       </section>
 
+      {/* ── ACADEMIC INSTITUTIONAL FOOTER ────────────────────────────────────── */}
       <Footer />
     </main>
   );
@@ -500,41 +1271,66 @@ export default function LandingPage() {
 
 function Footer() {
   return (
-    <footer className="border-t border-divider bg-surface-alt/50 px-4 pt-16 pb-8 sm:px-6 text-sm text-secondary">
-      <div className="mx-auto max-w-7xl">
-        <div className="grid gap-12 md:grid-cols-4 lg:grid-cols-5">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center gap-2 text-primary font-bold text-lg">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-xs text-white">N</span> IB Nexus
+    <footer className="bg-[var(--surface)] border-t border-[var(--border)] px-4 pt-14 pb-10 sm:px-6 text-sm text-[var(--text-secondary)]">
+      <div className="max-w-7xl mx-auto space-y-10">
+        <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-5 items-start">
+          {/* Brand & Creator Attribution */}
+          <div className="lg:col-span-2 space-y-3.5">
+            <div className="flex items-center gap-2.5 text-[var(--foreground)] font-black text-xl">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--accent)] to-indigo-600 text-xs font-black text-white shadow-md">
+                IB
+              </span>
+              <span className="tracking-tight">IB NEXUS</span>
             </div>
-            <p className="max-w-xs leading-relaxed text-muted">A clear, focused study platform designed to respect students&apos; attention and simplify IB revision.</p>
-          </div>
-          <div className="space-y-4">
-            <h4 className="font-semibold text-primary">Platform</h4>
-            <div className="flex flex-col gap-3">
-              <Link href="/subjects/dp" className="hover:text-accent-bright transition">Subjects</Link>
-              <Link href="/about" className="hover:text-accent-bright transition">About</Link>
-              <Link href="/features" className="hover:text-accent-bright transition">Features</Link>
-            </div>
-          </div>
-          <div className="space-y-4">
-            <h4 className="font-semibold text-primary">Support</h4>
-            <div className="flex flex-col gap-3">
-              <Link href="/help" className="hover:text-accent-bright transition">Help Centre</Link>
-              <Link href="/contact" className="hover:text-accent-bright transition">Contact</Link>
+            <p className="max-w-sm leading-relaxed text-xs sm:text-sm text-[var(--muted)]">
+              A calm, unified study platform built for International Baccalaureate (DP &amp; MYP) scholars worldwide.
+            </p>
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-alt)] text-[var(--foreground)] text-xs font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Created with care by <strong className="font-bold text-[var(--accent)]">Abdul Baseer</strong></span>
             </div>
           </div>
-          <div className="space-y-4">
-            <h4 className="font-semibold text-primary">Legal</h4>
-            <div className="flex flex-col gap-3">
-              <Link href="/privacy" className="hover:text-accent-bright transition">Privacy Policy</Link>
-              <Link href="/terms" className="hover:text-accent-bright transition">Terms of Service</Link>
-              <Link href="/accessibility" className="hover:text-accent-bright transition">Accessibility</Link>
+
+          {/* Core Navigation - Platform */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--foreground)]">Platform</h4>
+            <div className="flex flex-col gap-2 text-xs font-medium">
+              <a href="#curriculum-explorer" className="hover:text-[var(--accent)] transition-colors">Curriculum Explorer</a>
+              <a href="#notes" className="hover:text-[var(--accent)] transition-colors">Syllabus Notes</a>
+              <a href="#flashcards" className="hover:text-[var(--accent)] transition-colors">Memory Flashcards</a>
+              <a href="#planner" className="hover:text-[var(--accent)] transition-colors">Study Planner</a>
+              <a href="#resources" className="hover:text-[var(--accent)] transition-colors">Resource Library</a>
+            </div>
+          </div>
+
+          {/* Company & Support */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--foreground)]">About &amp; Support</h4>
+            <div className="flex flex-col gap-2 text-xs font-medium">
+              <Link href="/about" className="hover:text-[var(--accent)] transition-colors">About IB Nexus</Link>
+              <Link href="/contact" className="hover:text-[var(--accent)] transition-colors">Contact Support</Link>
+              <Link href="/help" className="hover:text-[var(--accent)] transition-colors">Help Centre</Link>
+              <Link href="/dashboard" className="hover:text-[var(--accent)] transition-colors">Student Dashboard</Link>
+            </div>
+          </div>
+
+          {/* Essential Legal */}
+          <div className="space-y-3">
+            <h4 className="text-xs font-extrabold uppercase tracking-wider text-[var(--foreground)]">Legal &amp; Trust</h4>
+            <div className="flex flex-col gap-2 text-xs font-medium">
+              <Link href="/privacy" className="hover:text-[var(--accent)] transition-colors">Privacy Policy</Link>
+              <Link href="/terms" className="hover:text-[var(--accent)] transition-colors">Terms of Service</Link>
+              <Link href="/accessibility" className="hover:text-[var(--accent)] transition-colors">Accessibility Standards</Link>
             </div>
           </div>
         </div>
-        <div className="mt-16 flex items-center justify-between border-t border-divider pt-8 text-muted">
-          <span>&copy; {new Date().getFullYear()} IB Nexus. All rights reserved.</span>
+
+        {/* Clean, Streamlined Bottom Bar */}
+        <div className="pt-6 border-t border-[var(--border)] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[var(--muted)]">
+          <span>&copy; {new Date().getFullYear()} IB Nexus. All rights reserved. Open Academic Platform.</span>
+          <span className="text-[11px] max-w-md sm:text-right">
+            Independent student platform. Not affiliated with or endorsed by the International Baccalaureate Organization (IBO).
+          </span>
         </div>
       </div>
     </footer>

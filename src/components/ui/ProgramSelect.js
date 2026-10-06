@@ -66,6 +66,7 @@ export default function ProgramSelect({ name, defaultValue = "", disabled = fals
         role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls="program-listbox"
         aria-label="IB Programme"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
@@ -87,6 +88,7 @@ export default function ProgramSelect({ name, defaultValue = "", disabled = fals
 
       {open && (
         <ul
+          id="program-listbox"
           role="listbox"
           aria-label="IB Programme options"
           className="absolute z-50 mt-1.5 w-full rounded-xl border border-subtle bg-dropdown shadow-float overflow-hidden"

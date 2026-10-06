@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, Play, Plus, Edit2, Trash2, Layers, Calendar, Activity, X, FileText, Sparkles, CheckSquare, Square } from "lucide-react";
 import { deleteDeckAction, deleteCardAction, createCardAction, updateCardStatusAction, bulkDeleteCardsAction } from "../../actions";
 import { useRouter } from "next/navigation";
+import { getSubjectBadgeClasses } from "@/lib/subject-colors";
 
 export default function DeckClient({ initialDeck }) {
   const router = useRouter();
@@ -111,7 +112,7 @@ export default function DeckClient({ initialDeck }) {
           <div>
             <div className="flex items-center gap-3 mb-2">
               {deck.subject && (
-                <span className="bg-indigo-500/10 text-indigo-400 text-xs font-bold px-2.5 py-1 rounded-full border border-indigo-500/20 uppercase tracking-wider">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${getSubjectBadgeClasses(deck.subject)}`}>
                   {deck.subject}
                 </span>
               )}

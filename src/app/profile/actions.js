@@ -31,9 +31,13 @@ export async function updateProfile(formData) {
     return { error: "Please select a valid IB programme." };
   }
 
+  const normalizedProgram = ibProgram
+    ? (ibProgram.toLowerCase().includes("myp") ? "myp" : "dp")
+    : null;
+
   const updatePayload = {
     display_name: nameResult.value,
-    ib_program: ibProgram,
+    ib_program: normalizedProgram,
   };
 
   if (avatarUrl !== undefined) {

@@ -6,5 +6,5 @@ export const metadata = { title: "Help & Support — IB Nexus" };
 export default async function HelpSettingsPage() {
   const { user, profile } = await requireCompleteProfile();
   
-  return <HelpClient userEmail={user.email} userName={profile.full_name || "User"} />;
+  return <HelpClient userEmail={user.email} userName={profile?.full_name || profile?.display_name || user.email?.split("@")[0] || "User"} />;
 }

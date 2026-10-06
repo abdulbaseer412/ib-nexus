@@ -3,12 +3,14 @@
 import { createServerClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { indexDocument, unindexDocument } from "@/lib/ai/knowledge-lens";
+import { extractTextFromTipTap } from "@/lib/utils/text-extractor";
 
 export async function getNotes() {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("ib_notes")
-    .select("*")
+    .select("id, created_at, updated_at, title, subject, last_opened_at, is_favorite, is_archived, is_folder, parent_id, exam_importance, topic, level")
     .order("last_opened_at", { ascending: false });
 
   if (error) {
@@ -130,6 +132,10 @@ export async function bulkDeleteNotesAction(ids) {
     throw new Error(error.message);
   }
 
+  // Remove from knowledge lens
+  Promise.allSettled(ids.map(id => unindexDocument("note", id)))
+    .catch(err => console.warn("[KnowledgeLens] Bulk unindex failed", err));
+
   revalidatePath("/dashboard/notes");
   return { success: true };
 }
@@ -137,17 +143,42 @@ export async function bulkDeleteNotesAction(ids) {
 export async function updateNoteContent(id, contentStr) {
   const supabase = await createServerClient();
   
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("ib_notes")
     .update({ 
       content: contentStr,
       updated_at: new Date().toISOString()
     })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id, title, subject, level")
+    .single();
 
   if (error) {
     console.error("Error updating note content:", error);
     return { error: error.message };
+  }
+  
+  // Asynchronously index for Knowledge Lens (non-blocking)
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user && contentStr) {
+      const parsedContent = JSON.parse(contentStr);
+      const extractedText = extractTextFromTipTap(parsedContent);
+      
+      indexDocument({
+        sourceType: "note",
+        sourceId: id,
+        title: data.title,
+        content: extractedText,
+        userId: user.id,
+        metadata: {
+          subject: data.subject,
+          level: data.level
+        }
+      }).catch(err => console.warn("[KnowledgeLens] Async indexing error:", err));
+    }
+  } catch (err) {
+    console.warn("Failed to schedule document indexing:", err);
   }
   
   return { success: true };
@@ -195,6 +226,9 @@ export async function deleteNote(id) {
     console.error("Error deleting note:", error);
     return { error: error.message };
   }
+
+  // Remove from knowledge lens
+  unindexDocument("note", id).catch(err => console.warn("[KnowledgeLens] Failed to unindex note:", err));
 
   revalidatePath("/dashboard/notes");
   redirect("/dashboard/notes");

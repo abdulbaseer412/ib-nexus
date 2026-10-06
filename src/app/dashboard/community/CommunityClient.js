@@ -4,13 +4,17 @@ import { useState, useTransition, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  PenLine, Search, Users, MessageCircle, ThumbsUp, ChevronRight,
+  PenLine, Search, Users, MessageCircle, MessageSquare, ThumbsUp, ChevronRight,
   TrendingUp, Bookmark, Plus, X, CheckCircle2, Circle, Filter,
   Hash, Compass, User, Clock, ChevronDown, Activity, Sparkles, FolderOpen, LayoutGrid, Trash2, ShieldAlert,
   Flame, HelpCircle, Send, AlertCircle
 } from "lucide-react";
+import { Avatar } from "@/components/ui";
+import { COMMUNITY_CATEGORIES } from "./constants";
 import { 
   createPostAction, 
+  createDiscussionAction,
+  createQuestionAction,
   fetchApprovedPosts, 
   fetchActiveStudentsPerSubject, 
   requestStudyGroup, 
@@ -18,7 +22,8 @@ import {
   createSubjectRoomAction,
   deleteSubjectRoomAction,
   deleteSubjectCategoryAction,
-  moderateStudyGroupAction
+  moderateStudyGroupAction,
+  deletePostAction
 } from "./actions";
 
 /* ── Subject colour system ─────────────────────────────────────────────── */
@@ -43,10 +48,18 @@ const C = {
 };
 const col = (s) => C[s] || { bg: "rgba(148,163,184,.15)", text: "#cbd5e1", border: "rgba(148,163,184,.3)" };
 
-const FILTERS = [
+const DISCUSSION_FILTERS = [
   { key: "recent", label: "Recent", icon: Clock },
-  { key: "most-helpful", label: "Most Helpful", icon: Flame },
-  { key: "unanswered", label: "Unanswered", icon: HelpCircle },
+  { key: "most-active", label: "Most Active", icon: Flame },
+  { key: "most-helpful", label: "Most Helpful", icon: ThumbsUp },
+];
+
+const QUESTION_FILTERS = [
+  { key: "all", label: "All Questions", icon: HelpCircle },
+  { key: "unanswered", label: "Unanswered", icon: AlertCircle },
+  { key: "answered", label: "Answered", icon: CheckCircle2 },
+  { key: "most-helpful", label: "Most Helpful", icon: ThumbsUp },
+  { key: "recent", label: "Recent", icon: Clock },
 ];
 
 function timeAgo(dateStr) {
@@ -121,13 +134,18 @@ function CustomSelect({ value, onChange, options, placeholder }) {
 
 export default function CommunityClient({ initialPosts = [], rooms = [], activeStudents = {}, studyGroups = [], studyGroupPresence = {}, userId, userProfile, isAdmin, subjects = [] }) {
   const router = useRouter();
-  const [posts, setPosts] = useState(initialPosts);
+  const subjectOptions = (subjects && subjects.length > 0) ? subjects : COMMUNITY_CATEGORIES;
+  
+  // Active System State: "discussions" vs "questions"
+  const [activeSystem, setActiveSystem] = useState("discussions");
+  const [posts, setPosts] = useState(initialPosts.filter(p => (p.post_type || "discussion") === "discussion"));
   const [liveStudents, setLiveStudents] = useState(activeStudents);
   const [liveStudyGroups, setLiveStudyGroups] = useState(studyGroupPresence || {});
   const [activeFilter, setActiveFilter] = useState("recent");
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
-  const [showNewPost, setShowNewPost] = useState(false);
+  const [showNewDiscussion, setShowNewDiscussion] = useState(false);
+  const [showAskQuestion, setShowAskQuestion] = useState(false);
   const [showExploreModal, setShowExploreModal] = useState(false);
   const [showRequestStudyGroupModal, setShowRequestStudyGroupModal] = useState(false);
   const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
@@ -151,6 +169,11 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
     return () => clearInterval(interval);
   }, []);
 
+  // Synchronize posts whenever initialPosts or activeSystem changes (e.g. on revalidation or tab change)
+  useEffect(() => {
+    setPosts(initialPosts.filter(p => (p.post_type || "discussion") === (activeSystem === "questions" ? "question" : "discussion")));
+  }, [initialPosts, activeSystem]);
+
   // Group rooms by subject
   const roomsBySubject = {};
   rooms.forEach(r => {
@@ -171,9 +194,25 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
     .sort(([, a], [, b]) => b - a)
     .slice(0, 6);
 
+  const handleSystemChange = (system) => {
+    setActiveSystem(system);
+    const defaultFilter = system === "questions" ? "all" : "recent";
+    setActiveFilter(defaultFilter);
+    startTransition(async () => {
+      const newPosts = await fetchApprovedPosts({
+        postType: system === "questions" ? "question" : "discussion",
+        filter: defaultFilter,
+        category: activeCategory,
+        search: searchQuery || null,
+      });
+      setPosts(newPosts);
+    });
+  };
+
   const handleFilterChange = (filter, category) => {
     startTransition(async () => {
       const newPosts = await fetchApprovedPosts({
+        postType: activeSystem === "questions" ? "question" : "discussion",
         filter: filter || activeFilter,
         category: category || activeCategory,
         search: searchQuery || null,
@@ -186,6 +225,7 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
     e.preventDefault();
     startTransition(async () => {
       const newPosts = await fetchApprovedPosts({
+        postType: activeSystem === "questions" ? "question" : "discussion",
         filter: activeFilter,
         category: activeCategory,
         search: searchQuery || null,
@@ -195,54 +235,136 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
   };
 
   return (
-    <main className="relative min-h-[calc(100vh-72px)] overflow-hidden bg-[#0f0f13]">
+    <main className="relative min-h-[calc(100vh-72px)] overflow-hidden">
       {/* Background glowing effects */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-600/10 blur-[120px]" />
-        <div className="absolute top-[20%] right-[-10%] w-[40%] h-[60%] rounded-full bg-indigo-600/10 blur-[120px]" />
-        <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] rounded-full bg-emerald-600/5 blur-[120px]" />
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-[var(--accent)]/5 blur-[120px]" />
+        <div className="absolute top-[20%] right-[-10%] w-[40%] h-[60%] rounded-full bg-[var(--accent)]/5 blur-[120px]" />
+        <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] rounded-full bg-[var(--accent)]/5 blur-[120px]" />
       </div>
 
-      <div className="relative z-10 p-5 sm:p-8 max-w-5xl mx-auto">
+      <div className="relative z-10 p-6 sm:p-10 max-w-7xl mx-auto space-y-8">
         
-        {/* Header */}
-        <header className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between mb-10">
+        {/* Main Community Header */}
+        <header className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between border-b border-[var(--border)] pb-8">
           <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white via-white/90 to-white/60 mb-2">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] text-[10px] font-bold tracking-[0.2em] uppercase mb-3">
+              <Users className="w-3.5 h-3.5" />
+              <span>IB Nexus Community</span>
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl text-[var(--foreground)]">
               Nexus Network
             </h1>
-            <p className="text-sm text-muted/80 max-w-lg">
-              A premium space to learn together, ask questions, and collaborate with IB students worldwide.
+            <p className="mt-2 text-[14px] text-secondary max-w-xl">
+              A dual community system separating open discussions and targeted Q&A for IB students worldwide.
             </p>
           </div>
+
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/10 shadow-[0_0_15px_rgba(255,255,255,0.02)] backdrop-blur-md">
+            {/* Quick Navigation Links */}
+            <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/10 shadow-sm backdrop-blur-md">
               <button 
                 onClick={() => setShowExploreModal(true)} 
-                className="flex items-center gap-2 px-4 py-2 hover:bg-white/10 rounded-xl text-sm font-semibold text-white/80 hover:text-white transition-all group"
+                className="flex items-center gap-2 px-3.5 py-2 hover:bg-white/10 rounded-xl text-xs font-bold text-white/80 hover:text-white transition-all group"
               >
-                <LayoutGrid size={15} className="text-indigo-400 group-hover:scale-110 transition-transform" /> 
+                <LayoutGrid size={14} className="text-indigo-400 group-hover:scale-110 transition-transform" /> 
                 Browse Rooms
               </button>
               <div className="w-px h-4 bg-white/10" />
               <Link 
-                href="/dashboard/community/my-posts" 
-                className="flex items-center gap-2 px-4 py-2 hover:bg-white/10 rounded-xl text-sm font-semibold text-white/80 hover:text-white transition-all group"
+                href="/dashboard/community/my-discussions" 
+                className="flex items-center gap-2 px-3.5 py-2 hover:bg-white/10 rounded-xl text-xs font-bold text-indigo-300 hover:text-white transition-all group"
               >
-                <FolderOpen size={15} className="text-white/50 group-hover:text-white transition-colors" /> 
+                <MessageSquare size={14} className="text-indigo-400" /> 
                 My Discussions
+              </Link>
+              <div className="w-px h-4 bg-white/10" />
+              <Link 
+                href="/dashboard/community/my-questions" 
+                className="flex items-center gap-2 px-3.5 py-2 hover:bg-white/10 rounded-xl text-xs font-bold text-amber-300 hover:text-white transition-all group"
+              >
+                <HelpCircle size={14} className="text-amber-400" /> 
+                My Questions
               </Link>
             </div>
             
-            <button 
-              onClick={() => setShowNewPost(true)} 
-              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-2xl text-sm font-bold text-white transition-all duration-300 shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] transform hover:-translate-y-0.5"
-            >
-              <PenLine size={16} /> 
-              New Discussion
-            </button>
+            {/* Separate Creation Actions */}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => {
+                  if (userProfile?.is_restricted) {
+                    alert("Your account is currently restricted from creating discussions.");
+                    return;
+                  }
+                  setShowNewDiscussion(true);
+                }} 
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-2xl text-xs font-extrabold text-white transition-all duration-300 shadow-lg shadow-indigo-500/25 transform hover:-translate-y-0.5"
+                title="Start a conversation, share an opinion or debate"
+              >
+                <MessageSquare size={15} /> 
+                <span>New Discussion</span>
+              </button>
+
+              <button 
+                onClick={() => {
+                  if (userProfile?.is_restricted) {
+                    alert("Your account is currently restricted from asking questions.");
+                    return;
+                  }
+                  setShowAskQuestion(true);
+                }} 
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 rounded-2xl text-xs font-extrabold text-white transition-all duration-300 shadow-lg shadow-amber-500/25 transform hover:-translate-y-0.5"
+                title="Ask a specific question to get answers from IB students"
+              >
+                <HelpCircle size={15} /> 
+                <span>Ask a Question</span>
+              </button>
+            </div>
           </div>
         </header>
+
+        {/* Restriction Banner for restricted users */}
+        {userProfile?.is_restricted && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-center gap-3 text-amber-300 text-xs font-semibold">
+            <ShieldAlert size={18} className="text-amber-400 shrink-0" />
+            <span>Your account is currently restricted from creating discussions, asking questions, or commenting. You can still browse and read all content freely.</span>
+          </div>
+        )}
+
+        {/* Primary System Switcher: DISCUSSIONS vs QUESTIONS */}
+        <div className="flex items-center justify-between border-b border-white/10 pb-4">
+          <div className="flex items-center gap-2 bg-black/40 p-1.5 rounded-2xl border border-white/10">
+            <button
+              onClick={() => handleSystemChange("discussions")}
+              className={`flex items-center gap-2.5 px-6 py-2.5 text-sm font-extrabold rounded-xl transition-all duration-300 ${
+                activeSystem === "discussions"
+                  ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/30 border border-indigo-400/40"
+                  : "text-white/50 hover:text-white hover:bg-white/5 border border-transparent"
+              }`}
+            >
+              <MessageSquare size={16} className={activeSystem === "discussions" ? "text-indigo-200" : "text-white/40"} />
+              <span>Discussions</span>
+            </button>
+
+            <button
+              onClick={() => handleSystemChange("questions")}
+              className={`flex items-center gap-2.5 px-6 py-2.5 text-sm font-extrabold rounded-xl transition-all duration-300 ${
+                activeSystem === "questions"
+                  ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-lg shadow-amber-500/30 border border-amber-400/40"
+                  : "text-white/50 hover:text-white hover:bg-white/5 border border-transparent"
+              }`}
+            >
+              <HelpCircle size={16} className={activeSystem === "questions" ? "text-amber-200" : "text-white/40"} />
+              <span>Questions</span>
+            </button>
+          </div>
+
+          <p className="hidden md:block text-xs font-semibold text-white/40">
+            {activeSystem === "discussions"
+              ? "🗣 Open IB discussions, opinions, debates & experiences"
+              : "❓ Target IB questions seeking solutions and explanations"}
+          </p>
+        </div>
 
         {/* Live Now Section */}
         {activeSubjects.length > 0 && (
@@ -283,12 +405,12 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
 
             {/* Search Bar */}
             <form onSubmit={handleSearch} className="relative mb-6 group z-10">
-              <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted/60 group-focus-within:text-blue-400 transition-colors duration-300" />
+              <Search size={20} className="absolute left-5 top-1/2 -translate-y-1/2 text-muted/60 group-focus-within:text-emerald-400 transition-colors duration-300" />
               <input
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-12 text-white/90 outline-none focus:border-blue-500/50 focus:bg-white/10 focus:ring-4 focus:ring-blue-500/10 transition-all placeholder:text-muted/50 font-medium text-sm shadow-inner"
-                placeholder="Search discussions by keyword, subject, or author..."
+                className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-12 text-white/90 outline-none focus:border-emerald-500/50 focus:bg-white/10 focus:ring-4 focus:ring-emerald-500/10 transition-all placeholder:text-muted/50 font-medium text-sm shadow-inner"
+                placeholder={activeSystem === "questions" ? "Search questions by title, subject, or author..." : "Search discussions by title, subject, or author..."}
               />
               {searchQuery && (
                 <button 
@@ -297,6 +419,7 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
                     setSearchQuery("");
                     startTransition(async () => {
                       const newPosts = await fetchApprovedPosts({
+                        postType: activeSystem === "questions" ? "question" : "discussion",
                         filter: activeFilter,
                         category: activeCategory,
                         search: null,
@@ -312,19 +435,21 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
             </form>
 
             <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between relative z-20">
-              {/* Primary Filters (Segmented Controls) */}
+              {/* Primary System Filters */}
               <div className="flex bg-black/40 p-1.5 rounded-2xl border border-white/5 self-stretch sm:self-auto overflow-x-auto hide-scrollbar">
-                {FILTERS.map(f => (
+                {(activeSystem === "questions" ? QUESTION_FILTERS : DISCUSSION_FILTERS).map(f => (
                   <button
                     key={f.key}
                     onClick={() => { setActiveFilter(f.key); handleFilterChange(f.key); }}
-                    className={`flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold rounded-xl transition-all duration-300 flex-1 sm:flex-none whitespace-nowrap ${
+                    className={`flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all duration-300 flex-1 sm:flex-none whitespace-nowrap ${
                       activeFilter === f.key
-                        ? "bg-white/15 text-white shadow-[0_4px_12px_rgba(0,0,0,0.2)] border border-white/10"
+                        ? activeSystem === "questions"
+                          ? "bg-amber-500/20 text-amber-300 shadow-sm border border-amber-500/40"
+                          : "bg-indigo-500/20 text-indigo-300 shadow-sm border border-indigo-500/40"
                         : "text-muted/80 hover:text-white hover:bg-white/5 border border-transparent"
                     }`}
                   >
-                    <f.icon size={15} className={activeFilter === f.key ? (f.key === 'recent' ? 'text-blue-400' : f.key === 'most-helpful' ? 'text-amber-400' : 'text-emerald-400') : "opacity-70"} /> 
+                    <f.icon size={14} className={activeFilter === f.key ? (activeSystem === "questions" ? "text-amber-400" : "text-indigo-400") : "opacity-70"} /> 
                     {f.label}
                   </button>
                 ))}
@@ -334,12 +459,12 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
               <CustomSelect 
                 value={activeCategory} 
                 onChange={(val) => { setActiveCategory(val); handleFilterChange(null, val); }} 
-                options={["All", ...subjects]} 
+                options={["All", ...subjectOptions]} 
               />
             </div>
           </div>
 
-          {/* Discussion List */}
+          {/* Feed Stream */}
           {isPending && (
             <div className="flex justify-center items-center py-20">
               <div className="animate-spin h-8 w-8 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
@@ -348,86 +473,126 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
 
           {!isPending && posts.length === 0 ? (
             <div className="flex flex-col items-center justify-center text-center py-24 bg-white/[0.02] border border-white/5 rounded-3xl backdrop-blur-sm">
-              <div className="h-20 w-20 rounded-full bg-blue-500/10 flex items-center justify-center mb-6 text-blue-400">
-                <Search size={32} />
+              <div className={`h-20 w-20 rounded-full flex items-center justify-center mb-6 ${activeSystem === "questions" ? "bg-amber-500/10 text-amber-400" : "bg-indigo-500/10 text-indigo-400"}`}>
+                {activeSystem === "questions" ? <HelpCircle size={32} /> : <MessageSquare size={32} />}
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">No discussions found</h3>
+              <h3 className="text-xl font-bold text-white mb-2">
+                No {activeSystem === "questions" ? "questions" : "discussions"} found
+              </h3>
               <p className="mt-2 text-sm text-muted/80 max-w-sm">
-                We couldn't find any discussions matching your current filters. Be the first to start one!
+                We couldn't find any {activeSystem === "questions" ? "questions" : "discussions"} matching your current filters. Be the first to post one!
               </p>
-              <button onClick={() => setShowNewPost(true)} className="px-6 py-3 mt-8 bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold rounded-xl transition-all shadow-lg hover:shadow-xl">
-                Start a new discussion
-              </button>
+              {activeSystem === "questions" ? (
+                <button onClick={() => setShowAskQuestion(true)} className="px-6 py-3 mt-6 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg">
+                  Ask a Question
+                </button>
+              ) : (
+                <button onClick={() => setShowNewDiscussion(true)} className="px-6 py-3 mt-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg">
+                  Start a New Discussion
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
               {posts.map(post => {
                 const c = col(post.category);
+                const isQuestion = post.post_type === "question";
                 return (
                   <Link
                     key={post.id}
                     href={`/dashboard/community/${post.id}`}
-                    className="group block relative bg-white/[0.03] border border-white/10 rounded-2xl p-6 transition-all duration-300 hover:bg-white/[0.05] hover:border-white/20 hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] hover:-translate-y-1 overflow-hidden"
+                    className="group block relative bg-white/[0.03] border border-white/10 rounded-2xl p-6 transition-all duration-300 hover:bg-white/[0.05] hover:border-white/20 hover:shadow-2xl hover:-translate-y-0.5 overflow-hidden"
                   >
-                    {/* Subtle hover gradient */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-white/[0.01] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    
                     <div className="relative z-10 flex flex-col sm:flex-row sm:items-start justify-between gap-5">
                       <div className="min-w-0 flex-1">
                         
-                        {/* Badges */}
-                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                        {/* Type & Category & Status Badges */}
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          <span className={`px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider rounded-md border ${
+                            isQuestion
+                              ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                              : "bg-indigo-500/20 text-indigo-300 border-indigo-500/30"
+                          }`}>
+                            {isQuestion ? "QUESTION" : "DISCUSSION"}
+                          </span>
+
+                          {isQuestion && (
+                            <span className={`flex items-center gap-1 px-2.5 py-0.5 text-[10px] font-extrabold uppercase rounded-md border ${
+                              post.is_answered
+                                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                                : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                            }`}>
+                              {post.is_answered ? <CheckCircle2 size={12} /> : <HelpCircle size={12} />}
+                              {post.is_answered ? "Answered" : "Unanswered"}
+                            </span>
+                          )}
+
                           <span
-                            className="rounded-lg px-2.5 py-1 text-[11px] font-bold tracking-wide uppercase"
+                            className="rounded-md px-2.5 py-0.5 text-[10px] font-bold tracking-wide uppercase"
                             style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
                           >
                             {post.category}
                           </span>
-                          {post.post_type === "question" && (
-                            <span className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-bold tracking-wide uppercase border ${
-                              post.is_answered
-                                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                            }`}>
-                              {post.is_answered ? <CheckCircle2 size={12} /> : <HelpCircle size={12} />}
-                              {post.is_answered ? "Answered" : "Open Question"}
-                            </span>
-                          )}
                         </div>
 
                         <h2 className="text-lg font-bold text-white/90 group-hover:text-white transition-colors leading-snug mb-2">
                           {post.title}
                         </h2>
-                        <p className="line-clamp-2 text-sm leading-relaxed text-muted/90 mb-4">
+                        <p className="line-clamp-2 text-sm leading-relaxed text-white/60 mb-4">
                           {post.content}
                         </p>
                         
                         {/* Stats Footer */}
-                        <div className="flex items-center gap-6 text-xs font-semibold text-muted">
+                        <div className="flex items-center gap-5 text-xs font-medium text-white/40">
                           <span className="flex items-center gap-2 text-white/70">
-                            <div className="h-5 w-5 rounded-full bg-gradient-to-br from-indigo-500/40 to-blue-500/40 border border-white/10 flex items-center justify-center text-[10px] font-bold text-white shadow-inner">
-                              {post.author_name?.[0]?.toUpperCase()}
-                            </div>
+                            <Avatar url={post.author_avatar} name={post.author_name} size="xs" />
                             {post.author_name}
                           </span>
-                          <span className="flex items-center gap-1.5 text-white/50">
+                          <span className="flex items-center gap-1.5 text-white/40">
                             <Clock size={14} className="text-white/30" /> 
                             {timeAgo(post.created_at)}
                           </span>
-                          <span className="flex items-center gap-1.5 text-white/50">
-                            <MessageCircle size={14} className="text-indigo-400/70" /> 
-                            {post.reply_count || 0}
+                          <span className={`flex items-center gap-1.5 font-bold ${isQuestion ? "text-amber-300" : "text-indigo-300"}`}>
+                            <MessageCircle size={14} className={isQuestion ? "text-amber-400" : "text-indigo-400"} /> 
+                            {post.reply_count || 0} {isQuestion ? "Answers" : "Replies"}
                           </span>
-                          <span className="flex items-center gap-1.5 text-white/50">
-                            <ThumbsUp size={14} className="text-blue-400/70" /> 
-                            {post.helpful_count || 0}
+                          <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
+                            <ThumbsUp size={14} className="text-emerald-400" /> 
+                            {post.helpful_count || 0} Helpful
                           </span>
                         </div>
                       </div>
                       
-                      {/* Right chevron indicator */}
-                      <div className="hidden sm:flex shrink-0 h-10 w-10 items-center justify-center rounded-full bg-white/5 border border-white/5 text-white/40 group-hover:bg-indigo-600/20 group-hover:text-indigo-400 group-hover:border-indigo-500/30 transition-all duration-300">
-                        <ChevronRight size={18} className="group-hover:translate-x-0.5 transition-transform" />
+                      {/* Action Controls */}
+                      <div className="flex items-center gap-2 shrink-0 z-20">
+                        {(isAdmin || userId === post.author_id) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (confirm(`Are you sure you want to delete this ${isQuestion ? "question" : "discussion"}?`)) {
+                                startTransition(async () => {
+                                  try {
+                                    setPosts(prev => prev.filter(p => p.id !== post.id));
+                                    await deletePostAction(post.id);
+                                  } catch (err) {
+                                    alert(err.message || "Failed to delete item.");
+                                  }
+                                });
+                              }
+                            }}
+                            className="h-9 px-3 flex items-center gap-1 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold transition-all"
+                            title="Delete"
+                          >
+                            <Trash2 size={14} />
+                            <span className="hidden sm:inline">Delete</span>
+                          </button>
+                        )}
+
+                        <div className="hidden sm:flex h-9 w-9 items-center justify-center rounded-full bg-white/5 border border-white/5 text-white/40 group-hover:bg-white/10 group-hover:text-white transition-all">
+                          <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+                        </div>
                       </div>
                     </div>
                   </Link>
@@ -440,10 +605,11 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
 
       {/* Explore Spaces Modal */}
       {showExploreModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md">
-          <div className="bg-[#121217] border border-white/10 rounded-[2rem] max-w-5xl w-full h-full max-h-[90vh] shadow-[0_20px_60px_rgba(0,0,0,0.6)] flex flex-col relative overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-            {/* Modal Glow */}
-            <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/10 blur-[100px] rounded-full pointer-events-none" />
+        <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+          <div className="min-h-full flex items-center justify-center py-6">
+            <div className="bg-[#121217] border border-white/10 rounded-[2rem] max-w-5xl w-full h-full max-h-[90vh] shadow-[0_20px_60px_rgba(0,0,0,0.6)] flex flex-col relative overflow-hidden animate-in fade-in zoom-in-95 duration-300 my-auto">
+              {/* Modal Glow */}
+              <div className="absolute top-0 right-0 w-96 h-96 bg-purple-500/10 blur-[100px] rounded-full pointer-events-none" />
             
             <div className="flex items-center justify-between p-6 sm:px-8 border-b border-white/5 relative z-10">
               <div className="flex items-center gap-3">
@@ -572,10 +738,10 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
                                       )}
                                       {isSL && (
                                         <div className="group/badge relative flex items-center">
-                                          <span className="text-[9px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded border border-blue-500/30 text-blue-400 bg-blue-500/10 cursor-help">SL</span>
+                                          <span className="text-[9px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-400 bg-emerald-500/10 cursor-help">SL</span>
                                           <div className="pointer-events-none absolute bottom-full mb-2 right-0 w-max max-w-[200px] opacity-0 translate-y-2 group-hover/badge:opacity-100 group-hover/badge:translate-y-0 transition-all duration-200 z-[100]">
                                             <div className="bg-[#1a1a24] border border-white/10 shadow-2xl rounded-xl px-3 py-2 text-right backdrop-blur-xl">
-                                              <p className="text-xs font-bold text-blue-400">Standard Level (SL)</p>
+                                              <p className="text-xs font-bold text-emerald-400">Standard Level (SL)</p>
                                               <p className="text-[10px] text-white/60 font-medium mt-1 leading-tight">For students taking the standard, core version of this subject.</p>
                                             </div>
                                           </div>
@@ -642,7 +808,13 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
                         </h3>
                       </div>
                       <button 
-                        onClick={() => setShowRequestStudyGroupModal(true)}
+                        onClick={() => {
+                          if (userProfile?.is_restricted) {
+                            alert("Your account is currently restricted from creating or requesting study groups.");
+                            return;
+                          }
+                          setShowRequestStudyGroupModal(true);
+                        }}
                         className="p-1.5 rounded-lg bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/50 text-white/70 hover:text-indigo-400 transition-colors"
                         title="Request Study Group"
                       >
@@ -665,8 +837,14 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
                         </p>
                         
                         <button 
-                          onClick={() => setShowRequestStudyGroupModal(true)}
-                          className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] flex items-center gap-2 relative z-10"
+                          onClick={() => {
+                            if (userProfile?.is_restricted) {
+                              alert("Your account is currently restricted from creating or requesting study groups.");
+                              return;
+                            }
+                            setShowRequestStudyGroupModal(true);
+                          }}
+                          className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:from-purple-500 text-white text-sm font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] flex items-center gap-2 relative z-10"
                         >
                           <Plus size={16} /> Request Study Group
                         </button>
@@ -760,6 +938,7 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
                 </div>
               </div>
             </div>
+            </div>
           </div>
         </div>
       )}
@@ -768,18 +947,23 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
       {showAddSubjectModal && isAdmin && (
         <AddSubjectRoomModal 
           onClose={() => setShowAddSubjectModal(false)} 
-          subjects={subjects} 
+          subjects={subjectOptions} 
         />
       )}
 
       {/* New Discussion Modal */}
-      {showNewPost && (
-        <NewPostModal onClose={() => setShowNewPost(false)} subjects={subjects} />
+      {showNewDiscussion && (
+        <NewDiscussionModal onClose={() => setShowNewDiscussion(false)} subjects={subjectOptions} userProfile={userProfile} />
+      )}
+
+      {/* Ask Question Modal */}
+      {showAskQuestion && (
+        <AskQuestionModal onClose={() => setShowAskQuestion(false)} subjects={subjectOptions} userProfile={userProfile} />
       )}
 
       {/* Request Study Group Modal */}
       {showRequestStudyGroupModal && (
-        <RequestStudyGroupModal onClose={() => setShowRequestStudyGroupModal(false)} subjects={subjects} />
+        <RequestStudyGroupModal onClose={() => setShowRequestStudyGroupModal(false)} subjects={subjectOptions} userProfile={userProfile} />
       )}
 
     </main>
@@ -788,8 +972,9 @@ export default function CommunityClient({ initialPosts = [], rooms = [], activeS
 
 /* ── Add Subject Room Modal (Admin Only) ────────────────────────────────── */
 function AddSubjectRoomModal({ onClose, subjects }) {
+  const subjectOptions = (subjects && subjects.length > 0) ? subjects : COMMUNITY_CATEGORIES;
   const [subjectType, setSubjectType] = useState("existing"); // "existing" or "new"
-  const [selectedSubject, setSelectedSubject] = useState(subjects[0] || "");
+  const [selectedSubject, setSelectedSubject] = useState(subjectOptions[0] || "");
   const [newSubject, setNewSubject] = useState("");
   const [roomName, setRoomName] = useState("");
   const [description, setDescription] = useState("");
@@ -819,8 +1004,9 @@ function AddSubjectRoomModal({ onClose, subjects }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
+    <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden my-auto">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-32 bg-indigo-500/20 blur-[60px] pointer-events-none" />
         
         <div className="flex items-center justify-between p-6 border-b border-white/10 relative z-10">
@@ -869,7 +1055,7 @@ function AddSubjectRoomModal({ onClose, subjects }) {
                 <CustomSelect 
                   value={selectedSubject} 
                   onChange={setSelectedSubject} 
-                  options={subjects}
+                  options={subjectOptions}
                   placeholder="Select a specific category..."
                 />
               ) : (
@@ -931,21 +1117,27 @@ function AddSubjectRoomModal({ onClose, subjects }) {
             </button>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );
 }
 
 /* ── Request Study Group Modal ───────────────────────────────────────────── */
-function RequestStudyGroupModal({ onClose, subjects }) {
+function RequestStudyGroupModal({ onClose, subjects, userProfile }) {
+  const subjectOptions = (subjects && subjects.length > 0) ? subjects : COMMUNITY_CATEGORIES;
   const [name, setName] = useState("");
-  const [subject, setSubject] = useState(subjects[0] || "");
+  const [subject, setSubject] = useState(subjectOptions[0] || "");
   const [topic, setTopic] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("idle");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (userProfile?.is_restricted) {
+      alert("Your account is currently restricted from creating or requesting study groups.");
+      return;
+    }
     setStatus("submitting");
     try {
       await requestStudyGroup({ name, subject, topic, description });
@@ -956,9 +1148,32 @@ function RequestStudyGroupModal({ onClose, subjects }) {
     }
   };
 
+  if (userProfile?.is_restricted) {
+    return (
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="bg-[#121217] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden">
+          <div className="h-16 w-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Communication Restricted</h3>
+          <p className="text-white/60 text-sm mb-6 leading-relaxed">
+            Your account is currently restricted from creating or requesting study groups. All other areas of IB Nexus remain fully accessible to you.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white text-sm font-bold rounded-xl transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
+    <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-lg w-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden my-auto">
         {/* Glow Effects */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-32 bg-indigo-500/20 blur-[60px] pointer-events-none" />
         
@@ -1004,7 +1219,7 @@ function RequestStudyGroupModal({ onClose, subjects }) {
                 onChange={(e) => setSubject(e.target.value)}
                 className="w-full bg-black/50 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
               >
-                {subjects.map(c => (
+                {subjectOptions.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -1058,58 +1273,83 @@ function RequestStudyGroupModal({ onClose, subjects }) {
             </div>
           </form>
         )}
+        </div>
       </div>
     </div>
   );
 }
 
-/* ── New Discussion Modal ────────────────────────────────────────────────── */
-function NewPostModal({ onClose, subjects }) {
+/* ── Dedicated New Discussion Modal ─────────────────────────────────────── */
+function NewDiscussionModal({ onClose, subjects, userProfile }) {
+  const subjectOptions = (subjects && subjects.length > 0) ? subjects : COMMUNITY_CATEGORIES;
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
-  const [postType, setPostType] = useState("discussion");
   const [status, setStatus] = useState("idle"); // idle | submitting | success | error
   const [errorMsg, setErrorMsg] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (userProfile?.is_restricted) {
+      setErrorMsg("Your account is currently restricted from creating discussions or commenting.");
+      return;
+    }
     if (!category || category === "All") { setErrorMsg("Please select a specific category."); return; }
-    if (!title.trim()) { setErrorMsg("Please enter a title."); return; }
-    if (!content.trim()) { setErrorMsg("Please enter content."); return; }
+    if (!title.trim()) { setErrorMsg("Please enter a discussion title."); return; }
+    if (!content.trim()) { setErrorMsg("Please enter discussion content."); return; }
 
     setStatus("submitting");
     setErrorMsg("");
 
     try {
-      await createPostAction({ title, content, category, postType });
+      await createDiscussionAction({ title, content, category });
       setStatus("success");
     } catch (err) {
-      setErrorMsg(err.message || "Something went wrong.");
+      setErrorMsg(err.message || "Could not publish your discussion.");
       setStatus("error");
     }
   };
 
+  if (userProfile?.is_restricted) {
+    return (
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="bg-[#121217] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden">
+          <div className="h-16 w-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Communication Restricted</h3>
+          <p className="text-white/60 text-sm mb-6 leading-relaxed">
+            Your account is currently restricted from creating discussions or commenting. All other areas of IB Nexus remain fully accessible to you.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white text-sm font-bold rounded-xl transition-all"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (status === "success") {
     return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-        <div className="bg-[#121217] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mr-20 -mt-20 w-40 h-40 bg-green-500/20 blur-[50px] rounded-full pointer-events-none" />
+      <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md flex items-center justify-center">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden my-auto">
+          <div className="absolute top-0 right-0 -mr-20 -mt-20 w-40 h-40 bg-indigo-500/20 blur-[50px] rounded-full pointer-events-none" />
           <div className="relative z-10">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center mb-6">
-              <CheckCircle2 size={32} className="text-green-400" />
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-6">
+              <CheckCircle2 size={32} className="text-indigo-400" />
             </div>
-            <h3 className="text-2xl font-bold text-white mb-3">
-              {postType === "question" ? "Question" : "Discussion"} Submitted
-            </h3>
-            <p className="text-sm font-medium text-muted/90 mb-8 leading-relaxed">
-              Your {postType === "question" ? "question" : "discussion"} has been received and is <strong className="text-amber-400">pending admin approval</strong>. It will be publicly visible in the community once approved by a moderator.
+            <h3 className="text-2xl font-bold text-white mb-3">Discussion Submitted for Review</h3>
+            <p className="text-sm font-medium text-white/70 mb-8 leading-relaxed">
+              Your discussion has been received and is <strong className="text-amber-400">pending admin review</strong>. It will be publicly visible under Discussions once approved.
             </p>
             <button
               onClick={onClose}
               className="w-full py-3.5 bg-white hover:bg-white/90 text-black text-sm font-bold rounded-xl transition-all shadow-lg"
             >
-              Back to Nexus Network
+              Back to Community
             </button>
           </div>
         </div>
@@ -1118,111 +1358,268 @@ function NewPostModal({ onClose, subjects }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-      <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-2xl w-full shadow-[0_20px_50px_rgba(0,0,0,0.5)] max-h-[90vh] overflow-visible relative flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-white/10 sticky top-0 bg-[#121217]/90 backdrop-blur-md z-10 shrink-0 rounded-t-3xl">
-          <h3 className="text-xl font-bold text-white">Create New Discussion</h3>
-          <button type="button" onClick={onClose} className="rounded-xl p-2 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
-            <X size={20} />
+    <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-2xl w-full shadow-2xl max-h-[90vh] relative flex flex-col my-auto overflow-hidden">
+          <div className="flex items-center justify-between p-6 border-b border-white/10 sticky top-0 bg-[#121217]/95 backdrop-blur-md z-10 shrink-0">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={20} className="text-indigo-400" />
+              <h3 className="text-xl font-bold text-white">Create New Discussion</h3>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-xl p-2 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+            {/* Category Dropdown */}
+            <div className="relative z-50">
+              <label className="text-xs font-bold uppercase tracking-wider text-white/60 block mb-2 pl-1">
+                Subject Category <span className="text-red-400">*</span>
+              </label>
+              <CustomSelect 
+                value={category} 
+                onChange={setCategory} 
+                options={subjectOptions}
+                placeholder="Select subject for discussion..."
+              />
+            </div>
+
+            {/* Title */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-white/60 block mb-2 pl-1">
+                Discussion Title <span className="text-red-400">*</span>
+              </label>
+              <input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 px-5 text-white outline-none focus:border-indigo-500/50 focus:bg-white/5 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-white/30 font-medium text-sm shadow-inner"
+                placeholder="e.g. What are your strategies for managing EE research time?"
+                maxLength={200}
+                required
+              />
+            </div>
+
+            {/* Content */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-white/60 block mb-2 pl-1">
+                Discussion Content <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white outline-none focus:border-indigo-500/50 focus:bg-white/5 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-white/30 font-medium text-sm shadow-inner min-h-[180px] resize-y custom-scrollbar"
+                placeholder="Share your perspective, experience, or start an IB community debate..."
+                required
+              />
+            </div>
+
+            {/* Error */}
+            {errorMsg && (
+              <div className="flex items-center gap-3 text-sm font-medium text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-2xl">
+                <AlertCircle size={18} />
+                {errorMsg}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-white/10">
+              <div className="flex items-center gap-2 text-xs text-white/50">
+                <ShieldCheck size={14} className="text-indigo-400 shrink-0" />
+                <span>Discussions are reviewed by moderators before becoming public.</span>
+              </div>
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-bold text-white/60 hover:text-white hover:bg-white/5 rounded-xl transition-all">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={status === "submitting"}
+                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-70"
+                >
+                  {status === "submitting" ? (
+                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <><Send size={16} /> Submit Discussion</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Dedicated Ask a Question Modal ───────────────────────────────────────── */
+function AskQuestionModal({ onClose, subjects, userProfile }) {
+  const subjectOptions = (subjects && subjects.length > 0) ? subjects : COMMUNITY_CATEGORIES;
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [category, setCategory] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | submitting | success | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (userProfile?.is_restricted) {
+      setErrorMsg("Your account is currently restricted from asking questions or commenting.");
+      return;
+    }
+    if (!category || category === "All") { setErrorMsg("Please select a specific category."); return; }
+    if (!title.trim()) { setErrorMsg("Please enter your question title."); return; }
+    if (!content.trim()) { setErrorMsg("Please enter question details."); return; }
+
+    setStatus("submitting");
+    setErrorMsg("");
+
+    try {
+      await createQuestionAction({ title, content, category });
+      setStatus("success");
+    } catch (err) {
+      setErrorMsg(err.message || "Could not post your question.");
+      setStatus("error");
+    }
+  };
+
+  if (userProfile?.is_restricted) {
+    return (
+      <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+        <div className="bg-[#121217] border border-amber-500/30 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden">
+          <div className="h-16 w-16 bg-amber-500/10 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={32} />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Communication Restricted</h3>
+          <p className="text-white/60 text-sm mb-6 leading-relaxed">
+            Your account is currently restricted from asking questions or commenting. All other areas of IB Nexus remain fully accessible to you.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white text-sm font-bold rounded-xl transition-all"
+          >
+            Close
           </button>
         </div>
+      </div>
+    );
+  }
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
-          {/* Post Type */}
-          <div className="bg-black/40 p-1.5 rounded-2xl border border-white/5 flex gap-2 w-fit">
-            <button
-              type="button"
-              onClick={() => setPostType("discussion")}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${
-                postType === "discussion"
-                  ? "bg-white/15 text-white shadow-sm border border-white/10"
-                  : "text-muted hover:text-white hover:bg-white/5 border border-transparent"
-              }`}
-            >
-              <MessageCircle size={16} className={postType === "discussion" ? "text-indigo-400" : ""} /> Discussion
-            </button>
-            <button
-              type="button"
-              onClick={() => setPostType("question")}
-              className={`flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-all duration-300 ${
-                postType === "question"
-                  ? "bg-white/15 text-white shadow-sm border border-white/10"
-                  : "text-muted hover:text-white hover:bg-white/5 border border-transparent"
-              }`}
-            >
-              <HelpCircle size={16} className={postType === "question" ? "text-emerald-400" : ""} /> Question
-            </button>
-          </div>
-
-          {/* Category Dropdown */}
-          <div className="relative z-50">
-            <label className="text-xs font-bold uppercase tracking-wider text-muted block mb-2 pl-1">
-              Subject Category <span className="text-red-400">*</span>
-            </label>
-            <CustomSelect 
-              value={category} 
-              onChange={setCategory} 
-              options={subjects}
-              placeholder="Select a specific category..."
-            />
-          </div>
-
-          {/* Title */}
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-muted block mb-2 pl-1">
-              Title <span className="text-red-400">*</span>
-            </label>
-            <input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 px-5 text-white/90 outline-none focus:border-indigo-500/50 focus:bg-white/5 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-muted/50 font-medium text-sm shadow-inner"
-              placeholder={postType === "question" ? "What is your question?" : "Give your discussion a catchy title..."}
-              maxLength={200}
-              required
-            />
-          </div>
-
-          {/* Content */}
-          <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-muted block mb-2 pl-1">
-              Content <span className="text-red-400">*</span>
-            </label>
-            <textarea
-              value={content}
-              onChange={e => setContent(e.target.value)}
-              className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white/90 outline-none focus:border-indigo-500/50 focus:bg-white/5 focus:ring-4 focus:ring-indigo-500/10 transition-all placeholder:text-muted/50 font-medium text-sm shadow-inner min-h-[200px] resize-y custom-scrollbar"
-              placeholder="Share your thoughts, describe your problem in detail, or start a debate..."
-              required
-            />
-          </div>
-
-          {/* Error */}
-          {errorMsg && (
-            <div className="flex items-center gap-3 text-sm font-medium text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-2xl">
-              <AlertCircle size={18} />
-              {errorMsg}
+  if (status === "success") {
+    return (
+      <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 bg-black/80 backdrop-blur-md flex items-center justify-center">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center relative overflow-hidden my-auto">
+          <div className="absolute top-0 right-0 -mr-20 -mt-20 w-40 h-40 bg-amber-500/20 blur-[50px] rounded-full pointer-events-none" />
+          <div className="relative z-10">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-6">
+              <CheckCircle2 size={32} className="text-amber-400" />
             </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-            <button type="button" onClick={onClose} className="px-6 py-3 text-sm font-bold text-white/60 hover:text-white hover:bg-white/5 rounded-xl transition-all">
-              Cancel
-            </button>
+            <h3 className="text-2xl font-bold text-white mb-3">Question Submitted for Review</h3>
+            <p className="text-sm font-medium text-white/70 mb-8 leading-relaxed">
+              Your question has been received and is <strong className="text-amber-400">pending admin review</strong>. Once approved, it will be listed under Questions for IB students to answer.
+            </p>
             <button
-              type="submit"
-              disabled={status === "submitting"}
-              className="flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-sm font-bold rounded-xl transition-all shadow-[0_0_20px_rgba(79,70,229,0.3)] hover:shadow-[0_0_30px_rgba(79,70,229,0.5)] disabled:opacity-70 disabled:cursor-not-allowed min-w-[160px]"
+              onClick={onClose}
+              className="w-full py-3.5 bg-white hover:bg-white/90 text-black text-sm font-bold rounded-xl transition-all shadow-lg"
             >
-              {status === "submitting" ? (
-                <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <><Send size={16} /> {postType === "question" ? "Post Question" : "Publish Discussion"}</>
-              )}
+              Back to Community
             </button>
           </div>
-        </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-[1000] overflow-y-auto overscroll-contain p-4 sm:p-6 bg-black/80 backdrop-blur-md">
+      <div className="min-h-full flex items-center justify-center py-6">
+        <div className="bg-[#121217] border border-white/10 rounded-3xl max-w-2xl w-full shadow-2xl max-h-[90vh] relative flex flex-col my-auto overflow-hidden">
+          <div className="flex items-center justify-between p-6 border-b border-white/10 sticky top-0 bg-[#121217]/95 backdrop-blur-md z-10 shrink-0">
+            <div className="flex items-center gap-2">
+              <HelpCircle size={20} className="text-amber-400" />
+              <h3 className="text-xl font-bold text-white">Ask a Question</h3>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-xl p-2 hover:bg-white/10 text-white/50 hover:text-white transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto custom-scrollbar flex-1">
+            {/* Category Dropdown */}
+            <div className="relative z-50">
+              <label className="text-xs font-bold uppercase tracking-wider text-white/60 block mb-2 pl-1">
+                Subject Category <span className="text-red-400">*</span>
+              </label>
+              <CustomSelect 
+                value={category} 
+                onChange={setCategory} 
+                options={subjectOptions}
+                placeholder="Select subject category..."
+              />
+            </div>
+
+            {/* Title */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-white/60 block mb-2 pl-1">
+                Question Title <span className="text-red-400">*</span>
+              </label>
+              <input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-2xl py-3.5 px-5 text-white outline-none focus:border-amber-500/50 focus:bg-white/5 focus:ring-4 focus:ring-amber-500/10 transition-all placeholder:text-white/30 font-medium text-sm shadow-inner"
+                placeholder="e.g. How should I structure my Biology IA methodology section?"
+                maxLength={200}
+                required
+              />
+            </div>
+
+            {/* Content */}
+            <div>
+              <label className="text-xs font-bold uppercase tracking-wider text-white/60 block mb-2 pl-1">
+                Question Details & Context <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={content}
+                onChange={e => setContent(e.target.value)}
+                className="w-full bg-black/40 border border-white/10 rounded-2xl py-4 px-5 text-white outline-none focus:border-amber-500/50 focus:bg-white/5 focus:ring-4 focus:ring-amber-500/10 transition-all placeholder:text-white/30 font-medium text-sm shadow-inner min-h-[180px] resize-y custom-scrollbar"
+                placeholder="Describe your question in detail, provide background info, or show what you have already tried..."
+                required
+              />
+            </div>
+
+            {/* Error */}
+            {errorMsg && (
+              <div className="flex items-center gap-3 text-sm font-medium text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-3 rounded-2xl">
+                <AlertCircle size={18} />
+                {errorMsg}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-white/10">
+              <div className="flex items-center gap-2 text-xs text-white/50">
+                <ShieldCheck size={14} className="text-amber-400 shrink-0" />
+                <span>Questions are reviewed by moderators before becoming public.</span>
+              </div>
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-bold text-white/60 hover:text-white hover:bg-white/5 rounded-xl transition-all">
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={status === "submitting"}
+                  className="flex items-center justify-center gap-2 px-6 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-amber-500/25 disabled:opacity-70"
+                >
+                  {status === "submitting" ? (
+                    <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <><Send size={16} /> Submit Question</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

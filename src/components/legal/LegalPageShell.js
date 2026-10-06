@@ -21,7 +21,7 @@ function LegalFooter() {
           <div className="flex items-center gap-2 text-primary font-bold text-lg">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-xs text-white">N</span> IB Nexus
           </div>
-          <p className="max-w-xs leading-relaxed text-muted">A clear, focused study platform designed to respect students' attention and simplify IB revision.</p>
+          <p className="max-w-xs leading-relaxed text-muted">A clear, focused study platform designed to respect students&apos; attention and simplify IB revision.</p>
         </div>
         <div className="space-y-4">
           <h4 className="font-semibold text-primary">Platform</h4>

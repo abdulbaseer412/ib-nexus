@@ -3,6 +3,9 @@ import { fetchPostById, fetchReplies, checkIsAdmin } from "../actions";
 import { notFound } from "next/navigation";
 import DiscussionClient from "./DiscussionClient";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function generateMetadata({ params }) {
   const { id } = await params;
   const post = await fetchPostById(id);

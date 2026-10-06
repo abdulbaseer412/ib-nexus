@@ -4,11 +4,11 @@
 
 export function isOnboardingComplete(profile) {
   if (!profile) return false;
+  if (profile.is_admin === true) return true;
   if (profile.onboarding_completed === true) return true;
 
-  return Boolean(
-    profile.display_name?.trim() && profile.ib_program
-  );
+  // Onboarding is complete if an IB program track (DP or MYP) has been set on the profile
+  return Boolean(profile.ib_program?.trim());
 }
 
 export function getDisplayName(user, profile) {
@@ -45,9 +45,11 @@ export function getAvatarUrl(user, profile) {
 }
 
 export function getProgramLabel(ibProgram) {
-  if (ibProgram === "myp") return "MYP";
-  if (ibProgram === "dp") return "DP";
-  return null;
+  if (!ibProgram) return null;
+  const p = String(ibProgram).toLowerCase();
+  if (p.includes("myp")) return "MYP";
+  if (p.includes("dp")) return "DP";
+  return String(ibProgram).toUpperCase();
 }
 
 export function getOnboardingDefaults(user, profile) {

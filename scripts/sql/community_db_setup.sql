@@ -166,6 +166,21 @@ INSERT INTO community_rooms (subject, name, slug, description, sort_order) VALUE
   ('General IB', 'IB General Chat', 'ib-general', 'General IB discussion', 32)
 ON CONFLICT (slug) DO NOTHING;
 
--- Enable Realtime on messages table
-ALTER PUBLICATION supabase_realtime ADD TABLE community_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE community_presence;
+-- Enable Realtime on messages table (idempotent)
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE community_messages;
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+    WHEN OTHERS THEN NULL;
+  END;
+  
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE community_presence;
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+    WHEN OTHERS THEN NULL;
+  END;
+END $$;
+

@@ -1,21 +1,26 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, memo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { 
   Search, Plus, PenLine, Clock, Star, Archive, 
   MoreHorizontal, BrainCircuit, FileText, Trash2, Pin, 
   CheckCircle2, BookOpen, LayoutGrid, List, Sparkles, FolderPlus, DownloadCloud, Activity,
-  Camera, X, FolderUp, Folder, ChevronRight, CheckSquare, Square
+  Camera, X, FolderUp, Folder, ChevronRight, CheckSquare, Square, Settings
 } from "lucide-react";
 import { createNote, toggleNoteState, duplicateNote, deleteNote, updateNoteContent, createFolder, updateNoteMetadata, bulkDeleteNotesAction } from "./actions";
 import { createClient } from "@/utils/supabase-browser";
 import { Modal, Button, Input, Dropdown } from "@/components/ui";
+import { getSubjectBadgeClasses, getSubjectIconClasses } from "@/lib/subject-colors";
 
-const SUBJECTS = ["Biology", "Chemistry", "Mathematics", "Economics", "English", "Physics", "TOK", "History"];
+const ALL_SUBJECTS = ["Biology", "Chemistry", "Mathematics", "Economics", "English", "Physics", "TOK", "History"];
 
-export default function NotesClient({ initialNotes }) {
+export default function NotesClient({ initialNotes, userProgram }) {
+  const SUBJECTS = useMemo(() => ALL_SUBJECTS.filter(s => {
+    if (userProgram === "myp" && s === "TOK") return false;
+    return true;
+  }), [userProgram]);
   const router = useRouter();
   const [notes, setNotes] = useState(initialNotes || []);
   const [search, setSearch] = useState("");
@@ -455,20 +460,20 @@ export default function NotesClient({ initialNotes }) {
   };
 
   return (
-    <main className="surface min-h-[calc(100vh-72px)] p-4 sm:p-8">
+    <main className="min-h-[calc(100vh-72px)] p-6 sm:p-10 max-w-7xl mx-auto space-y-8">
       {/* ── BULK ACTION TOOLBAR ────────────────────────────────── */}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#1a1a2e] border border-white/10 rounded-full px-6 py-3 flex items-center gap-4 shadow-2xl animate-in slide-in-from-bottom-10 fade-in duration-300">
           <span className="text-white font-bold whitespace-nowrap">{selectedIds.length} Selected</span>
           <div className="w-px h-6 bg-white/10" />
-          <button onClick={selectAll} className="text-sm font-semibold text-white/70 hover:text-white transition-colors">
+          <button onClick={selectAll} className="text-[13px] font-semibold text-white/70 hover:text-white transition-colors interactive-hover interactive-press-subtle">
             {selectedIds.length === filteredNotes.length ? "Deselect All" : "Select All"}
           </button>
           <div className="w-px h-6 bg-white/10" />
           <button 
             onClick={handleBulkDelete} 
             disabled={isBulkDeleting}
-            className="flex items-center gap-2 text-sm font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 text-[13px] font-bold text-rose-400 hover:text-rose-300 transition-colors disabled:opacity-50 interactive-hover interactive-press"
           >
             <Trash2 size={16} /> {isBulkDeleting ? "Deleting..." : "Delete"}
           </button>
@@ -476,21 +481,25 @@ export default function NotesClient({ initialNotes }) {
       )}
 
       {/* Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl text-primary flex items-center gap-2">
-            <BookOpen className="text-accent" /> Notes
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] text-[10px] font-bold tracking-[0.2em] uppercase mb-3">
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>IB Nexus Notes</span>
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl text-[var(--foreground)]">
+            Knowledge Base
           </h1>
-          <p className="mt-1 text-sm text-muted">Your complete IB knowledge and revision workspace.</p>
+          <p className="mt-2 text-[14px] text-secondary max-w-xl">Your complete IB knowledge and revision workspace.</p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setIsCommandPaletteOpen(true)} variant="secondary" className="hidden sm:flex items-center gap-2 text-muted hover:text-primary">
-            <Search size={16} /> <span className="text-xs font-semibold px-1 py-0.5 rounded">Search</span>
+        <div className="flex gap-2.5">
+          <Button onClick={() => setIsCommandPaletteOpen(true)} variant="secondary" className="hidden sm:flex items-center gap-2 text-muted hover:text-[var(--foreground)] border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-alt)] shadow-sm">
+            <Search size={16} /> <span className="text-[12px] font-semibold">Search</span>
           </Button>
-          <Button onClick={() => setIsCreatingFolder(true)} variant="secondary" className="flex items-center gap-2 text-muted hover:text-primary border border-divider">
-            <FolderPlus size={16} /> New Folder
+          <Button onClick={() => setIsCreatingFolder(true)} variant="secondary" className="flex items-center gap-2 text-muted hover:text-[var(--foreground)] border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-alt)] shadow-sm">
+            <FolderPlus size={16} /> <span className="text-[13px] font-semibold">New Folder</span>
           </Button>
-          <Button onClick={() => setIsCreating(true)} className="flex items-center gap-2">
+          <Button onClick={() => setIsCreating(true)} className="flex items-center gap-2 shadow-sm text-[13px] font-semibold px-5">
             <Plus size={16} /> New Note
           </Button>
         </div>
@@ -513,7 +522,7 @@ export default function NotesClient({ initialNotes }) {
       {/* Quick Action / Command Area */}
       {notes.length > 0 && (
         <div className="mt-6 flex flex-wrap gap-2">
-          <button onClick={startCamera} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition group">
+          <button onClick={startCamera} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-divider bg-[var(--surface)] text-sm text-secondary hover:text-primary hover:border-accent transition group interactive-hover interactive-press-subtle">
             <Camera size={14} className="text-accent group-hover:scale-110 transition-transform" /> Quick capture
           </button>
           
@@ -579,32 +588,32 @@ export default function NotesClient({ initialNotes }) {
           {/* Main Controls */}
           <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-center">
             <div className="relative flex-1 max-w-md">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
               <Input 
                 value={search} 
                 onChange={e => setSearch(e.target.value)} 
-                className="!pl-9 w-full bg-[var(--surface-alt)]" 
+                className="!pl-10 w-full bg-[var(--surface)] border-[var(--border)] shadow-sm text-[13px] rounded-xl" 
                 placeholder="Search knowledge base..." 
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1.5 bg-[var(--surface)] p-1 rounded-xl border border-[var(--border)] shadow-sm">
               {["All", "Favorites", "Archived"].map(cat => (
                 <button
                   key={cat}
                   onClick={() => setCategoryFilter(cat)}
-                  className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
-                    categoryFilter === cat ? "bg-accent/10 text-accent border border-accent/20" : "text-muted hover:bg-[var(--surface)] hover:text-primary border border-transparent"
+                  className={`px-3 py-1.5 text-[12px] rounded-lg font-semibold transition-all ${
+                    categoryFilter === cat ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm border border-[var(--border)]" : "text-muted hover:text-[var(--foreground)] border border-transparent"
                   }`}
                 >
                   {cat}
                 </button>
               ))}
-              <div className="w-px h-8 bg-divider mx-1"></div>
-              <button onClick={() => setViewMode("grid")} className={`p-1.5 rounded-lg transition ${viewMode === 'grid' ? 'bg-[var(--surface)] text-primary' : 'text-muted hover:text-primary'}`}>
-                <LayoutGrid size={18} />
+              <div className="w-px h-6 bg-[var(--divider)] mx-1"></div>
+              <button onClick={() => setViewMode("grid")} className={`p-1.5 rounded-lg transition-all interactive-hover interactive-press-subtle ${viewMode === 'grid' ? 'bg-[var(--card)] text-[var(--foreground)] shadow-sm border border-[var(--border)]' : 'text-muted hover:text-[var(--foreground)] border border-transparent'}`}>
+                <LayoutGrid size={16} />
               </button>
-              <button onClick={() => setViewMode("list")} className={`p-1.5 rounded-lg transition ${viewMode === 'list' ? 'bg-[var(--surface)] text-primary' : 'text-muted hover:text-primary'}`}>
-                <List size={18} />
+              <button onClick={() => setViewMode("list")} className={`p-1.5 rounded-lg transition-all interactive-hover interactive-press-subtle ${viewMode === 'list' ? 'bg-[var(--card)] text-[var(--foreground)] shadow-sm border border-[var(--border)]' : 'text-muted hover:text-[var(--foreground)] border border-transparent'}`}>
+                <List size={16} />
               </button>
             </div>
           </div>
@@ -810,8 +819,8 @@ export default function NotesClient({ initialNotes }) {
           </div>
           <div>
             <label className="text-sm font-medium text-primary mb-1.5 block">Subject</label>
-            <select name="subject" required className="field w-full bg-[var(--surface-alt)]">
-              <option value="" disabled selected>Select subject</option>
+            <select name="subject" required defaultValue="" className="field w-full bg-[var(--surface-alt)]">
+              <option value="" disabled>Select subject</option>
               {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
@@ -880,7 +889,7 @@ export default function NotesClient({ initialNotes }) {
           </div>
           
           <div className="flex-1 relative flex items-center justify-center bg-black overflow-hidden">
-            {cameraLoading && !videoRef.current?.srcObject && (
+            {cameraLoading && (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-white/50">
                 <Clock size={32} className="animate-spin mb-4" />
                 <p>Starting camera...</p>
@@ -936,7 +945,7 @@ export function PriorityBadge({ priority, className = "" }) {
   );
 }
 
-function NoteCard({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
+const NoteCard = memo(function NoteCard({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
   // ... previewText logic
   let previewText = "No content yet.";
   try {
@@ -968,7 +977,7 @@ function NoteCard({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, o
     : { href: `/dashboard/notes/${note.id}`, className: "block w-full h-full" };
 
   return (
-    <div className={`group card flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border relative h-52 ${isFolder ? 'ring-1 ring-accent/10 shadow-sm' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-divider'}`}>
+    <div className={`group card interactive-hover flex flex-col p-5 hover:border-accent/40 transition-all bg-[var(--surface-alt)] border relative h-52 ${isFolder ? 'ring-1 ring-accent/10 shadow-sm' : ''} ${isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50' : 'border-divider'}`}>
       
       {/* Selection Checkbox */}
       <button 
@@ -981,8 +990,8 @@ function NoteCard({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, o
       <CardWrapper {...wrapperProps}>
         <div className="flex items-start justify-between mb-3">
           <div className="flex gap-2 items-center flex-wrap">
-            <span className="text-[10px] font-bold tracking-wider uppercase text-accent bg-accent/10 px-2 py-0.5 rounded-full flex items-center gap-1">
-              {isFolder ? <Folder size={10} className="fill-accent/20" /> : null}
+            <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded-full flex items-center gap-1 ${getSubjectBadgeClasses(note.subject)}`}>
+              {isFolder ? <Folder size={10} className="opacity-50" /> : null}
               {note.subject}
             </span>
             <PriorityBadge priority={note.exam_importance} />
@@ -1010,24 +1019,34 @@ function NoteCard({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, o
           <span className="text-[10px] text-muted">{note.revision_readiness}%</span>
         </div>
       )}
+      {!isFolder && (
+        <div className="mt-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+          <a href={`/dashboard/planner?action=add_task&note_id=${note.id}`} className="flex-1 text-center py-1.5 rounded bg-[var(--surface)] hover:bg-[var(--surface-alt)] border border-divider text-[10px] font-semibold uppercase tracking-wider text-primary transition-colors">
+            Add to Plan
+          </a>
+          <a href={`/dashboard/planner?action=review_note&note_id=${note.id}`} className="flex-1 text-center py-1.5 rounded bg-accent/10 hover:bg-accent/20 text-accent text-[10px] font-semibold uppercase tracking-wider transition-colors">
+            Review
+          </a>
+        </div>
+      )}
         <div className="mt-4 pt-3 border-t border-divider flex items-center justify-between text-xs text-muted">
           <span className="flex items-center gap-1.5">
             <Clock size={12} /> {timeAgo(note.updated_at)}
           </span>
           <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2" onClick={e => e.stopPropagation()}>
-            <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="hover:text-primary transition" title="Edit Details">
-              <PenLine size={14} />
+            <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="hover:text-primary transition interactive-hover interactive-press-subtle" title="Edit Details">
+              <Settings size={14} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
-              <Star size={14} className={note.is_favorite ? "fill-current" : ""} />
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className="hover:text-yellow-500 transition interactive-hover interactive-press-subtle" title={note.is_favorite ? "Unfavorite" : "Favorite"}>
+              <Star size={14} className={note.is_favorite ? "fill-yellow-500 text-yellow-500" : ""} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition" title={note.is_pinned ? "Unpin" : "Pin"}>
-              <Pin size={14} className={note.is_pinned ? "fill-current" : ""} />
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className="hover:text-accent transition interactive-hover interactive-press-subtle" title={note.is_pinned ? "Unpin" : "Pin"}>
+              <Pin size={14} className={note.is_pinned ? "text-accent fill-accent/20" : ""} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="hover:text-primary transition" title={note.is_archived ? "Restore" : "Archive"}>
-              <Archive size={14} />
+            <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="hover:text-primary transition interactive-hover interactive-press-subtle" title={note.is_archived ? "Restore" : "Archive"}>
+              <Archive size={14} className={note.is_archived ? "text-primary" : ""} />
             </button>
-            <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1" title="Delete">
+            <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="hover:text-danger transition ml-1 interactive-hover interactive-press-subtle" title="Delete">
               <Trash2 size={14} />
             </button>
           </div>
@@ -1035,9 +1054,9 @@ function NoteCard({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, o
       </CardWrapper>
     </div>
   );
-}
+});
 
-function NoteListItem({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
+const NoteListItem = memo(function NoteListItem({ note, isSelected, onToggleSelect, onToggle, onDeleteClick, onEditClick, onFolderClick }) {
   const timeAgo = (dateStr) => {
     const diffMs = new Date() - new Date(dateStr);
     const diffMins = Math.floor(diffMs / 60000);
@@ -1067,7 +1086,9 @@ function NoteListItem({ note, isSelected, onToggleSelect, onToggle, onDeleteClic
       <ListWrapper {...wrapperProps} className="flex-1 min-w-0">
         <div className="flex items-center gap-4 w-full">
           <div className="shrink-0 flex gap-1 items-center">
-            {isFolder ? <Folder size={16} className="text-accent fill-accent/20" /> : <FileText size={16} className="text-muted" />}
+            {isFolder 
+              ? <div className={`p-1.5 rounded-lg ${getSubjectIconClasses(note.subject)}`}><Folder size={16} /></div> 
+              : <div className={`p-1.5 rounded-lg ${getSubjectIconClasses(note.subject)}`}><FileText size={16} /></div>}
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 flex-1 min-w-0">
             <h3 className="font-semibold text-primary text-sm truncate">{note.title}</h3>
@@ -1079,25 +1100,35 @@ function NoteListItem({ note, isSelected, onToggleSelect, onToggle, onDeleteClic
         </div>
       </ListWrapper>
       <div className="flex items-center gap-6 shrink-0 ml-4">
+        {!isFolder && (
+          <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+            <a href={`/dashboard/planner?action=add_task&note_id=${note.id}`} className="text-xs font-semibold text-primary hover:text-accent transition px-2 py-1 bg-[var(--surface-alt)] hover:bg-[var(--surface)] rounded border border-divider uppercase tracking-wider">
+              Add to Plan
+            </a>
+            <a href={`/dashboard/planner?action=review_note&note_id=${note.id}`} className="text-xs font-semibold text-accent hover:text-white transition px-2 py-1 bg-accent/10 hover:bg-accent rounded uppercase tracking-wider">
+              Review
+            </a>
+          </div>
+        )}
         <span className="text-xs text-muted hidden sm:block">Edited {timeAgo(note.updated_at)}</span>
-        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="text-muted hover:text-primary transition p-1" title="Edit Details">
-            <PenLine size={16} />
+        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+          <button onClick={(e) => { e.preventDefault(); onEditClick(); }} className="text-muted hover:text-primary transition p-1 interactive-hover interactive-press-subtle" title="Edit Details">
+            <Settings size={15} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className={`hover:text-yellow-500 transition p-1 ${note.is_favorite ? "text-yellow-500" : "text-muted"}`} title={note.is_favorite ? "Unfavorite" : "Favorite"}>
-            <Star size={16} className={note.is_favorite ? "fill-current" : ""} />
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_favorite", note.is_favorite); }} className={`hover:text-yellow-500 transition p-1 interactive-hover interactive-press-subtle ${note.is_favorite ? "text-yellow-500" : "text-muted"}`} title={note.is_favorite ? "Unfavorite" : "Favorite"}>
+            <Star size={15} className={note.is_favorite ? "fill-yellow-500 text-yellow-500" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className={`hover:text-accent transition p-1 ${note.is_pinned ? "text-accent" : "text-muted"}`} title={note.is_pinned ? "Unpin" : "Pin"}>
-            <Pin size={16} className={note.is_pinned ? "fill-current" : ""} />
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_pinned", note.is_pinned); }} className={`hover:text-accent transition p-1 interactive-hover interactive-press-subtle ${note.is_pinned ? "text-accent" : "text-muted"}`} title={note.is_pinned ? "Unpin" : "Pin"}>
+            <Pin size={15} className={note.is_pinned ? "text-accent fill-accent/20" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="text-muted hover:text-primary transition p-1" title={note.is_archived ? "Restore" : "Archive"}>
-            <Archive size={16} />
+          <button onClick={(e) => { e.preventDefault(); onToggle(note.id, "is_archived", note.is_archived); }} className="text-muted hover:text-primary transition p-1 interactive-hover interactive-press-subtle" title={note.is_archived ? "Restore" : "Archive"}>
+            <Archive size={15} className={note.is_archived ? "text-primary" : ""} />
           </button>
-          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="text-muted hover:text-danger transition p-1" title="Delete">
+          <button onClick={(e) => { e.preventDefault(); onDeleteClick(); }} className="text-muted hover:text-danger transition p-1 interactive-hover interactive-press-subtle" title="Delete">
             <Trash2 size={16} />
           </button>
         </div>
       </div>
     </div>
   );
-}
+});

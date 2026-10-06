@@ -1,206 +1,268 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Check, Upload, Loader2, X } from "lucide-react";
 import { PRESET_AVATARS } from "@/lib/avatars";
-import { createClient } from "@/lib/supabase/browser";
-import { Avatar } from "./index";
+import { Check, Upload, Loader2, Sparkles, Trash2 } from "lucide-react";
 
-export function AvatarPicker({ value, onChange, onConfirm }) {
-  const [isUploading, setIsUploading] = useState(false);
-  const [customAvatars, setCustomAvatars] = useState([]);
-  const [userId, setUserId] = useState(null);
-  const [isLoadingAvatars, setIsLoadingAvatars] = useState(true);
-  const [isApplying, setIsApplying] = useState(false);
+export function AvatarPicker({
+  value,
+  onChange,
+  uploadedAvatars: externalUploadedAvatars = null,
+  onUploadedAvatarsChange = null
+}) {
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    async function init() {
-      try {
-        const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setUserId(user.id);
-          await fetchCustomAvatars(user.id);
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setIsLoadingAvatars(false);
-      }
-    }
-    init();
-  }, []);
+  // Local storage key for persistent custom avatars
+  const STORAGE_KEY = "ibnexus_uploaded_avatars";
 
-  const fetchCustomAvatars = async (uid) => {
-    const supabase = createClient();
-    const { data, error } = await supabase.storage.from('avatars').list(uid);
-    if (!error && data) {
-      // Filter out system placeholders and map to URLs
-      const files = data.filter(f => f.name !== '.emptyFolderPlaceholder').map(file => {
-        const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(`${uid}/${file.name}`);
-        return { name: file.name, url: publicUrl };
-      });
-      setCustomAvatars(files);
+  // State for all uploaded custom avatar URLs
+  const [internalUploadedAvatars, setInternalUploadedAvatars] = useState(() => {
+    if (Array.isArray(externalUploadedAvatars) && externalUploadedAvatars.length > 0) {
+      return externalUploadedAvatars;
     }
+    try {
+      if (typeof window !== "undefined") {
+        const cached = localStorage.getItem(STORAGE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      }
+    } catch {
+      // Fallback
+    }
+    return [];
+  });
+
+  const activeUploadedAvatars = externalUploadedAvatars !== null ? externalUploadedAvatars : internalUploadedAvatars;
+
+  // Sync if value is a custom image not yet in the uploaded list
+  useEffect(() => {
+    if (!value) return;
+    const isCustom = value.startsWith("http") || value.startsWith("data:") || value.startsWith("/");
+    if (isCustom && !activeUploadedAvatars.includes(value)) {
+      const updated = [value, ...activeUploadedAvatars];
+      if (onUploadedAvatarsChange) {
+        onUploadedAvatarsChange(updated);
+      } else {
+        setInternalUploadedAvatars(updated);
+      }
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      } catch {}
+    }
+  }, [value, activeUploadedAvatars, onUploadedAvatarsChange]);
+
+  const updateUploadedList = (newList) => {
+    if (onUploadedAvatarsChange) {
+      onUploadedAvatarsChange(newList);
+    } else {
+      setInternalUploadedAvatars(newList);
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
+    } catch {}
   };
 
-  const handleFileChange = async (e) => {
+  const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
-    if (!file || !userId) return;
+    if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Image is too large. Max size is 2MB.");
+    if (!file.type.startsWith("image/")) {
+      alert("Please upload a valid image (PNG, JPG, WEBP).");
       return;
     }
 
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image size should be less than 5MB.");
+      return;
+    }
+
+    setUploading(true);
     try {
-      setIsUploading(true);
-      const supabase = createClient();
-      
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
-      const filePath = `${userId}/${fileName}`;
+      let finalUrl = null;
+      const formData = new FormData();
+      formData.append("file", file);
 
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file);
+      try {
+        const res = await fetch("/api/resources/upload", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (res.ok && data?.url) {
+          finalUrl = data.url;
+        }
+      } catch {
+        // Fallback to data URL
+      }
 
-      if (uploadError) throw uploadError;
+      if (!finalUrl) {
+        finalUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
 
-      await fetchCustomAvatars(userId); // Refresh custom avatars list
-      
-      // Auto-select the newly uploaded file
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
-      onChange(publicUrl);
-
-    } catch (error) {
-      console.error('Error uploading avatar:', error);
-      alert("Failed to upload avatar. Please make sure the 'avatars' storage bucket is created.");
+      if (finalUrl) {
+        const filtered = activeUploadedAvatars.filter((url) => url !== finalUrl);
+        const updated = [finalUrl, ...filtered];
+        updateUploadedList(updated);
+        onChange(finalUrl);
+      }
+    } catch (err) {
+      console.error("Avatar upload failed:", err);
     } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
-  const handleDelete = async (e, fileName) => {
+  const handleRemoveCustomAvatar = (urlToRemove, e) => {
     e.stopPropagation();
-    if (!userId || !confirm("Are you sure you want to delete this uploaded avatar?")) return;
-    try {
-      const supabase = createClient();
-      await supabase.storage.from('avatars').remove([`${userId}/${fileName}`]);
-      await fetchCustomAvatars(userId);
-      
-      const deletedUrl = supabase.storage.from('avatars').getPublicUrl(`${userId}/${fileName}`).data.publicUrl;
-      if (value === deletedUrl) onChange("fox"); // fallback to a preset if deleted
-    } catch (e) {
-      console.error(e);
-    }
-  };
+    const updated = activeUploadedAvatars.filter((u) => u !== urlToRemove);
+    updateUploadedList(updated);
 
-  const handleConfirm = async () => {
-    if (!onConfirm) return;
-    setIsApplying(true);
-    try {
-      await onConfirm();
-    } finally {
-      setIsApplying(false);
+    // If the active avatar was the one removed, fallback to the first preset or next custom image
+    if (value === urlToRemove) {
+      if (updated.length > 0) {
+        onChange(updated[0]);
+      } else {
+        onChange("fox");
+      }
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="relative group">
-        <div className="flex gap-3 overflow-x-auto pb-4 custom-scrollbar snap-x snap-mandatory items-center">
-          
-          {/* Custom Upload Button */}
-          <div className="shrink-0 snap-center relative">
+      {/* Grid of Avatars */}
+      <div className="grid grid-cols-4 sm:grid-cols-7 gap-3">
+        {/* Preset Avatars */}
+        {PRESET_AVATARS.map((preset) => {
+          const isSelected = value === preset.id;
+
+          return (
             <button
+              key={preset.id}
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading || isLoadingAvatars}
-              className={`relative shrink-0 w-16 h-16 rounded-full flex flex-col items-center justify-center transition-all duration-300 ease-out border-2 border-dashed border-white/20 bg-white/5 hover:border-indigo-400 hover:bg-white/10`}
+              onClick={() => onChange(preset.id)}
+              className={`
+                relative group flex items-center justify-center aspect-square rounded-2xl text-2xl sm:text-3xl
+                bg-gradient-to-br ${preset.color}
+                transition-all duration-200
+                ${isSelected
+                  ? "ring-2 ring-offset-2 ring-offset-[var(--background)] ring-[var(--accent)] scale-105 shadow-lg shadow-[var(--accent)]/20"
+                  : "ring-1 ring-white/10 hover:scale-105 hover:shadow-md interactive-hover interactive-press-subtle"
+                }
+              `}
+              title={preset.name}
             >
-              {isUploading ? (
-                <Loader2 size={24} className="text-white/50 animate-spin" />
-              ) : (
-                <>
-                  <Upload size={20} className="text-white/50 mb-1" />
-                  <span className="text-[10px] font-medium text-white/50 uppercase tracking-wider">Upload</span>
-                </>
-              )}
-            </button>
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/*"
-              className="hidden"
-            />
-          </div>
+              <span className="relative z-10 filter drop-shadow-sm">{preset.emoji}</span>
 
-          <div className="w-px h-10 bg-white/10 shrink-0 mx-1"></div>
-
-          {/* Custom Avatars List */}
-          {customAvatars.map((file) => (
-             <div key={file.name} className="shrink-0 snap-center relative group/item">
-               <button
-                 type="button"
-                 onClick={() => onChange(file.url)}
-                 className={`relative w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ease-out border-2 ${value === file.url ? "border-indigo-500 bg-[var(--surface)] ring-4 ring-indigo-500/30 scale-110 shadow-xl" : "border-transparent opacity-70 hover:opacity-100 hover:scale-105"}`}
-               >
-                 <Avatar url={file.url} size="xl" className="w-full h-full rounded-full" />
-                 {value === file.url && (
-                   <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-500 rounded-full border-2 border-black flex items-center justify-center z-10">
-                     <Check size={12} className="text-white" />
-                   </div>
-                 )}
-               </button>
-               {/* Delete Button */}
-               <button 
-                 type="button"
-                 onClick={(e) => handleDelete(e, file.name)}
-                 className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-white flex items-center justify-center opacity-0 group-hover/item:opacity-100 transition-opacity z-20 shadow-sm hover:scale-110"
-                 title="Delete Avatar"
-               >
-                 <X size={12} strokeWidth={3} />
-               </button>
-             </div>
-          ))}
-
-          {customAvatars.length > 0 && <div className="w-px h-10 bg-white/10 shrink-0 mx-1"></div>}
-
-          {/* Presets */}
-          {PRESET_AVATARS.map((avatar) => (
-            <button
-              key={avatar.id}
-              type="button"
-              onClick={() => onChange(avatar.id)}
-              className={`relative shrink-0 w-16 h-16 rounded-full flex items-center justify-center text-3xl snap-center transition-all duration-300 ease-out bg-gradient-to-br ${avatar.color} ${value === avatar.id ? "ring-4 ring-indigo-500 scale-110 shadow-xl" : "opacity-70 hover:opacity-100 hover:scale-105 saturate-50 hover:saturate-100"}`}
-            >
-              {avatar.emoji}
-              {value === avatar.id && (
-                <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-indigo-500 rounded-full border-2 border-black flex items-center justify-center">
-                  <Check size={12} className="text-white" />
+              {isSelected && (
+                <div className="absolute -top-1 -right-1 bg-[var(--accent)] text-white rounded-full p-0.5 shadow-sm z-20 animate-in zoom-in duration-200">
+                  <Check size={12} strokeWidth={3} />
                 </div>
               )}
+
+              <div className="absolute inset-0 rounded-2xl bg-white/0 group-hover:bg-white/10 transition-colors pointer-events-none" />
             </button>
-          ))}
-        </div>
+          );
+        })}
+
+        {/* Uploaded / Saved Custom Avatars (Always preserved and displayed) */}
+        {activeUploadedAvatars.map((url, index) => {
+          const isSelected = value === url;
+
+          return (
+            <div
+              key={`custom-avatar-${index}`}
+              onClick={() => onChange(url)}
+              className={`
+                relative group flex items-center justify-center aspect-square rounded-2xl overflow-hidden cursor-pointer
+                transition-all duration-200 bg-[var(--surface-alt)] border
+                ${isSelected
+                  ? "border-[var(--accent)] ring-2 ring-offset-2 ring-offset-[var(--background)] ring-[var(--accent)] scale-105 shadow-lg shadow-[var(--accent)]/20"
+                  : "border-[var(--border)] hover:border-[var(--accent)]/60 hover:scale-105 hover:shadow-md"
+                }
+              `}
+              title="Your uploaded photo"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt="Custom profile"
+                className="w-full h-full object-cover transition-transform group-hover:scale-105"
+              />
+
+              {isSelected && (
+                <div className="absolute -top-1 -right-1 bg-[var(--accent)] text-white rounded-full p-0.5 shadow-sm z-20 animate-in zoom-in duration-200">
+                  <Check size={12} strokeWidth={3} />
+                </div>
+              )}
+
+              {/* Hover Overlay with Delete Action */}
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 z-10">
+                <button
+                  type="button"
+                  onClick={(e) => handleRemoveCustomAvatar(url, e)}
+                  className="p-1.5 rounded-lg bg-rose-600/90 text-white hover:bg-rose-600 shadow-sm transition-transform active:scale-95"
+                  title="Remove this photo from library"
+                  aria-label="Remove photo"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Upload Custom Image Button */}
+        <button
+          type="button"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          className={`
+            relative group flex flex-col items-center justify-center aspect-square rounded-2xl
+            border-2 border-dashed border-[var(--border)] hover:border-[var(--accent)] bg-[var(--surface)] hover:bg-[var(--surface-alt)]
+            text-[var(--muted)] hover:text-[var(--foreground)] transition-all duration-200 cursor-pointer
+            ${uploading ? "opacity-70 pointer-events-none" : "interactive-hover interactive-press-subtle"}
+          `}
+          title="Upload your personal photo"
+        >
+          {uploading ? (
+            <Loader2 className="w-5 h-5 animate-spin text-[var(--accent)]" />
+          ) : (
+            <>
+              <Upload className="w-5 h-5 mb-1 text-[var(--muted)] group-hover:text-[var(--accent)] group-hover:scale-110 transition-all" />
+              <span className="text-[10px] font-bold uppercase tracking-wider">Upload</span>
+            </>
+          )}
+        </button>
       </div>
 
-      {onConfirm && (
-        <div className="pt-2 animate-in fade-in slide-in-from-top-2">
-          <button 
-            type="button"
-            onClick={handleConfirm}
-            disabled={isApplying}
-            className="btn w-full justify-center bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white border border-indigo-500/20 transition-all font-medium py-2.5 rounded-xl disabled:opacity-50"
-          >
-            {isApplying ? "Applying..." : "Confirm & Apply Avatar"}
-          </button>
-        </div>
-      )}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/jpg,image/webp"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+
+      <div className="flex items-center justify-between text-[11px] text-[var(--muted)] pl-0.5">
+        <p className="flex items-center gap-1.5">
+          <Sparkles size={12} className="text-[var(--accent)]" />
+          <span>Choose a preset avatar or your personal photos. Uploaded images are preserved in your library.</span>
+        </p>
+        {activeUploadedAvatars.length > 0 && (
+          <span className="font-semibold text-[var(--text-secondary)]">
+            {activeUploadedAvatars.length} custom {activeUploadedAvatars.length === 1 ? "photo" : "photos"} saved
+          </span>
+        )}
+      </div>
     </div>
   );
 }

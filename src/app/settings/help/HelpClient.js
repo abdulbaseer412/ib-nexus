@@ -9,14 +9,17 @@ export default function HelpClient({ userEmail, userName }) {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [status, setStatus] = useState("idle"); // idle, loading, success, error
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setStatus("loading");
+    setErrorMessage("");
     
     try {
+      const effectiveName = userName || userEmail?.split("@")[0] || "User";
       const formData = new FormData();
-      formData.append("name", userName);
+      formData.append("name", effectiveName);
       formData.append("email", userEmail);
       formData.append("category", subject);
       formData.append("message", message);
@@ -25,6 +28,7 @@ export default function HelpClient({ userEmail, userName }) {
       
       if (res?.error) {
         setStatus("error");
+        setErrorMessage(res.error);
       } else {
         setStatus("success");
         setSubject("");
@@ -33,11 +37,12 @@ export default function HelpClient({ userEmail, userName }) {
       }
     } catch (err) {
       setStatus("error");
+      setErrorMessage(err.message || "Failed to send message. Please try again later.");
     }
   };
 
   return (
-    <main className="min-h-[calc(100vh-4rem)] bg-[var(--background)] px-4 py-10 sm:py-14">
+    <main className="p-6 sm:p-10 max-w-4xl mx-auto space-y-8 relative">
       <div className="max-w-3xl mx-auto space-y-6">
         <Link href="/settings" className="inline-flex items-center gap-2 text-sm text-muted hover:text-primary transition">
           <ArrowLeft size={16} /> Back to Settings
@@ -154,11 +159,20 @@ export default function HelpClient({ userEmail, userName }) {
             
             {status === "error" && (
               <div className="mt-4 p-3 rounded-xl bg-danger/10 border border-danger/20 text-danger text-sm flex items-center gap-2">
-                Failed to send message. Please try again later.
+                {errorMessage || "Failed to send message. Please try again later."}
               </div>
             )}
           </form>
         </section>
+
+        {/* Creator & Architecture Credit */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] text-xs text-[var(--muted)]">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 rounded-full bg-[var(--accent)]" />
+            <span>IB Nexus — created and architected by <strong className="text-[var(--foreground)] font-semibold">Abdul Baseer</strong></span>
+          </div>
+          <span className="text-[11px] opacity-80">Empowering IB Scholars Worldwide</span>
+        </div>
       </div>
     </main>
   );

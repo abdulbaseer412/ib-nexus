@@ -3,6 +3,7 @@
 import { createAdminClient, createServerClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/session";
 import { revalidatePath } from "next/cache";
+import { COMMUNITY_CATEGORIES } from "./constants";
 
 // Using dynamic subjects from database now instead of constants
 
@@ -11,7 +12,7 @@ export async function bootstrapCommunityDB() {
   const admin = createAdminClient();
 
   // Add is_admin column to profiles
-  await admin.rpc("pgmigrate_community", {}).catch(() => null);
+  try { await admin.rpc("pgmigrate_community", {}); } catch (e) { }
 
   // Try creating tables via raw SQL through the REST SQL endpoint
   // Since Supabase JS doesn't support raw DDL, we create tables via
@@ -216,24 +217,30 @@ export async function createPostAction({ title, content, category, postType = "d
     throw new Error("Title, content and category are required.");
   }
 
-  // Validate against dynamic subjects
+  // Validate against dynamic subjects and standard categories
   const { data: subjects } = await supabase.from("community_subjects").select("name");
-  const validSubjects = subjects?.map(s => s.name) || [];
-  
-  if (!validSubjects.includes(category)) {
+  const dbSubjects = subjects?.map(s => s.name) || [];
+  const allowedCategories = Array.from(new Set([...COMMUNITY_CATEGORIES, ...dbSubjects]));
+
+  const normalizedCategory = category.trim().toLowerCase();
+  const isValidCategory = allowedCategories.some(c => c.toLowerCase() === normalizedCategory);
+
+  if (!isValidCategory) {
     throw new Error("Invalid category selected.");
   }
 
   // Get author profile info
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, avatar_url, is_restricted")
+    .select("display_name, avatar_url, is_restricted, is_admin")
     .eq("id", user.id)
     .single();
 
   if (profile?.is_restricted) {
     throw new Error("Your account has been restricted from participating in the community.");
   }
+
+  const postStatus = profile?.is_admin === true ? "approved" : "pending";
 
   const { data, error } = await supabase.from("community_posts").insert({
     author_id: user.id,
@@ -243,7 +250,7 @@ export async function createPostAction({ title, content, category, postType = "d
     content: content.trim(),
     category,
     post_type: postType,
-    status: "pending",
+    status: postStatus,
   }).select("id").single();
 
   if (error) {
@@ -251,17 +258,62 @@ export async function createPostAction({ title, content, category, postType = "d
     throw new Error(`Failed to submit discussion: ${error.message}`);
   }
 
+  if (postStatus === "pending") {
+    try {
+      await supabase.from("admin_requests").insert({
+        user_id: user.id,
+        user_email: user.email,
+        user_name: profile?.display_name || user.email?.split("@")[0] || "Student",
+        request_type: postType === "question" ? "question_approval" : "discussion_approval",
+        title: title.trim(),
+        details: content.trim(),
+        metadata: {
+          post_id: data.id,
+          category,
+          post_type: postType,
+        },
+        target_id: String(data.id),
+        target_table: "community_posts",
+        status: "pending",
+      });
+
+      await supabase.from("admin_activity_logs").insert({
+        actor_id: user.id,
+        actor_email: user.email,
+        action: "user_submit_content",
+        target_type: postType === "question" ? "question" : "discussion",
+        target_id: String(data.id),
+        details: `Student submitted ${postType === "question" ? "Question" : "Discussion"} "${title.trim()}" in ${category} (Pending Approval)`,
+      });
+    } catch (err) {
+      console.warn("Failed to log activity or create admin request:", err?.message);
+    }
+  }
+
   revalidatePath("/dashboard/community", "layout");
+  revalidatePath("/dashboard/admin");
   return { success: true, id: data.id };
 }
 
-export async function fetchApprovedPosts({ category = null, search = null, filter = "recent", limit = 30 } = {}) {
+export async function createDiscussionAction({ title, content, category }) {
+  return createPostAction({ title, content, category, postType: "discussion" });
+}
+
+export async function createQuestionAction({ title, content, category }) {
+  return createPostAction({ title, content, category, postType: "question" });
+}
+
+export async function fetchApprovedPosts({ postType = null, category = null, search = null, filter = "recent", limit = 30 } = {}) {
   const supabase = createAdminClient();
 
   let query = supabase
     .from("community_posts")
     .select("*")
     .eq("status", "approved");
+
+  if (postType) {
+    query = query.eq("post_type", postType);
+  }
 
   // If unanswered filter is selected, ignore category as requested by user
   if (category && category !== "All" && filter !== "unanswered") {
@@ -277,10 +329,14 @@ export async function fetchApprovedPosts({ category = null, search = null, filte
   if (filter === "most-helpful") {
     // Ensure that only genuinely helpful posts appear here (Threshold: 3+ likes OR 5+ replies)
     query = query.or('helpful_count.gte.3,reply_count.gte.5')
-                 .order("helpful_count", { ascending: false })
-                 .order("reply_count", { ascending: false });
+      .order("helpful_count", { ascending: false })
+      .order("reply_count", { ascending: false });
   } else if (filter === "unanswered") {
     query = query.eq("post_type", "question").eq("is_answered", false).order("created_at", { ascending: false });
+  } else if (filter === "answered") {
+    query = query.eq("post_type", "question").eq("is_answered", true).order("created_at", { ascending: false });
+  } else if (filter === "most-active") {
+    query = query.order("reply_count", { ascending: false }).order("created_at", { ascending: false });
   } else {
     // Default recent
     // If there is a search query, prioritize most helpful matches first, then recent
@@ -304,7 +360,7 @@ export async function fetchApprovedPosts({ category = null, search = null, filte
 export async function fetchPostById(postId) {
   const supabase = createAdminClient();
   let user = null;
-  
+
   try {
     user = await requireAuth();
   } catch (e) {
@@ -381,14 +437,14 @@ export async function createReplyAction({ postId, content }) {
 
   // Update reply count
   const { error: rpcError } = await supabase.rpc("increment_reply_count", { post_uuid: postId });
-  
+
   if (rpcError) {
     // Fallback: manual increment if RPC is missing
     const { data: postData } = await supabase.from("community_posts")
       .select("reply_count")
       .eq("id", postId)
       .single();
-      
+
     if (postData) {
       await supabase.from("community_posts")
         .update({ reply_count: (postData.reply_count || 0) + 1 })
@@ -481,15 +537,41 @@ export async function reportContent({ postId = null, replyId = null, messageId =
   const validReasons = ["spam", "inappropriate", "misleading", "harassment", "other"];
   if (!validReasons.includes(reason)) throw new Error("Invalid report reason.");
 
-  await supabase.from("community_reports").insert({
+  const { data: rep } = await supabase.from("community_reports").insert({
     reporter_id: user.id,
     post_id: postId,
     reply_id: replyId,
     message_id: messageId,
     reason,
     details,
-  });
+  }).select("id").single();
 
+  try {
+    await supabase.from("admin_requests").insert({
+      user_id: user.id,
+      user_email: user.email,
+      request_type: "user_report",
+      title: `User Report: Content flagged for ${reason}`,
+      details: details || `Flagged for ${reason}`,
+      metadata: { report_id: rep?.id, post_id: postId, reply_id: replyId, message_id: messageId, reason },
+      target_id: String(rep?.id || postId || replyId || messageId),
+      target_table: "community_reports",
+      status: "pending",
+    });
+
+    await supabase.from("admin_activity_logs").insert({
+      actor_id: user.id,
+      actor_email: user.email,
+      action: "user_report_content",
+      target_type: "report",
+      target_id: String(postId || replyId || messageId || "content"),
+      details: `User reported content for reason: ${reason}`,
+    });
+  } catch (err) {
+    console.warn("Failed to log report activity or create admin request:", err?.message);
+  }
+
+  revalidatePath("/dashboard/admin");
   return { success: true };
 }
 
@@ -504,6 +586,116 @@ export async function fetchUserPosts() {
     .order("created_at", { ascending: false });
 
   return data || [];
+}
+
+export async function fetchUserDiscussions() {
+  const user = await requireAuth();
+  const supabase = createAdminClient();
+
+  const { data } = await supabase
+    .from("community_posts")
+    .select("*")
+    .eq("author_id", user.id)
+    .or("post_type.eq.discussion,post_type.is.null")
+    .order("created_at", { ascending: false });
+
+  return data || [];
+}
+
+export async function fetchUserQuestions() {
+  const user = await requireAuth();
+  const supabase = createAdminClient();
+
+  const { data } = await supabase
+    .from("community_posts")
+    .select("*")
+    .eq("author_id", user.id)
+    .eq("post_type", "question")
+    .order("created_at", { ascending: false });
+
+  return data || [];
+}
+
+export async function fetchUserReplies() {
+  const user = await requireAuth();
+  const supabase = createAdminClient();
+
+  const { data, error } = await supabase
+    .from("community_replies")
+    .select("*, community_posts!inner(*)")
+    .eq("author_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+  // Filter for discussion replies (parent post is discussion or null type)
+  return data.filter(r => (r.community_posts?.post_type || "discussion") !== "question");
+}
+
+export async function fetchUserAnswers() {
+  const user = await requireAuth();
+  const supabase = createAdminClient();
+
+  const { data, error } = await supabase
+    .from("community_replies")
+    .select("*, community_posts!inner(*)")
+    .eq("author_id", user.id)
+    .order("created_at", { ascending: false });
+
+  if (error || !data) return [];
+  // Filter for question answers (parent post is question type)
+  return data.filter(r => r.community_posts?.post_type === "question");
+}
+
+export async function fetchUserActivitySummary() {
+  const user = await requireAuth();
+  const supabase = createAdminClient();
+
+  const [discussionsRes, questionsRes, repliesRes] = await Promise.all([
+    supabase.from("community_posts").select("id", { count: "exact", head: true }).eq("author_id", user.id).or("post_type.eq.discussion,post_type.is.null"),
+    supabase.from("community_posts").select("id", { count: "exact", head: true }).eq("author_id", user.id).eq("post_type", "question"),
+    supabase.from("community_replies").select("id, post_id, community_posts!inner(post_type)").eq("author_id", user.id),
+  ]);
+
+  const allReplies = repliesRes.data || [];
+  const repliesCount = allReplies.filter(r => (r.community_posts?.post_type || "discussion") !== "question").length;
+  const answersCount = allReplies.filter(r => r.community_posts?.post_type === "question").length;
+
+  return {
+    discussionsCount: discussionsRes.count || 0,
+    questionsCount: questionsRes.count || 0,
+    repliesCount,
+    answersCount,
+  };
+}
+
+export async function editReplyAction({ replyId, content }) {
+  const user = await requireAuth();
+  const supabase = createAdminClient();
+
+  if (!content?.trim()) throw new Error("Reply content cannot be empty.");
+
+  const { data: reply } = await supabase
+    .from("community_replies")
+    .select("author_id")
+    .eq("id", replyId)
+    .single();
+
+  if (!reply) throw new Error("Reply not found.");
+  
+  const isAdmin = await checkIsAdmin();
+  if (reply.author_id !== user.id && !isAdmin) {
+    throw new Error("Unauthorized: You can only edit your own content.");
+  }
+
+  const { error } = await supabase
+    .from("community_replies")
+    .update({ content: content.trim() })
+    .eq("id", replyId);
+
+  if (error) throw new Error("Failed to update reply: " + error.message);
+
+  revalidatePath("/dashboard/community", "layout");
+  return { success: true };
 }
 
 export async function toggleAnswered(postId) {
@@ -597,19 +789,52 @@ export async function fetchRoomBySlug(slug) {
   return data;
 }
 
-export async function fetchRoomMessages(roomId, limit = 50) {
+export async function fetchRoomMessages(roomId, limit = 100) {
   const supabase = createAdminClient();
-  const { data } = await supabase
+  const { data: messages } = await supabase
     .from("community_messages")
     .select("*")
     .eq("room_id", roomId)
     .eq("is_deleted", false)
     .order("created_at", { ascending: true })
     .limit(limit);
-  return data || [];
+
+  if (!messages || messages.length === 0) return [];
+
+  // Verify moderator authorization status on server
+  const authorIds = Array.from(new Set(messages.map(m => m.author_id || m.user_id).filter(Boolean)));
+  let adminSet = new Set();
+  if (authorIds.length > 0) {
+    const { data: admins } = await supabase
+      .from("profiles")
+      .select("id")
+      .in("id", authorIds)
+      .eq("is_admin", true);
+    if (admins) {
+      admins.forEach(a => adminSet.add(a.id));
+    }
+  }
+
+  return messages.map(m => {
+    const isNotice = m.is_notice === true || (typeof m.content === "string" && m.content.startsWith("🛡️ [OFFICIAL_ROOM_GUIDANCE]:"));
+    const displayContent = isNotice && typeof m.content === "string"
+      ? m.content.replace(/^🛡️ \[OFFICIAL_ROOM_GUIDANCE\]:\s*/, "")
+      : m.content;
+    const isMod = m.is_moderator === true || adminSet.has(m.author_id || m.user_id) || isNotice;
+
+    return {
+      ...m,
+      author_id: m.author_id || m.user_id,
+      content: displayContent,
+      raw_content: m.content,
+      is_moderator: isMod,
+      is_notice: isNotice,
+      is_pinned: isNotice,
+    };
+  });
 }
 
-export async function sendMessage({ roomId, content }) {
+export async function sendMessage({ roomId, content, isNotice = false }) {
   const user = await requireAuth();
   const supabase = createAdminClient();
 
@@ -618,20 +843,66 @@ export async function sendMessage({ roomId, content }) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("display_name, avatar_url")
+    .select("display_name, avatar_url, is_admin, is_restricted, email")
     .eq("id", user.id)
     .single();
 
-  const { error } = await supabase.from("community_messages").insert({
+  if (profile?.is_restricted) {
+    throw new Error("Your account has been restricted from sending live chat messages.");
+  }
+
+  // STRICT SERVER-SIDE AUTHORIZATION: derive moderator status from trusted profile
+  const isModerator = profile?.is_admin === true;
+  const isOfficialNotice = Boolean(isModerator && isNotice);
+  const formattedContent = isOfficialNotice
+    ? `🛡️ [OFFICIAL_ROOM_GUIDANCE]: ${content.trim()}`
+    : content.trim();
+
+  const messagePayload = {
     room_id: roomId,
     author_id: user.id,
-    author_name: profile?.display_name || "Anonymous",
+    author_name: profile?.display_name || profile?.email?.split("@")[0] || "Student",
     author_avatar: profile?.avatar_url || null,
-    content: content.trim(),
-  });
+    content: formattedContent,
+    is_moderator: isModerator,
+    is_notice: isOfficialNotice,
+    is_pinned: isOfficialNotice,
+  };
 
-  if (error) throw new Error("Failed to send message.");
-  return { success: true };
+  let error = null;
+  let res = await supabase.from("community_messages").insert(messagePayload).select("*").single();
+
+  if (res.error) {
+    // Fallback insertion if optional columns do not exist in DB yet
+    const fallbackPayload = {
+      room_id: roomId,
+      author_id: user.id,
+      author_name: profile?.display_name || profile?.email?.split("@")[0] || "Student",
+      author_avatar: profile?.avatar_url || null,
+      content: formattedContent,
+    };
+    const fbRes = await supabase.from("community_messages").insert(fallbackPayload).select("*").single();
+    error = fbRes.error;
+    res = fbRes;
+  }
+
+  if (error) throw new Error("Failed to send message: " + error.message);
+
+  if (isModerator) {
+    try {
+      await supabase.from("admin_activity_logs").insert({
+        actor_id: user.id,
+        actor_email: profile?.email || user.email,
+        action: isOfficialNotice ? "moderator_notice" : "moderator_message",
+        target_type: "room",
+        target_id: String(roomId),
+        details: isOfficialNotice ? `Posted Official Moderator Notice: "${content.trim()}"` : `Posted Moderator Chat Message: "${content.trim()}"`,
+      });
+    } catch (e) {}
+  }
+
+  revalidatePath(`/dashboard/community/rooms/${roomId}`);
+  return { success: true, message: res.data };
 }
 
 export async function deleteOwnMessage(messageId) {
@@ -786,12 +1057,12 @@ export async function fetchStudyGroupPresenceCounts() {
       if (!counts[p.room_id]) {
         counts[p.room_id] = { live: 0, lastActive: null };
       }
-      
+
       const seenAt = new Date(p.last_seen);
       if (seenAt >= new Date(oneMinuteAgo)) {
         counts[p.room_id].live += 1;
       }
-      
+
       if (!counts[p.room_id].lastActive || seenAt > counts[p.room_id].lastActive) {
         counts[p.room_id].lastActive = seenAt;
       }
@@ -806,6 +1077,11 @@ export async function fetchStudyGroupPresenceCounts() {
 export async function requestStudyGroup({ name, subject, topic, description }) {
   const user = await requireAuth();
   const supabase = createAdminClient();
+
+  const { data: profile } = await supabase.from("profiles").select("is_restricted").eq("id", user.id).single();
+  if (profile?.is_restricted) {
+    throw new Error("Your account has been restricted from creating or requesting study groups.");
+  }
 
   if (!name?.trim() || !subject?.trim()) throw new Error("Name and subject are required.");
 
@@ -826,6 +1102,32 @@ export async function requestStudyGroup({ name, subject, topic, description }) {
     user_id: user.id,
   });
 
+  try {
+    await supabase.from("admin_requests").insert({
+      user_id: user.id,
+      user_email: user.email,
+      request_type: "study_group",
+      title: `Study Group Request: ${name.trim()}`,
+      details: description?.trim() || `Subject: ${subject}${topic ? ` | Topic: ${topic.trim()}` : ""}`,
+      metadata: { group_id: data.id, name: name.trim(), subject, topic },
+      target_id: String(data.id),
+      target_table: "community_study_groups",
+      status: "pending",
+    });
+
+    await supabase.from("admin_activity_logs").insert({
+      actor_id: user.id,
+      actor_email: user.email,
+      action: "user_request_study_group",
+      target_type: "study_group",
+      target_id: String(data.id),
+      details: `Student requested Study Group "${name.trim()}" in ${subject} (Pending Approval)`,
+    });
+  } catch (err) {
+    console.warn("Failed to log study group activity or create admin request:", err?.message);
+  }
+
+  revalidatePath("/dashboard/admin");
   return { success: true, id: data.id };
 }
 
@@ -843,6 +1145,11 @@ export async function fetchStudyGroups() {
 export async function createStudyGroup({ name, subject, topic, description }) {
   const user = await requireAuth();
   const supabase = createAdminClient();
+
+  const { data: profile } = await supabase.from("profiles").select("is_restricted").eq("id", user.id).single();
+  if (profile?.is_restricted) {
+    throw new Error("Your account has been restricted from creating study groups.");
+  }
 
   if (!name?.trim() || !subject?.trim()) throw new Error("Name and subject are required.");
 
@@ -929,13 +1236,20 @@ export async function fetchPostsForModeration(status = "pending", category = nul
   return data || [];
 }
 
-export async function moderatePostAction(postId, action) {
+export async function moderatePostAction(postId, action, adminResponse = null) {
   const adminUser = await requireAdmin();
   const supabase = createAdminClient();
 
   if (!["approved", "rejected"].includes(action)) {
     throw new Error("Invalid moderation action.");
   }
+
+  // 1. Fetch post to get author_id and title
+  const { data: post } = await supabase
+    .from("community_posts")
+    .select("author_id, title, post_type")
+    .eq("id", postId)
+    .single();
 
   const { error } = await supabase
     .from("community_posts")
@@ -948,8 +1262,49 @@ export async function moderatePostAction(postId, action) {
 
   if (error) throw new Error("Failed to moderate post.");
 
+  // 2. Sync admin_requests and notify user
+  try {
+    await supabase
+      .from("admin_requests")
+      .update({
+        status: action,
+        admin_response: adminResponse?.trim() || null,
+        reviewed_by: adminUser.id,
+        reviewed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("target_id", postId);
+
+    if (post?.author_id) {
+      const isQuestion = post.post_type === "question";
+      const notifTitle = action === "approved" 
+        ? `${isQuestion ? "Question" : "Discussion"} Approved`
+        : `${isQuestion ? "Question" : "Discussion"} Not Approved`;
+
+      let notifMsg = adminResponse?.trim();
+      if (!notifMsg) {
+        notifMsg = action === "approved" 
+          ? `Your ${isQuestion ? "question" : "discussion"} "${post.title}" has been approved and published to the Community!`
+          : `Your ${isQuestion ? "question" : "discussion"} "${post.title}" was not approved.`;
+      }
+
+      await supabase.from("user_notifications").insert({
+        user_id: post.author_id,
+        title: notifTitle,
+        message: notifMsg,
+        type: action === "approved" ? "approved" : "rejected",
+        request_type: isQuestion ? "question_approval" : "discussion_approval",
+        target_url: action === "approved" ? `/dashboard/community/${postId}` : "/dashboard/community",
+        is_read: false,
+        is_popup_dismissed: false,
+      });
+    }
+  } catch (syncErr) {
+    console.warn("Failed to sync admin request or notification for post:", syncErr?.message);
+  }
+
   revalidatePath("/dashboard/community", "layout");
-  revalidatePath("/dashboard/admin/moderation", "layout");
+
   return { success: true };
 }
 
@@ -960,7 +1315,7 @@ export async function deletePostAdmin(postId) {
   await supabase.from("community_posts").delete().eq("id", postId);
 
   revalidatePath("/dashboard/community", "layout");
-  revalidatePath("/dashboard/admin/moderation", "layout");
+
   return { success: true };
 }
 
@@ -1003,7 +1358,7 @@ export async function fetchModerationCounts() {
       .from("community_reports")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending");
-      
+
     const { count: pendingStudyGroups } = await supabase
       .from("community_study_groups")
       .select("id", { count: "exact", head: true })
@@ -1014,8 +1369,8 @@ export async function fetchModerationCounts() {
       .select("id", { count: "exact", head: true })
       .eq("status", "pending");
 
-    return { 
-      pending: pending || 0, 
+    return {
+      pending: pending || 0,
       reports: reports || 0,
       pendingStudyGroups: pendingStudyGroups || 0,
       pendingFeedbacks: pendingFeedbacks || 0
@@ -1035,7 +1390,7 @@ export async function fetchStudyGroupsForModeration(status = "pending") {
     .select("*")
     .eq("is_active", isActive)
     .order("created_at", { ascending: false });
-    
+
   return data || [];
 }
 
@@ -1049,7 +1404,7 @@ export async function moderateStudyGroupAction(groupId, action) {
   if (action === "approve") {
     // 1. Mark as active
     await supabase.from("community_study_groups").update({ is_active: true }).eq("id", groupId);
-    
+
     // 2. Mirror into community_rooms so it can have messages and presence
     await supabase.from("community_rooms").upsert({
       id: group.id,
@@ -1063,9 +1418,9 @@ export async function moderateStudyGroupAction(groupId, action) {
     await supabase.from("community_study_groups").delete().eq("id", groupId);
     await supabase.from("community_rooms").delete().eq("id", groupId);
   }
-  
+
   revalidatePath("/dashboard/community", "layout");
-  revalidatePath("/dashboard/admin/moderation", "layout");
+
   return { success: true };
 }
 
@@ -1097,7 +1452,7 @@ export async function moderateFeedbackAction(feedbackId, action) {
 
   if (error) throw new Error("Failed to moderate feedback.");
 
-  revalidatePath("/dashboard/admin/moderation", "layout");
+
   return { success: true };
 }
 
@@ -1112,7 +1467,7 @@ export async function deleteFeedbackAction(feedbackId) {
 
   if (error) throw new Error("Failed to delete feedback.");
 
-  revalidatePath("/dashboard/admin/moderation", "layout");
+
   return { success: true };
 }
 
@@ -1130,7 +1485,7 @@ export async function updateStudyGroup(groupId, { name, subject, topic, descript
   if (error) throw new Error("Failed to update study group.");
 
   revalidatePath("/dashboard/community", "layout");
-  revalidatePath("/dashboard/admin/moderation", "layout");
+
   return { success: true };
 }
 
@@ -1149,7 +1504,7 @@ export async function createSubjectRoomAction({ name, subject, description }) {
   const { error: subjectError } = await supabase
     .from("community_subjects")
     .insert({ name: cleanSubject });
-  
+
   if (subjectError && subjectError.code !== '23505') { // 23505 is unique violation in Postgres
     console.warn("Failed to create subject, it might already exist:", subjectError);
   }
@@ -1166,7 +1521,7 @@ export async function createSubjectRoomAction({ name, subject, description }) {
   if (error) throw new Error("Failed to create subject room.");
 
   revalidatePath("/dashboard/community", "layout");
-  revalidatePath("/dashboard/admin/moderation", "layout");
+
   return { success: true };
 }
 
@@ -1215,7 +1570,7 @@ export async function removeStudyGroupMember(groupId, userId) {
     .delete()
     .eq("group_id", groupId)
     .eq("user_id", userId);
-    
+
   return { success: true };
 }
 
@@ -1242,9 +1597,20 @@ export async function restrictUserAction(userId) {
   const isAdmin = await checkIsAdmin();
   if (!isAdmin) throw new Error("Unauthorized");
 
+  const { requireAuth, isSuperAdminEmail } = await import("@/lib/auth/session");
+  const actor = await requireAuth();
+  if (actor?.id === userId) {
+    throw new Error("Action Prohibited: You cannot restrict your own account.");
+  }
+
   const supabase = createAdminClient();
+  const { data: targetProfile } = await supabase.from("profiles").select("email").eq("id", userId).maybeSingle();
+  if (targetProfile?.email && isSuperAdminEmail(targetProfile.email)) {
+    throw new Error("Action Prohibited: Super Admin accounts cannot be restricted.");
+  }
+
   const { error } = await supabase.from("profiles").update({ is_restricted: true }).eq("id", userId);
-  
+
   if (error) {
     if (error.code === '42703') {
       throw new Error("The 'is_restricted' column does not exist. Please run the SQL alter command.");
@@ -1296,12 +1662,31 @@ export async function deletePostAction(postId) {
     .single();
 
   if (!post) throw new Error("Post not found.");
-  if (post.author_id !== user.id) throw new Error("Unauthorized: Not your post.");
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .single();
+
+  const isAdmin = profile?.is_admin === true;
+
+  if (post.author_id !== user.id && !isAdmin) {
+    throw new Error("Unauthorized: You do not have permission to delete this post.");
+  }
+
+  // Explicit hard delete of all related records
+  await supabase.from("community_replies").delete().eq("post_id", postId);
+  await supabase.from("community_reactions").delete().eq("post_id", postId);
+  await supabase.from("community_bookmarks").delete().eq("post_id", postId);
+  await supabase.from("community_reports").delete().eq("post_id", postId);
+
+  // Hard delete discussion post row permanently
   const { error } = await supabase.from("community_posts").delete().eq("id", postId);
   if (error) throw new Error("Failed to delete post.");
 
   revalidatePath("/dashboard/community", "layout");
+  revalidatePath("/dashboard/admin");
   return { success: true };
 }
 
@@ -1345,12 +1730,18 @@ export async function fetchMyReplies() {
 /* ── Dynamic Subjects ─────────────────────────────────────────────────────── */
 
 export async function fetchSubjects() {
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("community_subjects")
-    .select("name")
-    .order("name", { ascending: true });
-    
-  if (error) return [];
-  return data?.map(s => s.name) || [];
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase
+      .from("community_subjects")
+      .select("name")
+      .order("name", { ascending: true });
+
+    if (error || !data || data.length === 0) {
+      return COMMUNITY_CATEGORIES;
+    }
+    return data.map(s => s.name);
+  } catch {
+    return COMMUNITY_CATEGORIES;
+  }
 }

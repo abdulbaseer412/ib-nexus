@@ -2,8 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 
 export function createMiddlewareClient(request, response) {
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://zdzeajqqxecyvvfrizmp.supabase.co",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_-J4e0OL2owsV8UyDZuG0IA_PESeq3th",
     {
       cookies: {
         getAll: () => request.cookies.getAll(),
