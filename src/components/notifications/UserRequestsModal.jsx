@@ -15,7 +15,6 @@ import {
   markAllNotificationsReadAction,
   dismissUserNotificationAction,
   deleteUserNotificationAction,
-  submitUserSupportRequestAction
 } from "@/app/dashboard/admin/actions";
 import { createClient } from "@/utils/supabase-browser";
 
@@ -66,14 +65,6 @@ export default function UserRequestsModal({ open, onClose, onMarkAllRead }) {
   const [syncing, setSyncing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [requestFilter, setRequestFilter] = useState("all"); // 'all' | 'pending' | 'approved' | 'rejected'
-
-  // Quick submission mode
-  const [showQuickSubmit, setShowQuickSubmit] = useState(false);
-  const [submitType, setSubmitType] = useState("contact_inbox");
-  const [submitTitle, setSubmitTitle] = useState("");
-  const [submitDetails, setSubmitDetails] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState("");
 
   const loadAllData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true);
@@ -170,40 +161,6 @@ export default function UserRequestsModal({ open, onClose, onMarkAllRead }) {
     }
   };
 
-  // Quick submit handler
-  const handleQuickSubmit = async (e) => {
-    e.preventDefault();
-    if (!submitTitle.trim()) return;
-    setSubmitting(true);
-    setSubmitSuccess("");
-
-    try {
-      const res = await submitUserSupportRequestAction({
-        type: submitType,
-        title: submitTitle.trim(),
-        details: submitDetails.trim(),
-      });
-
-      if (res?.success) {
-        setSubmitSuccess("Your submission has been queued! Moderator feedback will appear here.");
-        setSubmitTitle("");
-        setSubmitDetails("");
-        await loadAllData(true);
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("nexus:notifications-updated"));
-        }
-        setTimeout(() => {
-          setSubmitSuccess("");
-          setShowQuickSubmit(false);
-        }, 2200);
-      }
-    } catch (err) {
-      console.error("Quick submit error:", err);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const unreadCount = useMemo(() => {
     return notifications.filter((n) => !n.is_read).length;
   }, [notifications]);
@@ -242,7 +199,7 @@ export default function UserRequestsModal({ open, onClose, onMarkAllRead }) {
         {/* Top Description & Subheader */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <p className="text-xs text-[var(--muted)] leading-relaxed">
-            Real-time status of your submitted past papers, community posts, feature requests, and moderator decisions.
+            Real-time status of your notifications, submitted items, and moderator decisions.
           </p>
 
           <div className="flex items-center gap-1.5 shrink-0">
@@ -250,7 +207,7 @@ export default function UserRequestsModal({ open, onClose, onMarkAllRead }) {
               type="button"
               onClick={() => loadAllData(false)}
               disabled={syncing}
-              className="p-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-alt)] transition-all shadow-sm"
+              className="p-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] hover:bg-[var(--surface-alt)] transition-all shadow-sm cursor-pointer"
               title="Sync updates"
               aria-label="Sync updates"
             >
@@ -260,99 +217,14 @@ export default function UserRequestsModal({ open, onClose, onMarkAllRead }) {
               <button
                 type="button"
                 onClick={handleMarkAllRead}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white transition-colors border border-[var(--accent)]/20"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--accent)]/10 text-[var(--accent)] hover:bg-[var(--accent)] hover:text-white transition-colors border border-[var(--accent)]/20 cursor-pointer"
               >
                 <CheckCheck size={12} />
                 <span>Mark all read</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setShowQuickSubmit(!showQuickSubmit)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 transition-opacity"
-            >
-              <Plus size={12} />
-              <span>{showQuickSubmit ? "Cancel" : "New Request"}</span>
-            </button>
           </div>
         </div>
-
-        {/* Quick Submit Form Drawer */}
-        {showQuickSubmit && (
-          <form
-            onSubmit={handleQuickSubmit}
-            className="p-4 rounded-2xl border border-[var(--accent)]/30 bg-[var(--surface-alt)] space-y-3 animate-in fade-in slide-in-from-top-2"
-          >
-            <div className="flex items-center justify-between border-b border-[var(--border)] pb-2">
-              <span className="text-xs font-bold text-[var(--foreground)] flex items-center gap-1.5">
-                <Sparkles size={14} className="text-[var(--accent)]" />
-                <span>Submit Quick Request to Moderation Team</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowQuickSubmit(false)}
-                className="text-[var(--muted)] hover:text-[var(--foreground)]"
-              >
-                <X size={14} />
-              </button>
-            </div>
-
-            {submitSuccess ? (
-              <p className="text-xs font-semibold text-emerald-400 p-2 bg-emerald-500/10 rounded-xl">
-                {submitSuccess}
-              </p>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-[var(--muted)]">Type</label>
-                    <select
-                      value={submitType}
-                      onChange={(e) => setSubmitType(e.target.value)}
-                      className="w-full mt-1 px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs text-[var(--foreground)] outline-none"
-                    >
-                      <option value="contact_inbox">Academic Inquiry</option>
-                      <option value="user_report">Bug Report</option>
-                      <option value="feature_request">Feature Proposal</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-bold uppercase text-[var(--muted)]">Subject</label>
-                    <input
-                      type="text"
-                      required
-                      value={submitTitle}
-                      onChange={(e) => setSubmitTitle(e.target.value)}
-                      placeholder="Brief topic..."
-                      className="w-full mt-1 px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs text-[var(--foreground)] outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] font-bold uppercase text-[var(--muted)]">Details</label>
-                  <textarea
-                    rows={2}
-                    value={submitDetails}
-                    onChange={(e) => setSubmitDetails(e.target.value)}
-                    placeholder="Provide context or explanation..."
-                    className="w-full mt-1 px-2.5 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-xs text-[var(--foreground)] outline-none resize-none"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50"
-                  >
-                    {submitting ? "Sending..." : "Submit to Moderators"}
-                  </button>
-                </div>
-              </>
-            )}
-          </form>
-        )}
 
         {/* Search inside modal */}
         <div className="relative">
@@ -633,24 +505,33 @@ export default function UserRequestsModal({ open, onClose, onMarkAllRead }) {
 
             {/* EMPTY STATE */}
             {filteredNotifications.length === 0 && filteredRequests.length === 0 && (
-              <div className="py-14 text-center text-[var(--muted)] text-xs space-y-3 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)]/40 p-6">
+              <div className="py-14 text-center text-[var(--muted)] text-xs space-y-3.5 rounded-2xl border border-dashed border-[var(--border)] bg-[var(--surface)]/40 p-6">
                 <Inbox className="w-10 h-10 mx-auto opacity-40 mb-1" />
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <p className="font-bold text-sm text-[var(--foreground)]">No activity found</p>
-                  <p>
+                  <p className="max-w-md mx-auto leading-relaxed text-[var(--muted)] text-xs">
                     {searchQuery
                       ? `No updates or requests match "${searchQuery}".`
-                      : "You haven't submitted any study material requests or received moderator updates yet."}
+                      : "You have no active notifications or moderator alerts. To submit past papers, share community resources, or contact administration, use their dedicated platform sections."}
                   </p>
                 </div>
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowQuickSubmit(true)}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[var(--accent)] text-white hover:opacity-90"
+                <div className="pt-2 flex items-center justify-center gap-2 flex-wrap">
+                  <Link
+                    href="/dashboard/resources"
+                    onClick={onClose}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-[var(--surface-alt)] hover:bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] transition-colors inline-flex items-center gap-1.5 shadow-sm"
                   >
-                    Submit a Request or Bug
-                  </button>
+                    <span>Submit Past Papers & Notes</span>
+                    <ExternalLink size={11} />
+                  </Link>
+                  <Link
+                    href="/help"
+                    onClick={onClose}
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-[var(--surface-alt)] hover:bg-[var(--surface)] border border-[var(--border)] text-[var(--foreground)] transition-colors inline-flex items-center gap-1.5 shadow-sm"
+                  >
+                    <span>Help Centre & Support</span>
+                    <ExternalLink size={11} />
+                  </Link>
                 </div>
               </div>
             )}
