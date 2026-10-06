@@ -37,19 +37,20 @@ function formatDate() {
 function StatCard({ icon: Icon, label, value, colorVar }) {
   return (
     <div 
+      suppressHydrationWarning
       style={{ '--c': colorVar }} 
       className="relative flex flex-col p-5 rounded-[1.25rem] border border-[var(--border)] bg-[var(--card)] shadow-sm transition-all hover:shadow-[0_8px_20px_color-mix(in_srgb,var(--c)_10%,transparent)] hover:border-[color:var(--c)]/40 overflow-hidden group"
     >
-      <div className="absolute top-0 left-0 w-full h-[3px] bg-[color:var(--c)] opacity-80" />
-      <div className="absolute inset-0 bg-[color:var(--c)] opacity-[0.02] pointer-events-none group-hover:opacity-[0.04] transition-opacity" />
-      <div className="relative flex items-center gap-3 mb-4">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-[color:var(--c)]/10 text-[color:var(--c)] border border-[color:var(--c)]/20 shadow-[0_1px_2px_rgba(0,0,0,0.02)_inset]">
+      <div suppressHydrationWarning className="absolute top-0 left-0 w-full h-[3px] bg-[color:var(--c)] opacity-80" />
+      <div suppressHydrationWarning className="absolute inset-0 bg-[color:var(--c)] opacity-[0.02] pointer-events-none group-hover:opacity-[0.04] transition-opacity" />
+      <div suppressHydrationWarning className="relative flex items-center gap-3 mb-4">
+        <div suppressHydrationWarning className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] bg-[color:var(--c)]/10 text-[color:var(--c)] border border-[color:var(--c)]/20 shadow-[0_1px_2px_rgba(0,0,0,0.02)_inset]">
           <Icon size={18} strokeWidth={2.5} />
         </div>
-        <p className="text-[13px] font-semibold text-[var(--muted)]">{label}</p>
+        <p suppressHydrationWarning className="text-[13px] font-semibold text-[var(--muted)]">{label}</p>
       </div>
-      <div className="relative">
-        <p className="text-3xl font-bold tracking-tight text-[color:var(--c)] drop-shadow-sm">{value}</p>
+      <div suppressHydrationWarning className="relative">
+        <p suppressHydrationWarning className="text-3xl font-bold tracking-tight text-[color:var(--c)] drop-shadow-sm">{value}</p>
       </div>
     </div>
   );
@@ -273,18 +274,18 @@ export default async function Dashboard() {
       </header>
 
       {/* Beta Welcome Banner */}
-      <div className="relative overflow-hidden rounded-2xl bg-[var(--card)] dark:bg-[#080d17] bg-gradient-to-r from-[color-mix(in_srgb,var(--accent)_6%,transparent)] via-[color-mix(in_srgb,var(--info)_4%,transparent)] to-[color-mix(in_srgb,var(--ai)_6%,transparent)] border border-[var(--border-subtle)] p-5 sm:p-6 flex flex-col sm:flex-row gap-5 sm:items-center group hover:border-[var(--accent)]/30 transition-all duration-500 hover:shadow-[0_8px_30px_color-mix(in_srgb,var(--accent)_10%,transparent)]">
-        <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[var(--accent)] via-[var(--info)] to-[var(--ai)] opacity-80" />
-        <div className="w-12 h-12 rounded-[14px] bg-[var(--surface-alt)] shadow-sm border border-[var(--accent)]/20 text-[var(--accent)] flex items-center justify-center shrink-0">
+      <div suppressHydrationWarning className="relative overflow-hidden rounded-2xl bg-[var(--card)] dark:bg-[#080d17] bg-gradient-to-r from-[color-mix(in_srgb,var(--accent)_6%,transparent)] via-[color-mix(in_srgb,var(--info)_4%,transparent)] to-[color-mix(in_srgb,var(--ai)_6%,transparent)] border border-[var(--border-subtle)] p-5 sm:p-6 flex flex-col sm:flex-row gap-5 sm:items-center group hover:border-[var(--accent)]/30 transition-all duration-500 hover:shadow-[0_8px_30px_color-mix(in_srgb,var(--accent)_10%,transparent)]">
+        <div suppressHydrationWarning className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-[var(--accent)] via-[var(--info)] to-[var(--ai)] opacity-80" />
+        <div suppressHydrationWarning className="w-12 h-12 rounded-[14px] bg-[var(--surface-alt)] shadow-sm border border-[var(--accent)]/20 text-[var(--accent)] flex items-center justify-center shrink-0">
           <Sparkles size={22} strokeWidth={2.5} />
         </div>
-        <div className="flex-1">
-          <h2 className="text-[15px] font-bold text-[var(--foreground)]">Welcome to the IB Nexus Beta</h2>
-          <p className="text-[13px] font-medium text-[var(--text-secondary)] mt-1 max-w-3xl leading-relaxed">
+        <div suppressHydrationWarning className="flex-1">
+          <h2 suppressHydrationWarning className="text-[15px] font-bold text-[var(--foreground)]">Welcome to the IB Nexus Beta</h2>
+          <p suppressHydrationWarning className="text-[13px] font-medium text-[var(--text-secondary)] mt-1 max-w-3xl leading-relaxed">
             We are brand new and constantly evolving. If you spot bugs or have ideas for features you'd love to see, let us know! 
           </p>
         </div>
-        <Link href="/settings/help" className="btn btn-secondary text-xs px-4 py-2 bg-[var(--card)] shrink-0 self-start sm:self-auto shadow-sm border border-[var(--border)] hover:border-[var(--info)]/40 hover:text-[var(--info)]">
+        <Link suppressHydrationWarning href="/settings/help" className="btn btn-secondary text-xs px-4 py-2 bg-[var(--card)] shrink-0 self-start sm:self-auto shadow-sm border border-[var(--border)] hover:border-[var(--info)]/40 hover:text-[var(--info)]">
           Send Feedback <ChevronRight size={14} />
         </Link>
       </div>

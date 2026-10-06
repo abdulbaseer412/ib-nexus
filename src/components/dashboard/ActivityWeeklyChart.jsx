@@ -18,9 +18,9 @@ export default function ActivityWeeklyChart({ days = [], totalTimeStr = "0 hrs" 
   ];
 
   return (
-    <div className="relative pt-2">
+    <div suppressHydrationWarning className="relative pt-2">
       {/* Chart Bars */}
-      <div className="flex items-end justify-between gap-2 sm:gap-3" style={{ height: 120 }}>
+      <div suppressHydrationWarning className="flex items-end justify-between gap-2 sm:gap-3" style={{ height: 120 }}>
         {chartDays.map((d, i) => {
           const hasActivity = d.actionCount > 0;
           const isHovered = hoveredIdx === i;
