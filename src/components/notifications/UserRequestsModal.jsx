@@ -24,10 +24,14 @@ const TYPE_CONFIG = {
   question_approval: { label: "Question", icon: HelpCircle, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
   study_group: { label: "Study Group", icon: Users, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
   user_report: { label: "Bug Report", icon: Bug, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
+  technical_bug: { label: "Bug Report", icon: Bug, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
   contact_inbox: { label: "Support Inquiry", icon: BellRing, color: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
   feature_request: { label: "Feature Suggestion", icon: Lightbulb, color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
+  past_paper_request: { label: "Study Material Request", icon: FileText, color: "text-teal-400 bg-teal-500/10 border-teal-500/20" },
   approved: { label: "Approved", icon: CheckCircle2, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
   rejected: { label: "Action Needed", icon: AlertCircle, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
+  in_progress: { label: "In Progress", icon: Clock, color: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
+  resolved: { label: "Resolved", icon: CheckCircle2, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
   info: { label: "System Update", icon: Sparkles, color: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
 };
 
@@ -345,7 +349,7 @@ export default function UserRequestsModal({ open, onClose, onMarkAllRead }) {
                   </p>
                 )}
                 {filteredNotifications.map((notif) => {
-                  const cfg = TYPE_CONFIG[notif.type] || TYPE_CONFIG.info;
+                  const cfg = TYPE_CONFIG[notif.request_type] || TYPE_CONFIG[notif.type] || TYPE_CONFIG.info;
                   const IconComp = cfg.icon;
 
                   return (

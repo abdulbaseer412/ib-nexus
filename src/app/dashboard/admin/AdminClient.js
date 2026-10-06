@@ -1765,6 +1765,7 @@ export default function AdminClient({
               let sectionBadge = undefined;
 
               if (section.id === "models") sectionBadge = modelConfigs.length;
+              if (section.id === "admin_requests") sectionBadge = "Inbox";
               if (section.id === "feedback") {
                 const count = aiFeedback.filter(f => f.rating === 'negative' && f.admin_status !== 'resolved').length;
                 if (count > 0) sectionBadge = count;
@@ -1820,6 +1821,22 @@ export default function AdminClient({
                 <span>Admin Quick Actions</span>
               </h2>
               <div className="grid grid-cols-1 gap-3">
+                <button
+                  onClick={() => setActiveTab("admin_requests")}
+                  className="flex items-center justify-between p-3.5 rounded-xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-transparent hover:from-amber-500/20 hover:via-indigo-500/20 border border-amber-500/30 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <BellRing size={18} className="text-amber-400" />
+                    <div className="text-left">
+                      <span className="text-sm font-bold text-[var(--foreground)] block">User Requests & Tickets Hub</span>
+                      <span className="text-[11px] text-[var(--muted)]">Review student proposals, bug reports & send direct replies</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Open Inbox</span>
+                    <ArrowRight size={16} className="text-[var(--muted)] group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </button>
                 <button
                   onClick={() => setActiveTab("users")}
                   className="flex items-center justify-between p-3.5 rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] transition-all group"

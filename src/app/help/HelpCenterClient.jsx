@@ -696,22 +696,27 @@ export default function HelpCenterClient({ initialUser = null }) {
     setModalSuccess("");
 
     try {
+      const isBug = type === "bug";
       const res = await submitUserSupportRequestAction({
-        type: type === "bug" ? "user_report" : "contact_inbox",
-        title: `${type === "bug" ? "Bug Report: " : "Feature Suggestion: "}${reqTitle.trim()}`,
+        type: isBug ? "technical_bug" : "feature_request",
+        title: `${isBug ? "Bug Report: " : "Feature Suggestion: "}${reqTitle.trim()}`,
         details: reqDetails.trim() || "No additional details provided.",
         metadata: {
           category: reqCategory,
-          type,
+          type: isBug ? "bug" : "feature",
+          email: initialUser?.email || null,
           submitted_at: new Date().toISOString(),
         }
       });
 
       if (res?.success) {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("nexus:notifications-updated"));
+        }
         setModalSuccess(
-          type === "bug"
-            ? "Your bug report has been logged and forwarded to our engineering team! You can track status in your top notification bar."
-            : "Your feature suggestion was received! Our moderation team will review it and notify you via your top notification bar."
+          isBug
+            ? "Your bug report has been forwarded to the admin center! You will receive status updates in your top notification bar."
+            : "Your feature suggestion was received! The admin team will review it and reply directly to your notification bar."
         );
         setReqTitle("");
         setReqDetails("");

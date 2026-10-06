@@ -5,19 +5,36 @@ import {
   BellRing, CheckCircle2, XCircle, Clock, ShieldCheck,
   Search, Filter, RefreshCw, FileText, MessageSquare,
   Users, AlertCircle, HelpCircle, ArrowRight, Check,
-  ChevronDown, X, Pencil, ExternalLink, Sparkles
+  ChevronDown, X, Pencil, ExternalLink, Sparkles,
+  Lightbulb, Bug, Trash2, Send, MessageCircle
 } from "lucide-react";
 import { Button, Modal, Spinner } from "@/components/ui";
-import { fetchAdminRequestsAction, resolveAdminRequestAction } from "./actions";
+import {
+  fetchAdminRequestsAction,
+  resolveAdminRequestAction,
+  replyToUserRequestAction,
+  deleteAdminRequestAction
+} from "./actions";
 
 const TYPE_CONFIG = {
   document_upload: { label: "Document Upload", icon: FileText, color: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
   discussion_approval: { label: "Discussion", icon: MessageSquare, color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
   question_approval: { label: "Question", icon: HelpCircle, color: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
   study_group: { label: "Study Group", icon: Users, color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-  user_report: { label: "User Report", icon: AlertCircle, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
+  user_report: { label: "Bug Report", icon: Bug, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
+  technical_bug: { label: "Bug Report", icon: Bug, color: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
   contact_inbox: { label: "Support Inquiry", icon: BellRing, color: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
+  feature_request: { label: "Feature Suggestion", icon: Lightbulb, color: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
+  past_paper_request: { label: "Study Material", icon: FileText, color: "text-teal-400 bg-teal-500/10 border-teal-500/20" },
 };
+
+const QUICK_REPLY_TEMPLATES = [
+  { label: "Roadmap Added", text: "Thank you for the proposal! We have evaluated your suggestion and added it to our product development roadmap." },
+  { label: "Bug Fixed", text: "Thank you for reporting this issue. Our engineering team has deployed a fix. Please hard-refresh your browser to see the update." },
+  { label: "Investigating", text: "Thank you for reaching out. We are currently investigating this report and will update your ticket once resolved." },
+  { label: "Approved & Live", text: "Your submission has been reviewed, approved, and published on IB Nexus for the student community!" },
+  { label: "Needs Detail", text: "Thank you for your message. Could you please provide a few additional details or steps to help us reproduce the issue?" },
+];
 
 function fmtDate(iso) {
   if (!iso) return "Unknown date";
@@ -37,14 +54,20 @@ export default function AdminRequestsTab() {
   const [banner, setBanner] = useState(null);
 
   // Filters
-  const [statusFilter, setStatusFilter] = useState("pending"); // 'all' | 'pending' | 'approved' | 'rejected' | 'resolved'
+  const [statusFilter, setStatusFilter] = useState("all"); // 'all' | 'pending' | 'in_progress' | 'approved' | 'rejected' | 'resolved'
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
+
+  // Reply Modal
+  const [replyModal, setReplyModal] = useState(null); // { request }
+  const [replyMessage, setReplyMessage] = useState("");
+  const [replyStatus, setReplyStatus] = useState("resolved");
 
   // Action Modals
   const [actionModal, setActionModal] = useState(null); // { request, action: 'approve' | 'reject' | 'resolve' }
   const [adminNote, setAdminNote] = useState("");
   const [editModal, setEditModal] = useState(null); // { request, editData }
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const loadRequests = useCallback(async () => {
@@ -67,10 +90,11 @@ export default function AdminRequestsTab() {
 
   const stats = useMemo(() => {
     const pending = requests.filter(r => r.status === "pending").length;
+    const inProgress = requests.filter(r => r.status === "in_progress").length;
     const approved = requests.filter(r => r.status === "approved").length;
     const rejected = requests.filter(r => r.status === "rejected").length;
     const resolved = requests.filter(r => r.status === "resolved").length;
-    return { pending, approved, rejected, resolved, total: requests.length };
+    return { pending, inProgress, approved, rejected, resolved, total: requests.length };
   }, [requests]);
 
   const filtered = useMemo(() => {
@@ -88,6 +112,35 @@ export default function AdminRequestsTab() {
       return true;
     });
   }, [requests, statusFilter, typeFilter, search]);
+
+  const handleSendReply = async () => {
+    if (!replyModal) return;
+    if (!replyMessage.trim()) {
+      alert("Please enter a reply message for the student.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const { request } = replyModal;
+      const res = await replyToUserRequestAction({
+        requestId: request.id,
+        replyMessage: replyMessage.trim(),
+        newStatus: replyStatus,
+      });
+
+      if (!res.success) throw new Error(res.error || "Failed to send reply");
+
+      setRequests(prev => prev.map(r => r.id === request.id ? res.request : r));
+      setBanner(`Reply sent to ${request.user_name || "student"}! Notification sent to their notification tray.`);
+      setTimeout(() => setBanner(null), 6000);
+      setReplyModal(null);
+      setReplyMessage("");
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleConfirmAction = async () => {
     if (!actionModal) return;
@@ -140,6 +193,23 @@ export default function AdminRequestsTab() {
     }
   };
 
+  const handleDeleteRequest = async () => {
+    if (!deleteConfirmModal) return;
+    setSubmitting(true);
+    try {
+      const res = await deleteAdminRequestAction({ requestId: deleteConfirmModal.id });
+      if (!res.success) throw new Error(res.error || "Failed to delete request");
+      setRequests(prev => prev.filter(r => r.id !== deleteConfirmModal.id));
+      setBanner("Request record deleted successfully.");
+      setTimeout(() => setBanner(null), 4000);
+      setDeleteConfirmModal(null);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Banner */}
@@ -148,13 +218,13 @@ export default function AdminRequestsTab() {
           <div className="space-y-1">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold uppercase tracking-wider">
               <BellRing className="w-3.5 h-3.5" />
-              <span>Unified Moderation & Approval Engine</span>
+              <span>Unified Admin Requests & Response Engine</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-[var(--foreground)]">
-              Central Admin Requests Hub
+              Central Admin Requests & Tickets Hub
             </h2>
             <p className="text-sm text-[var(--muted)] max-w-2xl leading-relaxed">
-              Review and act on all student submissions requiring administrator communication, vetting, or responses. All approvals and rejections automatically update content status and send beautiful user notifications.
+              Receive and manage student feature proposals, technical bug reports, past paper requests, and moderation inquiries. Type replies and update statuses — students instantly receive notifications and responses in their top notification bar.
             </p>
           </div>
 
@@ -171,7 +241,7 @@ export default function AdminRequestsTab() {
         </div>
 
         {/* Stats Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 pt-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 pt-2">
           <button
             onClick={() => setStatusFilter("pending")}
             className={`p-4 rounded-2xl border text-left transition-all ${
@@ -181,11 +251,27 @@ export default function AdminRequestsTab() {
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Pending Review</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Pending</span>
               <Clock className="w-4 h-4 text-amber-400" />
             </div>
             <p className="text-2xl font-black text-[var(--foreground)] mt-2">{stats.pending}</p>
-            <p className="text-[11px] text-[var(--muted)] mt-0.5">Awaiting decision</p>
+            <p className="text-[11px] text-[var(--muted)] mt-0.5">Awaiting reply</p>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter("in_progress")}
+            className={`p-4 rounded-2xl border text-left transition-all ${
+              statusFilter === "in_progress"
+                ? "border-sky-500 bg-sky-500/10 ring-1 ring-sky-500/50"
+                : "border-sky-500/20 bg-sky-500/[0.06] hover:bg-sky-500/10"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-sky-400">In Progress</span>
+              <Sparkles className="w-4 h-4 text-sky-400" />
+            </div>
+            <p className="text-2xl font-black text-[var(--foreground)] mt-2">{stats.inProgress}</p>
+            <p className="text-[11px] text-[var(--muted)] mt-0.5">Being addressed</p>
           </button>
 
           <button
@@ -201,39 +287,39 @@ export default function AdminRequestsTab() {
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
             </div>
             <p className="text-2xl font-black text-[var(--foreground)] mt-2">{stats.approved}</p>
-            <p className="text-[11px] text-[var(--muted)] mt-0.5">Published & active</p>
-          </button>
-
-          <button
-            onClick={() => setStatusFilter("rejected")}
-            className={`p-4 rounded-2xl border text-left transition-all ${
-              statusFilter === "rejected"
-                ? "border-rose-500 bg-rose-500/10 ring-1 ring-rose-500/50"
-                : "border-rose-500/20 bg-rose-500/[0.06] hover:bg-rose-500/10"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">Rejected</span>
-              <XCircle className="w-4 h-4 text-rose-400" />
-            </div>
-            <p className="text-2xl font-black text-[var(--foreground)] mt-2">{stats.rejected}</p>
-            <p className="text-[11px] text-[var(--muted)] mt-0.5">With feedback reason</p>
+            <p className="text-[11px] text-[var(--muted)] mt-0.5">Published & live</p>
           </button>
 
           <button
             onClick={() => setStatusFilter("resolved")}
             className={`p-4 rounded-2xl border text-left transition-all ${
               statusFilter === "resolved"
-                ? "border-sky-500 bg-sky-500/10 ring-1 ring-sky-500/50"
-                : "border-sky-500/20 bg-sky-500/[0.06] hover:bg-sky-500/10"
+                ? "border-teal-500 bg-teal-500/10 ring-1 ring-teal-500/50"
+                : "border-teal-500/20 bg-teal-500/[0.06] hover:bg-teal-500/10"
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-sky-400">Resolved</span>
-              <ShieldCheck className="w-4 h-4 text-sky-400" />
+              <span className="text-xs font-bold uppercase tracking-wider text-teal-400">Resolved</span>
+              <ShieldCheck className="w-4 h-4 text-teal-400" />
             </div>
             <p className="text-2xl font-black text-[var(--foreground)] mt-2">{stats.resolved}</p>
-            <p className="text-[11px] text-[var(--muted)] mt-0.5">Inquiries & reports</p>
+            <p className="text-[11px] text-[var(--muted)] mt-0.5">Replied & closed</p>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter("all")}
+            className={`p-4 rounded-2xl border text-left transition-all ${
+              statusFilter === "all"
+                ? "border-[var(--accent)] bg-[var(--accent)]/10 ring-1 ring-[var(--accent)]/50"
+                : "border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--surface-hover)]"
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-[var(--foreground)]">Total Items</span>
+              <BellRing className="w-4 h-4 text-[var(--accent)]" />
+            </div>
+            <p className="text-2xl font-black text-[var(--foreground)] mt-2">{stats.total}</p>
+            <p className="text-[11px] text-[var(--muted)] mt-0.5">All tickets</p>
           </button>
         </div>
       </div>
@@ -263,7 +349,7 @@ export default function AdminRequestsTab() {
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
           <input
             type="text"
-            placeholder="Search by title, student name, email, or content..."
+            placeholder="Search by title, student name, email, or details..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="field w-full pl-10 pr-4 py-2.5 text-sm"
@@ -278,6 +364,7 @@ export default function AdminRequestsTab() {
           >
             <option value="all">All Statuses ({stats.total})</option>
             <option value="pending">Pending ({stats.pending})</option>
+            <option value="in_progress">In Progress ({stats.inProgress})</option>
             <option value="approved">Approved ({stats.approved})</option>
             <option value="rejected">Rejected ({stats.rejected})</option>
             <option value="resolved">Resolved ({stats.resolved})</option>
@@ -289,12 +376,14 @@ export default function AdminRequestsTab() {
             className="field text-xs font-semibold py-2.5 px-3"
           >
             <option value="all">All Request Types</option>
+            <option value="feature_request">Feature Suggestions</option>
+            <option value="technical_bug">Bug Reports</option>
+            <option value="contact_inbox">Support Inquiries</option>
             <option value="document_upload">Document Uploads</option>
             <option value="discussion_approval">Discussions</option>
             <option value="question_approval">Questions</option>
             <option value="study_group">Study Groups</option>
-            <option value="user_report">User Reports</option>
-            <option value="contact_inbox">Support Inquiries</option>
+            <option value="past_paper_request">Study Material</option>
           </select>
         </div>
       </div>
@@ -314,7 +403,7 @@ export default function AdminRequestsTab() {
           <p className="text-xs text-[var(--muted)] mt-1 max-w-sm mx-auto">
             {statusFilter !== "all" || typeFilter !== "all" || search
               ? "Try adjusting your filters or search keywords."
-              : "No user requests or moderation tasks require attention right now."}
+              : "No user requests or tickets require attention right now."}
           </p>
         </div>
       ) : (
@@ -340,13 +429,15 @@ export default function AdminRequestsTab() {
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
                         r.status === "pending"
                           ? "bg-amber-500/10 text-amber-400 border border-amber-500/20 animate-pulse"
+                          : r.status === "in_progress"
+                          ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                           : r.status === "approved"
                           ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                           : r.status === "rejected"
                           ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
-                          : "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                          : "bg-teal-500/10 text-teal-400 border border-teal-500/20"
                       }`}>
-                        {r.status}
+                        {r.status === "in_progress" ? "In Progress" : r.status}
                       </span>
 
                       <span className="text-[11px] text-[var(--muted)]">
@@ -359,19 +450,24 @@ export default function AdminRequestsTab() {
                     </h4>
 
                     {r.details && (
-                      <p className="text-xs text-[var(--muted)] leading-relaxed line-clamp-2">
+                      <p className="text-xs text-[var(--muted)] leading-relaxed whitespace-pre-wrap">
                         {r.details}
                       </p>
                     )}
 
                     <div className="text-[11px] text-[var(--muted)] flex items-center gap-2 pt-1">
-                      <span>Submitted by: <strong className="text-[var(--foreground)]">{r.user_name || "User"}</strong></span>
+                      <span>Submitted by: <strong className="text-[var(--foreground)]">{r.user_name || "Student"}</strong></span>
                       {r.user_email && <span>({r.user_email})</span>}
                     </div>
 
                     {/* Metadata Pill Strip if present */}
                     {r.metadata && typeof r.metadata === "object" && Object.keys(r.metadata).length > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap pt-1 text-[11px]">
+                        {r.metadata.category && (
+                          <span className="px-2 py-0.5 rounded bg-[var(--surface)] border border-[var(--border)] font-medium text-[var(--foreground)]">
+                            Category: {r.metadata.category}
+                          </span>
+                        )}
                         {r.metadata.programme && (
                           <span className="px-2 py-0.5 rounded bg-[var(--surface)] border border-[var(--border)] uppercase font-semibold text-[var(--foreground)]">
                             {r.metadata.programme}
@@ -382,9 +478,9 @@ export default function AdminRequestsTab() {
                             {r.metadata.subject}
                           </span>
                         )}
-                        {r.metadata.category && (
+                        {r.metadata.level && (
                           <span className="px-2 py-0.5 rounded bg-[var(--surface)] border border-[var(--border)] font-medium text-[var(--foreground)]">
-                            {r.metadata.category}
+                            {r.metadata.level}
                           </span>
                         )}
                         {r.metadata.file_name && (
@@ -397,15 +493,37 @@ export default function AdminRequestsTab() {
 
                     {/* Admin Response Note */}
                     {r.admin_response && (
-                      <div className="p-2.5 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs text-[var(--foreground)] mt-2">
-                        <span className="font-bold text-[var(--muted)] block text-[10px] uppercase tracking-wider mb-0.5">Admin Response:</span>
-                        <span>{r.admin_response}</span>
+                      <div className="p-3 rounded-xl bg-indigo-500/5 border border-indigo-500/20 text-xs text-[var(--foreground)] mt-2 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-indigo-400 block text-[10px] uppercase tracking-wider">
+                            Admin Response Sent to Student:
+                          </span>
+                          {r.reviewed_at && (
+                            <span className="text-[10px] text-[var(--muted)]">{fmtDate(r.reviewed_at)}</span>
+                          )}
+                        </div>
+                        <p className="leading-relaxed whitespace-pre-wrap">{r.admin_response}</p>
                       </div>
                     )}
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-start pt-2 sm:pt-0">
+                  {/* Actions Strip */}
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-start pt-2 sm:pt-0 flex-wrap sm:flex-nowrap">
+                    {/* Primary: Direct Reply to User */}
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={() => {
+                        setReplyModal({ request: r });
+                        setReplyMessage(r.admin_response || "");
+                        setReplyStatus(r.status === "pending" ? "resolved" : r.status);
+                      }}
+                      className="text-xs h-9 px-3.5 bg-[var(--accent)] hover:opacity-90 shadow-sm"
+                    >
+                      <MessageSquare size={13} className="mr-1.5" />
+                      <span>{r.admin_response ? "Update Reply" : "Reply to User"}</span>
+                    </Button>
+
                     {/* If document upload or post, allow Admin to edit relevant details before approving */}
                     {(r.request_type === "document_upload" || r.request_type === "discussion_approval" || r.request_type === "question_approval") && isPending && (
                       <Button
@@ -425,22 +543,22 @@ export default function AdminRequestsTab() {
                         })}
                         className="text-xs h-9 px-3"
                       >
-                        <Pencil size={13} className="mr-1" /> Edit & Approve
+                        <Pencil size={13} className="mr-1" /> Edit
                       </Button>
                     )}
 
-                    {isPending ? (
+                    {isPending && (
                       <>
                         <Button
-                          variant="primary"
+                          variant="secondary"
                           size="sm"
                           onClick={() => {
                             setActionModal({ request: r, action: "approve" });
                             setAdminNote("");
                           }}
-                          className="text-xs h-9 px-3.5 bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/10"
+                          className="text-xs h-9 px-3 text-emerald-400 hover:bg-emerald-500/10 border-emerald-500/20"
                         >
-                          <Check size={14} className="mr-1" /> Approve
+                          <Check size={13} className="mr-1" /> Approve
                         </Button>
 
                         <Button
@@ -452,28 +570,122 @@ export default function AdminRequestsTab() {
                           }}
                           className="text-xs h-9 px-3 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
                         >
-                          <X size={14} className="mr-1" /> Reject
+                          <X size={13} className="mr-1" /> Reject
                         </Button>
                       </>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setActionModal({ request: r, action: r.status === "approved" ? "reject" : "approve" });
-                          setAdminNote(r.admin_response || "");
-                        }}
-                        className="text-xs h-8 px-2.5 text-[var(--muted)]"
-                      >
-                        Change Status
-                      </Button>
                     )}
+
+                    {/* Delete Option */}
+                    <button
+                      type="button"
+                      onClick={() => setDeleteConfirmModal(r)}
+                      className="p-2 text-[var(--muted)] hover:text-rose-400 transition-colors rounded-xl hover:bg-rose-500/10"
+                      title="Delete ticket record"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {/* REPLY MODAL: ADMIN REPLIES DIRECTLY TO USER */}
+      {replyModal && (
+        <Modal
+          open={Boolean(replyModal)}
+          onClose={() => setReplyModal(null)}
+          title={`Reply to ${replyModal.request.user_name || "Student"}`}
+        >
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border)] text-xs space-y-1.5">
+              <div className="flex items-center justify-between text-[var(--muted)]">
+                <span className="font-semibold text-[var(--foreground)]">{replyModal.request.title}</span>
+                <span>{fmtDate(replyModal.request.created_at)}</span>
+              </div>
+              <p className="text-[var(--muted)] line-clamp-3">{replyModal.request.details}</p>
+              <div className="text-[11px] text-[var(--muted)] pt-1 flex items-center gap-2">
+                <span>Student: <strong>{replyModal.request.user_name || "Student"}</strong></span>
+                {replyModal.request.user_email && <span>({replyModal.request.user_email})</span>}
+              </div>
+            </div>
+
+            {/* Quick Templates */}
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] block mb-1.5">
+                Quick Response Templates
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_REPLY_TEMPLATES.map((tmpl, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setReplyMessage(tmpl.text)}
+                    className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--foreground)] transition-colors"
+                  >
+                    {tmpl.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Status Picker */}
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] block mb-1">
+                Update Ticket Status
+              </label>
+              <select
+                value={replyStatus}
+                onChange={(e) => setReplyStatus(e.target.value)}
+                className="field w-full text-xs py-2"
+              >
+                <option value="resolved">Resolved (Recommended — issue resolved or inquiry answered)</option>
+                <option value="in_progress">In Progress (Under review or active development)</option>
+                <option value="approved">Approved (Accepted suggestion / published content)</option>
+                <option value="rejected">Declined / Needs Revision</option>
+                <option value="pending">Keep Pending (Send note without changing status)</option>
+              </select>
+            </div>
+
+            {/* Custom Reply Textarea */}
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[var(--muted)] block mb-1">
+                Your Reply Message *
+              </label>
+              <textarea
+                value={replyMessage}
+                onChange={(e) => setReplyMessage(e.target.value)}
+                placeholder="Type your message to the student. They will receive this in their notification tray..."
+                className="field w-full min-h-[110px] text-xs sm:text-sm"
+                rows={4}
+              />
+              <p className="text-[11px] text-[var(--muted)] mt-1">
+                This response will be saved and delivered directly to the student&apos;s notification bar under &ldquo;My Requests & Moderator Updates&rdquo;.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[var(--border)]">
+              <Button variant="ghost" onClick={() => setReplyModal(null)} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleSendReply}
+                disabled={submitting || !replyMessage.trim()}
+                className="bg-[var(--accent)] text-white hover:opacity-90"
+              >
+                {submitting ? <Spinner /> : (
+                  <>
+                    <Send size={13} className="mr-1.5" />
+                    <span>Send Reply & Notify Student</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* Decision / Action Modal */}
@@ -635,6 +847,34 @@ export default function AdminRequestsTab() {
                 className="bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/10"
               >
                 {submitting ? <Spinner /> : "Save Changes & Approve"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmModal && (
+        <Modal
+          open={Boolean(deleteConfirmModal)}
+          onClose={() => setDeleteConfirmModal(null)}
+          title="Delete Ticket Record"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--muted)]">
+              Are you sure you want to delete the record for &ldquo;{deleteConfirmModal.title}&rdquo;? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setDeleteConfirmModal(null)} disabled={submitting}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleDeleteRequest}
+                disabled={submitting}
+                className="bg-rose-600 hover:bg-rose-500"
+              >
+                {submitting ? <Spinner /> : "Confirm Delete"}
               </Button>
             </div>
           </div>

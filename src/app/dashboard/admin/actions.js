@@ -1,6 +1,7 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createServerClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth/session";
 import { revalidatePath } from "next/cache";
 import { getMergedModelRegistry } from "@/lib/ai/models";
@@ -2255,16 +2256,33 @@ export async function resolveAdminRequestAction({
 
     if (updateErr) throw updateErr;
 
-    // 4. Create user notification if user_id is known
-    if (request.user_id) {
+    // 4. Create user notification if target user is known
+    let targetUserId = request.user_id;
+    if (!targetUserId && request.user_email) {
+      try {
+        const { data: matchedProfile } = await admin
+          .from("profiles")
+          .select("id")
+          .ilike("email", request.user_email)
+          .maybeSingle();
+        if (matchedProfile?.id) {
+          targetUserId = matchedProfile.id;
+        }
+      } catch (profErr) {}
+    }
+
+    if (targetUserId) {
       const typeLabelMap = {
         document_upload: "Document Upload",
         discussion_approval: "Community Discussion",
         question_approval: "Community Question",
         study_group: "Study Group Request",
         room_request: "Room Request",
-        user_report: "Moderation Report",
+        user_report: "Bug Report",
+        technical_bug: "Bug Report",
+        feature_request: "Feature Suggestion",
         contact_inbox: "Support Inquiry",
+        past_paper_request: "Study Material Request",
       };
       const readableType = typeLabelMap[reqType] || "Request";
 
@@ -2286,11 +2304,11 @@ export async function resolveAdminRequestAction({
       }
 
       await admin.from("user_notifications").insert({
-        user_id: request.user_id,
+        user_id: targetUserId,
         request_id: request.id,
         title: notifTitle,
         message: notifMsg,
-        type: newStatus,
+        type: newStatus === "approved" ? "approved" : newStatus === "rejected" ? "rejected" : "info",
         request_type: reqType,
         target_url: targetUrl,
         is_read: false,
@@ -2313,10 +2331,160 @@ export async function resolveAdminRequestAction({
     revalidatePath("/dashboard/admin");
     revalidatePath("/dashboard/community");
     revalidatePath("/dashboard/resources");
+    revalidatePath("/help");
 
     return { success: true, request: updatedRequest };
   } catch (error) {
     console.error("[resolveAdminRequestAction] Error:", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function replyToUserRequestAction({
+  requestId,
+  replyMessage,
+  newStatus = "resolved",
+}) {
+  try {
+    const { user: adminUser } = await requireAdmin();
+    const admin = createAdminClient();
+
+    const trimmedReply = (replyMessage || "").trim();
+    if (!trimmedReply) {
+      return { success: false, error: "Please enter a reply message for the student." };
+    }
+
+    // 1. Fetch current request
+    const { data: request, error: reqErr } = await admin
+      .from("admin_requests")
+      .select("*")
+      .eq("id", requestId)
+      .single();
+
+    if (reqErr || !request) {
+      throw new Error(reqErr?.message || "Request not found.");
+    }
+
+    // 2. Update request in admin_requests
+    const { data: updatedRequest, error: updateErr } = await admin
+      .from("admin_requests")
+      .update({
+        status: newStatus,
+        admin_response: trimmedReply,
+        reviewed_by: adminUser.id,
+        reviewed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId)
+      .select()
+      .single();
+
+    if (updateErr) throw updateErr;
+
+    // 3. Resolve user ID for notification dispatch
+    let targetUserId = request.user_id;
+    if (!targetUserId && request.user_email) {
+      try {
+        const { data: matchedProfile } = await admin
+          .from("profiles")
+          .select("id")
+          .ilike("email", request.user_email)
+          .maybeSingle();
+        if (matchedProfile?.id) {
+          targetUserId = matchedProfile.id;
+        }
+      } catch (profErr) {}
+    }
+
+    // 4. Send notification into user_notifications
+    if (targetUserId) {
+      const typeLabelMap = {
+        feature_request: "Feature Suggestion",
+        technical_bug: "Bug Report",
+        user_report: "Bug Report",
+        contact_inbox: "Support Inquiry",
+        document_upload: "Document Upload",
+        discussion_approval: "Community Discussion",
+        question_approval: "Community Question",
+        study_group: "Study Group Request",
+        past_paper_request: "Study Material Request",
+      };
+      const readableType = typeLabelMap[request.request_type] || "Request";
+
+      const notifTitle = newStatus === "resolved"
+        ? `Response to your ${readableType}: Resolved`
+        : newStatus === "in_progress"
+        ? `Update on your ${readableType}: In Progress`
+        : newStatus === "approved"
+        ? `Great news: Your ${readableType} was Approved`
+        : newStatus === "rejected"
+        ? `Decision on your ${readableType}`
+        : `Admin Response: ${request.title}`;
+
+      const notifType = newStatus === "approved"
+        ? "approved"
+        : newStatus === "rejected"
+        ? "rejected"
+        : "info";
+
+      let targetUrl = "/help";
+      if (request.request_type === "document_upload" && request.target_id) {
+        targetUrl = `/dashboard/resources/${request.target_id}`;
+      } else if (request.request_type?.includes("discussion") && request.target_id) {
+        targetUrl = `/dashboard/community/${request.target_id}`;
+      }
+
+      await admin.from("user_notifications").insert({
+        user_id: targetUserId,
+        request_id: request.id,
+        title: notifTitle,
+        message: trimmedReply,
+        type: notifType,
+        request_type: request.request_type,
+        target_url: targetUrl,
+        is_read: false,
+        is_popup_dismissed: false,
+      });
+    }
+
+    // 5. Activity log
+    try {
+      await admin.from("admin_activity_logs").insert({
+        actor_id: adminUser.id,
+        actor_email: adminUser.email || "admin@ibnexus.com",
+        action: `ADMIN_REPLY_REQUEST`,
+        target_type: request.request_type,
+        target_id: String(requestId),
+        details: `Admin replied to request "${request.title}" (${newStatus}): "${trimmedReply.slice(0, 100)}"`,
+      });
+    } catch (lErr) {}
+
+    revalidatePath("/dashboard/admin");
+    revalidatePath("/help");
+
+    return { success: true, request: updatedRequest };
+  } catch (error) {
+    console.error("[replyToUserRequestAction] Error:", error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function deleteAdminRequestAction({ requestId }) {
+  try {
+    await requireAdmin();
+    const admin = createAdminClient();
+
+    const { error } = await admin
+      .from("admin_requests")
+      .delete()
+      .eq("id", requestId);
+
+    if (error) throw error;
+
+    revalidatePath("/dashboard/admin");
+    return { success: true };
+  } catch (error) {
+    console.error("[deleteAdminRequestAction] Error:", error.message);
     return { success: false, error: error.message };
   }
 }
@@ -2434,15 +2602,26 @@ export async function submitUserSupportRequestAction({ type = "contact_inbox", t
   try {
     const supabase = await createServerClient();
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: "Please sign in to submit a request." };
+
+    // If not authenticated, check if email was supplied via metadata/contact form
+    const fallbackEmail = metadata?.email ? String(metadata.email).trim() : null;
+    const fallbackName = metadata?.name ? String(metadata.name).trim() : null;
+
+    if (!user && !fallbackEmail) {
+      return { success: false, error: "Please sign in or provide your email so we can send updates to your account." };
+    }
+
+    const userId = user?.id || null;
+    const userEmail = user?.email || fallbackEmail;
+    const userName = user?.user_metadata?.full_name || fallbackName || (userEmail ? userEmail.split("@")[0] : "Student");
 
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("admin_requests")
       .insert({
-        user_id: user.id,
-        user_email: user.email,
-        user_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Student",
+        user_id: userId,
+        user_email: userEmail,
+        user_name: userName,
         request_type: type,
         title: title || "Support Request",
         details: details || "",
@@ -2459,27 +2638,33 @@ export async function submitUserSupportRequestAction({ type = "contact_inbox", t
 
     if (error) throw error;
 
-    // Send an initial confirmation notification to the user so their notification bell reflects it
-    try {
-      await admin.from("user_notifications").insert({
-        user_id: user.id,
-        request_id: data.id,
-        title: "Request Received",
-        message: `Your ${type === "feature_request" ? "feature suggestion" : type === "technical_bug" ? "bug report" : "inquiry"} "${title}" was received and queued for review.`,
-        type: "info",
-        request_type: type,
-        is_read: false,
-        is_popup_dismissed: false,
-      });
-    } catch (notifErr) {
-      console.warn("Failed to create confirmation notification:", notifErr?.message);
+    // Send confirmation notification if user is logged in
+    if (userId) {
+      try {
+        const readableType = type === "feature_request" ? "feature suggestion" : type === "technical_bug" || type === "user_report" ? "bug report" : "inquiry";
+        await admin.from("user_notifications").insert({
+          user_id: userId,
+          request_id: data.id,
+          title: "Request Received",
+          message: `Your ${readableType} "${title}" was received and queued for review.`,
+          type: "info",
+          request_type: type,
+          is_read: false,
+          is_popup_dismissed: false,
+        });
+      } catch (notifErr) {
+        console.warn("Failed to create confirmation notification:", notifErr?.message);
+      }
     }
 
     revalidatePath("/dashboard", "layout");
+    revalidatePath("/dashboard/admin");
+    revalidatePath("/help");
     return { success: true, request: data };
   } catch (error) {
     console.error("[submitUserSupportRequestAction] Error:", error);
     return { success: false, error: error.message || "Failed to submit request." };
   }
 }
+
 

@@ -14,7 +14,7 @@ export const ADMIN_INFORMATION_ARCHITECTURE = [
     icon: ShieldAlert,
     sections: [
       { id: "overview", label: "Overview", icon: ShieldAlert },
-      { id: "admin_requests", label: "Central Requests Hub", icon: BellRing }
+      { id: "admin_requests", label: "User Requests & Tickets", icon: BellRing }
     ]
   },
   {
