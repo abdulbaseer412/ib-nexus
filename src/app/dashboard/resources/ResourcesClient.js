@@ -343,7 +343,7 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
   const modalTitle = destination === "nexus" 
     ? "Upload to IB Nexus Library" 
     : destination === "community" 
-      ? (isAdmin ? "Publish to Community Resources" : "Submit Resource to Community")
+      ? "Submit Resource to Community"
       : "Upload to My Library";
 
   return (
@@ -396,10 +396,10 @@ function UploadModal({ open, onClose, onSuccess, isAdmin, userProfile, subjects,
         </div>
 
         {/* Short & Subtle Community Review Hint */}
-        {destination === "community" && !isAdmin && (
+        {destination === "community" && (
           <div className="px-3 py-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-300 flex items-center gap-2">
             <ShieldCheck className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-            <span>Community submissions are reviewed by moderators before appearing publicly.</span>
+            <span>Community submissions are reviewed and approved by moderators before appearing publicly.</span>
           </div>
         )}
 
@@ -2693,7 +2693,7 @@ export default function ResourcesClient({ userProfile, userProgram, isAdmin, use
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
         onSuccess={(r, dest) => {
-          if (dest === "community" && !isAdmin) {
+          if (dest === "community") {
             setUploadNotice("Your resource has been submitted for review! An IB Nexus administrator will verify it before it appears in Community Resources.");
             setTimeout(() => setUploadNotice(null), 8000);
           } else {

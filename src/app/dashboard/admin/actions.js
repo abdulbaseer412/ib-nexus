@@ -2381,6 +2381,30 @@ export async function replyToUserRequestAction({
 
     if (updateErr) throw updateErr;
 
+    // 2b. Synchronize target entity visibility if approving/rejecting
+    if (request.request_type === "document_upload" && request.target_id) {
+      if (newStatus === "approved" || newStatus === "rejected") {
+        await admin
+          .from("ib_resources")
+          .update({
+            visibility: newStatus,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", request.target_id);
+      }
+    } else if ((request.request_type === "discussion_approval" || request.request_type === "question_approval") && request.target_id) {
+      if (newStatus === "approved" || newStatus === "rejected") {
+        await admin
+          .from("community_posts")
+          .update({
+            status: newStatus,
+            reviewed_at: new Date().toISOString(),
+            reviewed_by: adminUser.id,
+          })
+          .eq("id", request.target_id);
+      }
+    }
+
     // 3. Resolve user ID for notification dispatch
     let targetUserId = request.user_id;
     if (!targetUserId && request.user_email) {
@@ -2460,6 +2484,8 @@ export async function replyToUserRequestAction({
     } catch (lErr) {}
 
     revalidatePath("/dashboard/admin");
+    revalidatePath("/dashboard/resources");
+    revalidatePath("/dashboard/community");
     revalidatePath("/help");
 
     return { success: true, request: updatedRequest };

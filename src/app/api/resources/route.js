@@ -238,8 +238,8 @@ export async function POST(request) {
     visibility = "public";
   } else if (destination === "community") {
     source = "user";
-    // Admins uploading directly to community are instantly approved; community members go to review queue
-    visibility = isAdmin ? "approved" : "pending_approval";
+    // All community uploads require review by default unless admin explicitly publishes directly
+    visibility = (isAdmin && payload.publish_immediately === true) ? "approved" : "pending_approval";
   } else {
     // My Library (personal)
     source = "user";
@@ -247,7 +247,7 @@ export async function POST(request) {
   }
 
   // If visibility is explicitly provided and valid
-  if (payload.visibility && (isAdmin || payload.visibility === "pending_approval" || payload.visibility === "private")) {
+  if (payload.visibility && (payload.visibility === "pending_approval" || payload.visibility === "private" || (isAdmin && payload.visibility === "approved"))) {
     visibility = payload.visibility;
   }
 
@@ -287,11 +287,11 @@ export async function POST(request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Create admin request record if pending approval
+  // Create admin request record and user notification if pending approval
   if (visibility === "pending_approval") {
     try {
       const adminClient = createAdminClient();
-      await adminClient.from("admin_requests").insert({
+      const { data: adminReq, error: reqErr } = await adminClient.from("admin_requests").insert({
         user_id: user.id,
         user_email: user.email,
         user_name: profile?.display_name || profile?.full_name || user.email?.split("@")[0] || "Student",
@@ -308,10 +308,28 @@ export async function POST(request) {
           subject: data.subject,
           level: data.level,
           topic: data.topic,
+          tags: data.tags,
         },
         target_id: String(data.id),
         target_table: "ib_resources",
         status: "pending",
+      }).select().single();
+
+      if (reqErr) {
+        console.warn("Failed to create admin_requests row for resource:", reqErr?.message);
+      }
+
+      // Also create confirmation notification for the submitter
+      await adminClient.from("user_notifications").insert({
+        user_id: user.id,
+        request_id: adminReq?.id || null,
+        title: "Document Submitted for Review",
+        message: `Your document "${data.title}" was submitted to Community Resources and is pending administrator review.`,
+        type: "info",
+        request_type: "document_upload",
+        target_url: "/dashboard/resources",
+        is_read: false,
+        is_popup_dismissed: false,
       });
     } catch (reqErr) {
       console.warn("Failed to create admin_requests row for resource:", reqErr?.message);

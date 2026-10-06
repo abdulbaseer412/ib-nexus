@@ -488,6 +488,17 @@ export default function AdminRequestsTab() {
                             {r.metadata.file_name}
                           </span>
                         )}
+                        {r.metadata.file_url && (
+                          <a
+                            href={r.metadata.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 font-semibold text-[11px] transition-colors"
+                          >
+                            <ExternalLink size={11} />
+                            <span>Inspect File</span>
+                          </a>
+                        )}
                       </div>
                     )}
 
