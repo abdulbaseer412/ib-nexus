@@ -11,6 +11,13 @@ import {
   ArrowUpRight, Share2, Eye
 } from "lucide-react";
 import { submitUserSupportRequestAction } from "@/app/dashboard/admin/actions";
+import {
+  InView,
+  TextEffect,
+  AnimatedGroup,
+  AnimatedBackground,
+  BorderTrail
+} from "@/components/motion-primitives";
 
 const CATEGORIES = [
   {
@@ -759,8 +766,10 @@ export default function HelpCenterClient({ initialUser = null }) {
             </span>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-[var(--foreground)] bg-gradient-to-r from-[var(--foreground)] via-[var(--foreground)] to-[var(--muted)] bg-clip-text">
-            How can we help?
+          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-[var(--foreground)]">
+            <TextEffect preset="fade-in-blur" per="word" as="span">
+              How can we help?
+            </TextEffect>
           </h1>
           <p className="text-sm sm:text-base text-[var(--muted)] leading-relaxed max-w-2xl mx-auto">
             Find step-by-step guidance for organizing your IB subjects, using study tools, managing your account, and tracking moderator feedback.
@@ -846,7 +855,10 @@ export default function HelpCenterClient({ initialUser = null }) {
             )}
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <AnimatedGroup
+            preset="scale"
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          >
             {CATEGORIES.map((cat) => {
               const IconComp = cat.icon;
               const isSelected = selectedCategory === cat.id;
@@ -893,36 +905,48 @@ export default function HelpCenterClient({ initialUser = null }) {
                 </button>
               );
             })}
-          </div>
+          </AnimatedGroup>
         </div>
 
-        {/* Selected Category Filter Pill Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar">
-          <button
-            type="button"
-            onClick={() => setSelectedCategory("all")}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-              selectedCategory === "all"
-                ? "bg-[var(--foreground)] text-[var(--background)] shadow-sm"
-                : "bg-[var(--surface)] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
-            }`}
+        {/* Selected Category Filter Pill Bar with Animated Sliding Indicator */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-2 custom-scrollbar p-1 rounded-2xl border border-[var(--border)] bg-[var(--surface)]">
+          <AnimatedBackground
+            defaultValue={selectedCategory}
+            className="rounded-xl bg-[var(--accent)]"
+            transition={{
+              type: "spring",
+              bounce: 0.15,
+              duration: 0.35,
+            }}
           >
-            All Guides ({GUIDES.length})
-          </button>
-          {CATEGORIES.map((c) => (
             <button
               type="button"
-              key={c.id}
-              onClick={() => setSelectedCategory(c.id)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                selectedCategory === c.id
-                  ? "bg-[var(--accent)] text-white shadow-sm"
-                  : "bg-[var(--surface)] border border-[var(--border)] text-[var(--muted)] hover:text-[var(--foreground)]"
+              data-id="all"
+              onClick={() => setSelectedCategory("all")}
+              className={`relative z-10 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${
+                selectedCategory === "all"
+                  ? "text-white"
+                  : "text-[var(--muted)] hover:text-[var(--foreground)]"
               }`}
             >
-              {c.title}
+              All Guides ({GUIDES.length})
             </button>
-          ))}
+            {CATEGORIES.map((c) => (
+              <button
+                type="button"
+                key={c.id}
+                data-id={c.id}
+                onClick={() => setSelectedCategory(c.id)}
+                className={`relative z-10 px-3.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${
+                  selectedCategory === c.id
+                    ? "text-white"
+                    : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                {c.title}
+              </button>
+            ))}
+          </AnimatedBackground>
         </div>
 
         {/* Search & Guides List Section */}
@@ -970,7 +994,10 @@ export default function HelpCenterClient({ initialUser = null }) {
               </div>
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <AnimatedGroup
+              preset="blur-slide"
+              className="grid gap-3 sm:grid-cols-2"
+            >
               {filteredGuides.map((guide) => {
                 const categoryObj = CATEGORIES.find((c) => c.id === guide.category);
                 const IconComp = categoryObj?.icon || FileText;
@@ -1032,79 +1059,100 @@ export default function HelpCenterClient({ initialUser = null }) {
                   </div>
                 );
               })}
-            </div>
+            </AnimatedGroup>
           )}
         </div>
 
         {/* Frequently Asked Questions Section */}
-        <div className="pt-8 border-t border-[var(--border)] space-y-6">
-          <div className="text-center space-y-2 max-w-xl mx-auto">
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--foreground)]">
-              Frequently Asked Questions
-            </h2>
-            <p className="text-xs sm:text-sm text-[var(--muted)]">
-              Quick answers to common questions about study routines, notification updates, and academic integrity.
-            </p>
-          </div>
+        <InView
+          viewOptions={{ once: true, margin: "0px 0px -50px 0px" }}
+          variants={{
+            hidden: { opacity: 0, y: 24 },
+            visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
+          }}
+        >
+          <div className="pt-8 border-t border-[var(--border)] space-y-6">
+            <div className="text-center space-y-2 max-w-xl mx-auto">
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-[var(--foreground)]">
+                Frequently Asked Questions
+              </h2>
+              <p className="text-xs sm:text-sm text-[var(--muted)]">
+                Quick answers to common questions about study routines, notification updates, and academic integrity.
+              </p>
+            </div>
 
-          <div className="max-w-3xl mx-auto space-y-3">
-            {FAQS.map((faq, index) => {
-              const isExpanded = expandedFaq === index;
-              return (
-                <div
-                  key={faq.q}
-                  className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden transition-all"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setExpandedFaq(isExpanded ? null : index)}
-                    className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-4 font-bold text-sm sm:text-base text-[var(--foreground)] hover:text-[var(--accent)] transition-colors"
+            <div className="max-w-3xl mx-auto space-y-3">
+              {FAQS.map((faq, index) => {
+                const isExpanded = expandedFaq === index;
+                return (
+                  <div
+                    key={faq.q}
+                    className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden transition-all"
                   >
-                    <span>{faq.q}</span>
-                    <span className="p-1 rounded-lg bg-[var(--surface-alt)] text-[var(--muted)] shrink-0">
-                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    </span>
-                  </button>
-                  {isExpanded && (
-                    <div className="px-4 sm:px-5 pb-5 pt-1 text-xs sm:text-sm text-[var(--muted)] leading-relaxed border-t border-[var(--border)] animate-in fade-in duration-200">
-                      <p>{faq.a}</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedFaq(isExpanded ? null : index)}
+                      className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-4 font-bold text-sm sm:text-base text-[var(--foreground)] hover:text-[var(--accent)] transition-colors"
+                    >
+                      <span>{faq.q}</span>
+                      <span className="p-1 rounded-lg bg-[var(--surface-alt)] text-[var(--muted)] shrink-0">
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </span>
+                    </button>
+                    {isExpanded && (
+                      <div className="px-4 sm:px-5 pb-5 pt-1 text-xs sm:text-sm text-[var(--muted)] leading-relaxed border-t border-[var(--border)] animate-in fade-in duration-200">
+                        <p>{faq.a}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        </InView>
 
         {/* Still Need Assistance Banner */}
-        <div className="rounded-3xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface-alt)] to-[var(--surface)] p-6 sm:p-8 text-center space-y-4 shadow-xl">
-          <div className="w-12 h-12 rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20 flex items-center justify-center mx-auto shadow-sm">
-            <Sparkles size={22} />
+        <InView
+          viewOptions={{ once: true, margin: "0px 0px -50px 0px" }}
+          variants={{
+            hidden: { opacity: 0, scale: 0.98 },
+            visible: { opacity: 1, scale: 1, transition: { duration: 0.5, ease: "easeOut" } }
+          }}
+        >
+          <div className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] via-[var(--surface-alt)] to-[var(--surface)] p-6 sm:p-8 text-center space-y-4 shadow-xl">
+            <BorderTrail
+              size={80}
+              className="bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent"
+              transition={{ duration: 8, ease: "linear", repeat: Infinity }}
+            />
+            <div className="w-12 h-12 rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)] border border-[var(--accent)]/20 flex items-center justify-center mx-auto shadow-sm">
+              <Sparkles size={22} />
+            </div>
+            <div className="space-y-1.5 max-w-lg mx-auto">
+              <h3 className="text-xl font-bold text-[var(--foreground)]">
+                Can&apos;t find what you&apos;re looking for?
+              </h3>
+              <p className="text-xs sm:text-sm text-[var(--muted)] leading-relaxed">
+                Our academic guidance team and moderators are here to assist with syllabus queries, bug resolutions, and study tips.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3 flex-wrap pt-2">
+              <Link
+                href="/contact"
+                className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 shadow-md transition-all"
+              >
+                Contact Support
+              </Link>
+              <button
+                type="button"
+                onClick={() => { setReqCategory("Community"); setFeatureModalOpen(true); }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:border-[var(--accent)] transition-all"
+              >
+                Suggest an Improvement
+              </button>
+            </div>
           </div>
-          <div className="space-y-1.5 max-w-lg mx-auto">
-            <h3 className="text-xl font-bold text-[var(--foreground)]">
-              Can&apos;t find what you&apos;re looking for?
-            </h3>
-            <p className="text-xs sm:text-sm text-[var(--muted)] leading-relaxed">
-              Our academic guidance team and moderators are here to assist with syllabus queries, bug resolutions, and study tips.
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-3 flex-wrap pt-2">
-            <Link
-              href="/contact"
-              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[var(--foreground)] text-[var(--background)] hover:opacity-90 shadow-md transition-all"
-            >
-              Contact Support
-            </Link>
-            <button
-              type="button"
-              onClick={() => { setReqCategory("Community"); setFeatureModalOpen(true); }}
-              className="px-5 py-2.5 rounded-xl text-xs font-bold border border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)] hover:border-[var(--accent)] transition-all"
-            >
-              Suggest an Improvement
-            </button>
-          </div>
-        </div>
+        </InView>
       </div>
 
       {/* Guide Reader Modal / Drawer */}

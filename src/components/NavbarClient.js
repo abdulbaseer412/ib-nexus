@@ -12,6 +12,7 @@ import UserNotificationBanner from "@/components/notifications/UserNotificationB
 import UserRequestsModal from "@/components/notifications/UserRequestsModal";
 import { fetchUserNotificationsAction } from "@/app/dashboard/admin/actions";
 import { createClient } from "@/utils/supabase-browser";
+import { ScrollProgress, AnimatedBackground } from "@/components/motion-primitives";
 
 export default function NavbarClient({ email, displayName, avatarUrl }) {
   const pathname = usePathname();
@@ -124,6 +125,7 @@ export default function NavbarClient({ email, displayName, avatarUrl }) {
 
   return (
     <>
+      <ScrollProgress className="fixed top-0 inset-x-0 z-[60] h-[2.5px] bg-gradient-to-r from-indigo-500 via-[var(--accent)] to-sky-400" />
       <nav
         ref={navRef}
         className={`fixed inset-x-0 top-0 z-50 transition-all duration-200 ${
@@ -170,19 +172,45 @@ export default function NavbarClient({ email, displayName, avatarUrl }) {
 
           {/* Desktop Navigation Links (Public / Before Login) */}
           {!email && (
-            <div className="hidden items-center gap-2 text-sm text-[var(--muted)] md:flex">
-              <Link href="/#notes" className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)]">
-                Features
-              </Link>
-              <Link href="/#resources" className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)]">
-                Resources
-              </Link>
-              <Link href="/about" className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)]">
-                About
-              </Link>
-              <Link href="/contact" className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)]">
-                Contact
-              </Link>
+            <div className="hidden items-center gap-1 text-sm text-[var(--muted)] md:flex">
+              <AnimatedBackground
+                enableHover
+                className="rounded-xl bg-[var(--surface-hover)]"
+                transition={{
+                  type: "spring",
+                  bounce: 0.15,
+                  duration: 0.35,
+                }}
+              >
+                <Link
+                  data-id="features"
+                  href="/#notes"
+                  className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)]"
+                >
+                  Features
+                </Link>
+                <Link
+                  data-id="resources"
+                  href="/#resources"
+                  className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)]"
+                >
+                  Resources
+                </Link>
+                <Link
+                  data-id="about"
+                  href="/about"
+                  className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)]"
+                >
+                  About
+                </Link>
+                <Link
+                  data-id="contact"
+                  href="/contact"
+                  className="rounded-xl px-3 py-2 font-medium transition hover:text-[var(--foreground)]"
+                >
+                  Contact
+                </Link>
+              </AnimatedBackground>
             </div>
           )}
 

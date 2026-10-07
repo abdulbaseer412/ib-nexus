@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronUp, Clock3, LifeBuoy, ShieldCheck } from "lucide-react";
+import { ScrollProgress, BorderTrail, InView } from "@/components/motion-primitives";
 
 export {
   LegalCallout,
@@ -100,10 +101,8 @@ export default function LegalPageShell({
 
   return (
     <main className="landing min-h-[calc(100vh-72px)] bg-background px-4 py-12 md:py-16 text-primary sm:px-6 lg:px-8">
-      {/* Reading progress indicator */}
-      <div className="fixed inset-x-0 top-0 z-[60] h-0.5 bg-hover">
-        <div className="h-full bg-accent transition-[width] duration-100" style={{ width: `${progress}%` }} />
-      </div>
+      {/* High performance reading progress indicator */}
+      <ScrollProgress className="bg-gradient-to-r from-indigo-500 via-[var(--accent)] to-sky-400 h-[2px]" />
 
       <div className="mx-auto max-w-6xl">
         {/* Hero */}
@@ -171,24 +170,37 @@ export default function LegalPageShell({
           <article className="min-w-0 space-y-14">{children}</article>
         </div>
 
-        {/* Need help? footer CTA */}
-        <section className="mt-24 rounded-[24px] border border-accent-strong bg-accent-soft p-8 sm:p-10">
-          <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
-            <div>
-              <p className="flex items-center gap-2 text-xl font-bold">
-                <LifeBuoy size={20} className="text-accent-bright" />
-                Need help?
-              </p>
-              <p className="mt-2 max-w-xl leading-7 text-secondary">{supportText}</p>
+        {/* Need help? footer CTA with BorderTrail */}
+        <InView
+          viewOptions={{ once: true, margin: "0px 0px -50px 0px" }}
+          variants={{
+            hidden: { opacity: 0, y: 20 },
+            visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
+          }}
+        >
+          <section className="relative overflow-hidden mt-24 rounded-[24px] border border-accent-strong bg-accent-soft p-8 sm:p-10">
+            <BorderTrail
+              size={80}
+              className="bg-gradient-to-r from-transparent via-[var(--accent)] to-transparent"
+              transition={{ duration: 7, ease: "linear", repeat: Infinity }}
+            />
+            <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
+              <div>
+                <p className="flex items-center gap-2 text-xl font-bold">
+                  <LifeBuoy size={20} className="text-accent-bright" />
+                  Need help?
+                </p>
+                <p className="mt-2 max-w-xl leading-7 text-secondary">{supportText}</p>
+              </div>
+              <Link
+                href="/contact"
+                className="btn btn-brand inline-flex shrink-0 items-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-accent-glow"
+              >
+                Contact Support
+              </Link>
             </div>
-            <Link
-              href="/contact"
-              className="btn btn-brand inline-flex shrink-0 items-center gap-2 rounded-xl px-5 py-3 font-semibold shadow-accent-glow"
-            >
-              Contact Support
-            </Link>
-          </div>
-        </section>
+          </section>
+        </InView>
 
         <LegalFooter />
       </div>
