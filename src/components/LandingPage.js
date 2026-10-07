@@ -19,6 +19,7 @@ import {
   getSubjectLevelNote
 } from "@/lib/subject-levels";
 import { getSubjectColorTheme } from "@/lib/subject-colors";
+import { motion } from "motion/react";
 import {
   InView,
   TextEffect,
@@ -234,74 +235,88 @@ export default function LandingPage() {
             scholars.
           </h1>
 
-          <p className="mx-auto max-w-3xl text-base sm:text-xl text-[var(--text-secondary)] font-normal leading-relaxed">
+          <motion.p
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.55, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="mx-auto max-w-3xl text-base sm:text-xl text-[var(--text-secondary)] font-normal leading-relaxed"
+          >
             IB Nexus unifies syllabus-mapped notes, active recall flashcards powered by the SM-2 algorithm, assessment milestone scheduling, and educator-moderated past paper resources into one authoritative, distraction-free environment.
-          </p>
+          </motion.p>
 
           {/* Action CTAs */}
-          <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
-            <Link
-              href="/signup"
-              className="btn btn-brand inline-flex items-center justify-center gap-2.5 rounded-2xl px-8 py-4 text-base font-extrabold shadow-[0_8px_25px_color-mix(in_srgb,var(--accent)_30%,transparent)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--accent)_40%,transparent)] hover:scale-[1.02] transition-all"
-            >
-              <span>Get Started Free</span>
-              <ArrowRight size={18} />
-            </Link>
+          <AnimatedGroup
+            preset="fade"
+            className="pt-2 flex flex-wrap items-center justify-center gap-4"
+          >
+            <motion.div whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.97 }}>
+              <Link
+                href="/signup"
+                className="btn btn-brand inline-flex items-center justify-center gap-2.5 rounded-2xl px-8 py-4 text-base font-extrabold shadow-[0_8px_25px_color-mix(in_srgb,var(--accent)_30%,transparent)] hover:shadow-[0_12px_32px_color-mix(in_srgb,var(--accent)_40%,transparent)] transition-all"
+              >
+                <span>Get Started Free</span>
+                <ArrowRight size={18} />
+              </Link>
+            </motion.div>
 
-            <button
-              type="button"
-              onClick={() => setShowVisitorTour(true)}
-              className="inline-flex items-center justify-center gap-2.5 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface)] px-7 py-4 text-base font-bold text-[var(--foreground)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--surface-alt)] transition-all shadow-sm cursor-pointer"
-            >
-              <Play size={16} className="text-[var(--accent)] fill-current" />
-              <span>Interactive Platform Tour</span>
-            </button>
+            <motion.div whileHover={{ scale: 1.03, y: -2 }} whileTap={{ scale: 0.97 }}>
+              <button
+                type="button"
+                onClick={() => setShowVisitorTour(true)}
+                className="inline-flex items-center justify-center gap-2.5 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface)] px-7 py-4 text-base font-bold text-[var(--foreground)] hover:border-[var(--accent)] hover:text-[var(--accent)] hover:bg-[var(--surface-alt)] transition-all shadow-sm cursor-pointer"
+              >
+                <Play size={16} className="text-[var(--accent)] fill-current" />
+                <span>Interactive Platform Tour</span>
+              </button>
+            </motion.div>
 
-            <a
-              href="#curriculum-explorer"
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-transparent bg-transparent px-6 py-4 text-base font-semibold text-[var(--text-secondary)] hover:text-[var(--foreground)] transition-colors"
-            >
-              <span>Explore Curriculum Groups</span>
-              <ChevronRight size={16} />
-            </a>
-          </div>
+            <motion.div whileHover={{ x: 3 }}>
+              <a
+                href="#curriculum-explorer"
+                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-transparent bg-transparent px-6 py-4 text-base font-semibold text-[var(--text-secondary)] hover:text-[var(--foreground)] transition-colors"
+              >
+                <span>Explore Curriculum Groups</span>
+                <ChevronRight size={16} />
+              </a>
+            </motion.div>
+          </AnimatedGroup>
 
           {/* 4 Pillar Badges */}
           <AnimatedGroup
             preset="blur-slide"
             className="pt-6 grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto text-left"
           >
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
+            <motion.div whileHover={{ y: -3, scale: 1.02 }} className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
               <ShieldCheck size={18} className="text-emerald-500 shrink-0" />
               <div>
                 <div className="text-xs font-bold text-[var(--foreground)]">DP Groups 1–6 + Core</div>
                 <div className="text-[10px] text-[var(--muted)]">HL &amp; SL Syllabus Mapping</div>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
+            <motion.div whileHover={{ y: -3, scale: 1.02 }} className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
               <BrainCircuit size={18} className="text-[var(--ai)] shrink-0" />
               <div>
                 <div className="text-xs font-bold text-[var(--foreground)]">SM-2 Spaced Recall</div>
                 <div className="text-[10px] text-[var(--muted)]">Calculated Interval Engine</div>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
+            <motion.div whileHover={{ y: -3, scale: 1.02 }} className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
               <CalendarDays size={18} className="text-[var(--warning)] shrink-0" />
               <div>
                 <div className="text-xs font-bold text-[var(--foreground)]">Assessment Planner</div>
                 <div className="text-[10px] text-[var(--muted)]">IA, EE &amp; Exam Milestones</div>
               </div>
-            </div>
+            </motion.div>
 
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
+            <motion.div whileHover={{ y: -3, scale: 1.02 }} className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] flex items-center gap-2.5 shadow-sm hover:border-[var(--accent)] transition-all">
               <LibraryBig size={18} className="text-[var(--info)] shrink-0" />
               <div>
                 <div className="text-xs font-bold text-[var(--foreground)]">Vetted Library</div>
                 <div className="text-[10px] text-[var(--muted)]">Educator-Moderated Hub</div>
               </div>
-            </div>
+            </motion.div>
           </AnimatedGroup>
         </div>
       </section>
@@ -318,37 +333,37 @@ export default function LandingPage() {
             transition={{ duration: 0.5, ease: "easeOut" }}
           >
             <AnimatedGroup preset="fade" className="grid grid-cols-2 lg:grid-cols-4 gap-6 text-center">
-              <div className="space-y-1">
+              <motion.div whileHover={{ y: -3 }} className="space-y-1 p-2 rounded-2xl hover:bg-[var(--surface-alt)]/60 transition-colors">
                 <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">30+</div>
                 <div className="text-xs font-bold uppercase tracking-wider text-[var(--accent)]">IB Courses Configured</div>
                 <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
                   Official DP &amp; MYP syllabus specifications across all 6 groups.
                 </p>
-              </div>
+              </motion.div>
 
-              <div className="space-y-1">
+              <motion.div whileHover={{ y: -3 }} className="space-y-1 p-2 rounded-2xl hover:bg-[var(--surface-alt)]/60 transition-colors">
                 <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">SM-2</div>
                 <div className="text-xs font-bold uppercase tracking-wider text-[var(--ai)]">Cognitive Algorithm</div>
                 <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
                   Mathematical review intervals calculated to halt memory decay.
                 </p>
-              </div>
+              </motion.div>
 
-              <div className="space-y-1">
+              <motion.div whileHover={{ y: -3 }} className="space-y-1 p-2 rounded-2xl hover:bg-[var(--surface-alt)]/60 transition-colors">
                 <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">100%</div>
                 <div className="text-xs font-bold uppercase tracking-wider text-emerald-500">Moderated Repository</div>
                 <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
                   Every community document vetted by administrators prior to release.
                 </p>
-              </div>
+              </motion.div>
 
-              <div className="space-y-1">
+              <motion.div whileHover={{ y: -3 }} className="space-y-1 p-2 rounded-2xl hover:bg-[var(--surface-alt)]/60 transition-colors">
                 <div className="text-3xl sm:text-4xl font-black text-[var(--foreground)] tracking-tight">Free</div>
                 <div className="text-xs font-bold uppercase tracking-wider text-[var(--warning)]">Universal Access</div>
                 <p className="text-xs text-[var(--text-secondary)] max-w-[200px] mx-auto">
                   Zero commercial paywalls; dedicated to global IB equity.
                 </p>
-              </div>
+              </motion.div>
             </AnimatedGroup>
           </InView>
         </div>
@@ -431,7 +446,6 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Subjects Grid */}
           <InView
             viewOptions={{ once: true, margin: "0px 0px -40px 0px" }}
             variants={{
@@ -440,7 +454,7 @@ export default function LandingPage() {
             }}
             transition={{ duration: 0.5, ease: "easeOut" }}
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+            <AnimatedGroup preset="scale" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
               {availableExplorerSubjects.map((subj) => {
                 const theme = getSubjectColorTheme(subj.name);
                 const colorVar = theme === "brand" ? "var(--accent)" : `var(--subject-${theme})`;
@@ -448,9 +462,11 @@ export default function LandingPage() {
                 const levelNote = getSubjectLevelNote(subj.name, explorerProgram);
 
                 return (
-                  <div
+                  <motion.div
                     key={subj.id || subj.name}
                     style={{ "--c": colorVar }}
+                    whileHover={{ y: -4, scale: 1.015 }}
+                    whileTap={{ scale: 0.985 }}
                     onClick={() => setSelectedSubjectPreview(subj)}
                     className="group relative p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:border-[color:var(--c)] hover:shadow-md transition-all duration-300 flex flex-col justify-between cursor-pointer"
                   >
@@ -478,10 +494,10 @@ export default function LandingPage() {
                         Explore <ArrowRight size={12} />
                       </span>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
-            </div>
+            </AnimatedGroup>
           </InView>
 
           {/* Quick Subject Modal / Preview Card when clicked */}
@@ -560,7 +576,7 @@ export default function LandingPage() {
                   Most student notes are disconnected summaries with no clear link to final examination criteria. IB Nexus binds every note directly to official IB syllabus numbers, Higher Level (HL) vs Standard Level (SL) depth, and command term requirements.
                 </p>
 
-                <div className="space-y-3.5">
+                <AnimatedGroup preset="fade" className="space-y-3.5">
                   <div className="flex items-start gap-3">
                     <div className="w-6 h-6 rounded-lg bg-[var(--info)]/10 text-[var(--info)] flex items-center justify-center shrink-0 mt-0.5">
                       <Check size={14} strokeWidth={3} />
@@ -596,18 +612,25 @@ export default function LandingPage() {
                       </p>
                     </div>
                   </div>
-                </div>
+                </AnimatedGroup>
 
                 <div className="pt-2">
-                  <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
-                    <span>Open Notes Workspace</span>
-                    <ArrowRight size={15} />
-                  </Link>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="inline-block">
+                    <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                      <span>Open Notes Workspace</span>
+                      <ArrowRight size={15} />
+                    </Link>
+                  </motion.div>
                 </div>
               </div>
 
               {/* Live Interactive Notes Preview */}
-              <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 sm:p-7 shadow-xl space-y-4">
+              <div className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)] p-5 sm:p-7 shadow-xl space-y-4">
+                <BorderTrail
+                  size={75}
+                  className="bg-gradient-to-r from-blue-500 via-[var(--accent)] to-indigo-500"
+                  transition={{ repeat: Infinity, duration: 8, ease: "linear" }}
+                />
                 {/* Header with Topic Badges */}
                 <div className="flex items-center justify-between pb-4 border-b border-[var(--border)]">
                   <div className="flex items-center gap-2.5">
@@ -764,10 +787,12 @@ export default function LandingPage() {
                   Rate your recall to trigger SuperMemo SM-2 interval recalculation:
                 </div>
                 <div className="grid grid-cols-4 gap-2">
-                  <button
+                  <motion.button
                     type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={() => setFlashcardRating("again")}
-                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       flashcardRating === "again"
                         ? "bg-rose-500 text-white border-rose-500 shadow-sm"
                         : "border-[var(--border)] text-rose-500 hover:bg-rose-500/10"
@@ -775,12 +800,14 @@ export default function LandingPage() {
                   >
                     <div>Again</div>
                     <div className="text-[9px] opacity-75">&lt; 10m</div>
-                  </button>
+                  </motion.button>
 
-                  <button
+                  <motion.button
                     type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={() => setFlashcardRating("hard")}
-                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       flashcardRating === "hard"
                         ? "bg-amber-500 text-white border-amber-500 shadow-sm"
                         : "border-[var(--border)] text-amber-500 hover:bg-amber-500/10"
@@ -788,12 +815,14 @@ export default function LandingPage() {
                   >
                     <div>Hard</div>
                     <div className="text-[9px] opacity-75">1 day</div>
-                  </button>
+                  </motion.button>
 
-                  <button
+                  <motion.button
                     type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={() => setFlashcardRating("good")}
-                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       flashcardRating === "good"
                         ? "bg-sky-500 text-white border-sky-500 shadow-sm"
                         : "border-[var(--border)] text-sky-500 hover:bg-sky-500/10"
@@ -801,12 +830,14 @@ export default function LandingPage() {
                   >
                     <div>Good</div>
                     <div className="text-[9px] opacity-75">3 days</div>
-                  </button>
+                  </motion.button>
 
-                  <button
+                  <motion.button
                     type="button"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
                     onClick={() => setFlashcardRating("easy")}
-                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all ${
+                    className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                       flashcardRating === "easy"
                         ? "bg-emerald-500 text-white border-emerald-500 shadow-sm"
                         : "border-[var(--border)] text-emerald-500 hover:bg-emerald-500/10"
@@ -814,7 +845,7 @@ export default function LandingPage() {
                   >
                     <div>Easy</div>
                     <div className="text-[9px] opacity-75">6 days</div>
-                  </button>
+                  </motion.button>
                 </div>
               </div>
             </div>
@@ -834,7 +865,7 @@ export default function LandingPage() {
                 The 2-year IB continuum presents an immense volume of conceptual material. Cramming causes rapid memory decay before final examination sessions. IB Nexus applies the verified SM-2 spaced repetition formula to schedule reviews at exact forgetting thresholds.
               </p>
 
-              <div className="space-y-3.5">
+              <AnimatedGroup preset="fade" className="space-y-3.5">
                 <div className="flex items-start gap-3">
                   <div className="w-6 h-6 rounded-lg bg-[var(--ai)]/10 text-[var(--ai)] flex items-center justify-center shrink-0 mt-0.5">
                     <Check size={14} strokeWidth={3} />
@@ -870,13 +901,15 @@ export default function LandingPage() {
                     </p>
                   </div>
                 </div>
-              </div>
+              </AnimatedGroup>
 
               <div className="pt-2">
-                <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
-                  <span>Start Active Recall Free</span>
-                  <ArrowRight size={15} />
-                </Link>
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="inline-block">
+                  <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                    <span>Start Active Recall Free</span>
+                    <ArrowRight size={15} />
+                  </Link>
+                </motion.div>
               </div>
             </div>
           </div>
@@ -910,7 +943,7 @@ export default function LandingPage() {
                   Generic calendars fail in the IB because they cannot balance Internal Assessments (IAs), TOK Exhibition dates, and 6 simultaneous subject revision tracks. The IB Nexus Planner computes a real-time Next-Best-Action (NBA) score based on exam proximity and topic readiness.
                 </p>
 
-                <div className="space-y-3.5">
+                <AnimatedGroup preset="fade" className="space-y-3.5">
                   <div className="flex items-start gap-3">
                     <div className="w-6 h-6 rounded-lg bg-[var(--warning)]/10 text-[var(--warning)] flex items-center justify-center shrink-0 mt-0.5">
                       <Check size={14} strokeWidth={3} />
@@ -946,18 +979,25 @@ export default function LandingPage() {
                       </p>
                     </div>
                   </div>
-                </div>
+                </AnimatedGroup>
 
                 <div className="pt-2">
-                  <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
-                    <span>Open Assessment Planner</span>
-                    <ArrowRight size={15} />
-                  </Link>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="inline-block">
+                    <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                      <span>Open Assessment Planner</span>
+                      <ArrowRight size={15} />
+                    </Link>
+                  </motion.div>
                 </div>
               </div>
 
               {/* Planner UI Preview */}
-              <div className="rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8 shadow-xl space-y-4">
+              <div className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)] p-6 sm:p-8 shadow-xl space-y-4">
+                <BorderTrail
+                  size={80}
+                  className="bg-gradient-to-r from-amber-500 via-orange-400 to-amber-600"
+                  transition={{ repeat: Infinity, duration: 8, ease: "linear" }}
+                />
                 <div className="flex items-center justify-between pb-3 border-b border-[var(--border)]">
                   <div>
                     <span className="text-xs font-bold text-[var(--foreground)]">Academic Revision Schedule</span>
@@ -968,7 +1008,7 @@ export default function LandingPage() {
                   </span>
                 </div>
 
-                <div className="space-y-2.5">
+                <AnimatedGroup preset="blur-slide" className="space-y-2.5">
                   <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-rose-500/30 flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3">
                       <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0" />
@@ -1007,7 +1047,7 @@ export default function LandingPage() {
                       Active Recall
                     </span>
                   </div>
-                </div>
+                </AnimatedGroup>
               </div>
             </div>
           </InView>
@@ -1047,7 +1087,7 @@ export default function LandingPage() {
                   </span>
                 </div>
 
-                <div className="space-y-3">
+                <AnimatedGroup preset="blur-slide" className="space-y-3">
                   <div className="p-3.5 rounded-2xl bg-[var(--surface-alt)] border border-[var(--border)] flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-xl bg-[var(--accent)]/15 text-[var(--accent)] flex items-center justify-center font-bold text-xs shrink-0">
@@ -1086,7 +1126,7 @@ export default function LandingPage() {
                     </div>
                     <Download size={15} className="text-[var(--text-secondary)] hover:text-[var(--accent)] cursor-pointer" />
                   </div>
-                </div>
+                </AnimatedGroup>
               </div>
 
               {/* Engine 4 Explanatory Content */}
@@ -1104,7 +1144,7 @@ export default function LandingPage() {
                   Online study groups and student forums are often overrun by unverified notes, outdated syllabi, and low-quality summaries. IB Nexus enforces a central administrative approval workflow for all community contributions.
                 </p>
 
-                <div className="space-y-3.5">
+                <AnimatedGroup preset="fade" className="space-y-3.5">
                   <div className="flex items-start gap-3">
                     <div className="w-6 h-6 rounded-lg bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5">
                       <Check size={14} strokeWidth={3} />
@@ -1140,13 +1180,15 @@ export default function LandingPage() {
                       </p>
                     </div>
                   </div>
-                </div>
+                </AnimatedGroup>
 
                 <div className="pt-2">
-                  <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
-                    <span>Browse Resource Library</span>
-                    <ArrowRight size={15} />
-                  </Link>
+                  <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="inline-block">
+                    <Link href="/signup" className="btn btn-brand px-6 py-3 text-sm font-extrabold rounded-xl inline-flex items-center gap-2">
+                      <span>Browse Resource Library</span>
+                      <ArrowRight size={15} />
+                    </Link>
+                  </motion.div>
                 </div>
               </div>
             </div>
@@ -1320,7 +1362,12 @@ export default function LandingPage() {
               Created by Abdul Baseer for the Global IB Community.
             </h2>
 
-            <div className="text-left p-8 sm:p-10 rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-lg space-y-4 text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
+            <div className="relative overflow-hidden text-left p-8 sm:p-10 rounded-3xl border border-[var(--border)] bg-[var(--surface)] shadow-lg space-y-4 text-sm sm:text-base text-[var(--text-secondary)] leading-relaxed">
+              <BorderTrail
+                size={85}
+                className="bg-gradient-to-r from-indigo-500 via-[var(--accent)] to-sky-400"
+                transition={{ repeat: Infinity, duration: 8, ease: "linear" }}
+              />
               <p>
                 &ldquo;The International Baccalaureate continuum is one of the most rigorous secondary educational programs in the world. Yet, for years, students have been forced to juggle disparate applications — pasting syllabus notes into unformatted documents, manually computing flashcard repetitions, and searching through messy, unmoderated drives.&rdquo;
               </p>
@@ -1361,7 +1408,7 @@ export default function LandingPage() {
               </h2>
             </div>
 
-            <div className="space-y-4">
+            <AnimatedGroup preset="fade" className="space-y-4">
               {ACADEMIC_FAQ.map((item, idx) => (
                 <details
                   key={idx}
@@ -1378,7 +1425,7 @@ export default function LandingPage() {
                   </p>
                 </details>
               ))}
-            </div>
+            </AnimatedGroup>
           </div>
         </InView>
       </section>
@@ -1393,7 +1440,12 @@ export default function LandingPage() {
           }}
           transition={{ duration: 0.5, ease: "easeOut" }}
         >
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
+          <div className="relative overflow-hidden rounded-3xl border border-[var(--border)] bg-[var(--card)] p-8 sm:p-14 max-w-5xl mx-auto shadow-2xl text-center space-y-6">
+            <BorderTrail
+              size={100}
+              className="bg-gradient-to-r from-[var(--accent)] via-indigo-500 to-sky-400"
+              transition={{ repeat: Infinity, duration: 7, ease: "linear" }}
+            />
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-[var(--accent)]/15 text-[var(--accent)]">
               <Sparkles size={14} />
               <span>Ready for the Examination Session</span>
@@ -1408,22 +1460,26 @@ export default function LandingPage() {
             </p>
 
             <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
-              <Link
-                href="/signup"
-                className="btn btn-brand inline-flex items-center gap-2 rounded-2xl px-8 py-4 font-extrabold text-base shadow-[0_8px_25px_color-mix(in_srgb,var(--accent)_30%,transparent)] hover:scale-[1.02] transition-all"
-              >
-                <span>Create Your Student Workspace</span>
-                <ArrowRight size={18} />
-              </Link>
+              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                <Link
+                  href="/signup"
+                  className="btn btn-brand inline-flex items-center gap-2 rounded-2xl px-8 py-4 font-extrabold text-base shadow-[0_8px_25px_color-mix(in_srgb,var(--accent)_30%,transparent)] transition-all"
+                >
+                  <span>Create Your Student Workspace</span>
+                  <ArrowRight size={18} />
+                </Link>
+              </motion.div>
 
-              <button
-                type="button"
-                onClick={() => setShowVisitorTour(true)}
-                className="inline-flex items-center gap-2 rounded-2xl border border-[var(--border-strong)] bg-[var(--card)] px-6 py-4 font-bold text-[var(--foreground)] text-base shadow-sm hover:border-[var(--accent)] hover:text-[var(--accent)] transition cursor-pointer"
-              >
-                <Play size={16} className="text-[var(--accent)] fill-current" />
-                <span>Launch 60s Tour</span>
-              </button>
+              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowVisitorTour(true)}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-[var(--border-strong)] bg-[var(--surface)] px-6 py-4 font-bold text-[var(--foreground)] text-base shadow-sm hover:border-[var(--accent)] hover:text-[var(--accent)] transition cursor-pointer"
+                >
+                  <Play size={16} className="text-[var(--accent)] fill-current" />
+                  <span>Launch 60s Tour</span>
+                </button>
+              </motion.div>
             </div>
           </div>
         </InView>

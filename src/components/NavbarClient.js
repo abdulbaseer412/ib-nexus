@@ -12,7 +12,8 @@ import UserNotificationBanner from "@/components/notifications/UserNotificationB
 import UserRequestsModal from "@/components/notifications/UserRequestsModal";
 import { fetchUserNotificationsAction } from "@/app/dashboard/admin/actions";
 import { createClient } from "@/utils/supabase-browser";
-import { ScrollProgress, AnimatedBackground } from "@/components/motion-primitives";
+import { motion, AnimatePresence } from "motion/react";
+import { ScrollProgress, AnimatedBackground, AnimatedGroup } from "@/components/motion-primitives";
 
 export default function NavbarClient({ email, displayName, avatarUrl }) {
   const pathname = usePathname();
@@ -221,9 +222,11 @@ export default function NavbarClient({ email, displayName, avatarUrl }) {
                 <Link prefetch href="/login" className="px-3.5 py-2 text-sm font-semibold text-[var(--muted)] hover:text-[var(--foreground)] transition">
                   Sign In
                 </Link>
-                <Link prefetch href="/signup" className="btn btn-brand rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition hover:scale-[1.02]">
-                  Get Started
-                </Link>
+                <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                  <Link prefetch href="/signup" className="btn btn-brand rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition inline-block">
+                    Get Started
+                  </Link>
+                </motion.div>
                 <ThemeToggle />
                 {/* Mobile Menu Button */}
                 <button
@@ -260,57 +263,65 @@ export default function NavbarClient({ email, displayName, avatarUrl }) {
           </div>
         </div>
 
-        {/* Mobile Drawer (Clean & Minimal) */}
-        {mobileMenuOpen && !email && (
-          <div className="border-b border-[var(--border)] bg-[var(--background)] px-5 pb-6 pt-4 md:hidden shadow-xl animate-in fade-in slide-in-from-top-2">
-            <div className="flex flex-col space-y-2">
-              <Link 
-                href="/#notes" 
-                onClick={() => setMobileMenuOpen(false)} 
-                className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
-              >
-                Features
-              </Link>
-              <Link 
-                href="/#resources" 
-                onClick={() => setMobileMenuOpen(false)} 
-                className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
-              >
-                Resources
-              </Link>
-              <Link 
-                href="/about" 
-                onClick={() => setMobileMenuOpen(false)} 
-                className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
-              >
-                About IB Nexus
-              </Link>
-              <Link 
-                href="/contact" 
-                onClick={() => setMobileMenuOpen(false)} 
-                className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
-              >
-                Contact
-              </Link>
-              <div className="pt-3 border-t border-[var(--border)] flex flex-col gap-2">
+        {/* Mobile Drawer (Smooth Spring AnimatePresence) */}
+        <AnimatePresence>
+          {mobileMenuOpen && !email && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              className="overflow-hidden border-b border-[var(--border)] bg-[var(--background)] px-5 pb-6 pt-4 md:hidden shadow-xl"
+            >
+              <AnimatedGroup preset="blur-slide" className="flex flex-col space-y-2">
                 <Link 
-                  href="/login" 
+                  href="/#notes" 
                   onClick={() => setMobileMenuOpen(false)} 
-                  className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-center border border-[var(--border)] hover:bg-[var(--surface)] transition"
+                  className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
                 >
-                  Sign In
+                  Features
                 </Link>
                 <Link 
-                  href="/signup" 
+                  href="/#resources" 
                   onClick={() => setMobileMenuOpen(false)} 
-                  className="btn btn-brand rounded-xl px-3.5 py-2.5 text-sm font-semibold text-center shadow-sm"
+                  className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
                 >
-                  Get Started
+                  Resources
                 </Link>
-              </div>
-            </div>
-          </div>
-        )}
+                <Link 
+                  href="/about" 
+                  onClick={() => setMobileMenuOpen(false)} 
+                  className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
+                >
+                  About IB Nexus
+                </Link>
+                <Link 
+                  href="/contact" 
+                  onClick={() => setMobileMenuOpen(false)} 
+                  className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--surface)] transition"
+                >
+                  Contact
+                </Link>
+                <div className="pt-3 border-t border-[var(--border)] flex flex-col gap-2">
+                  <Link 
+                    href="/login" 
+                    onClick={() => setMobileMenuOpen(false)} 
+                    className="rounded-xl px-3.5 py-2.5 text-sm font-medium text-center border border-[var(--border)] hover:bg-[var(--surface)] transition"
+                  >
+                    Sign In
+                  </Link>
+                  <Link 
+                    href="/signup" 
+                    onClick={() => setMobileMenuOpen(false)} 
+                    className="btn btn-brand rounded-xl px-3.5 py-2.5 text-sm font-semibold text-center shadow-sm"
+                  >
+                    Get Started
+                  </Link>
+                </div>
+              </AnimatedGroup>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </nav>
 
       {/* Global Notifications and Review Modal for Logged In Users */}
