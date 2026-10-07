@@ -2188,7 +2188,14 @@ export async function resolveAdminRequestAction({
       throw new Error(reqErr?.message || "Request not found");
     }
 
-    const newStatus = action === "approved" ? "approved" : action === "rejected" ? "rejected" : "resolved";
+    const isSaveOnly = action === "save_only";
+    const newStatus = isSaveOnly 
+      ? (request.status || "pending")
+      : action === "approved" 
+      ? "approved" 
+      : action === "rejected" 
+      ? "rejected" 
+      : "resolved";
 
     // 2. Update target entity based on request_type
     let targetUrl = "/dashboard";
@@ -2196,27 +2203,31 @@ export async function resolveAdminRequestAction({
 
     if (reqType === "document_upload" && request.target_id) {
       const resourceUpdates = {
-        visibility: newStatus === "approved" ? "approved" : "rejected",
         updated_at: new Date().toISOString(),
       };
+      if (!isSaveOnly) {
+        resourceUpdates.visibility = newStatus === "approved" ? "approved" : "rejected";
+      }
       if (editData?.title) resourceUpdates.title = editData.title.trim();
-      if (editData?.description) resourceUpdates.description = editData.description.trim();
-      if (editData?.subject) resourceUpdates.subject = editData.subject;
-      if (editData?.level) resourceUpdates.level = editData.level;
-      if (editData?.topic) resourceUpdates.topic = editData.topic.trim();
-      if (editData?.programme) resourceUpdates.programme = editData.programme;
+      if (editData?.description !== undefined) resourceUpdates.description = editData.description?.trim() || null;
+      if (editData?.subject !== undefined) resourceUpdates.subject = editData.subject || null;
+      if (editData?.level !== undefined) resourceUpdates.level = editData.level || null;
+      if (editData?.topic !== undefined) resourceUpdates.topic = editData.topic?.trim() || null;
+      if (editData?.programme !== undefined) resourceUpdates.programme = editData.programme;
 
       await admin.from("ib_resources").update(resourceUpdates).eq("id", request.target_id);
       targetUrl = newStatus === "approved" ? `/dashboard/resources/${request.target_id}` : "/dashboard/resources";
     } else if ((reqType === "discussion_approval" || reqType === "question_approval") && request.target_id) {
       const postUpdates = {
-        status: newStatus === "approved" ? "approved" : "rejected",
         reviewed_at: new Date().toISOString(),
         reviewed_by: adminUser.id,
       };
+      if (!isSaveOnly) {
+        postUpdates.status = newStatus === "approved" ? "approved" : "rejected";
+      }
       if (editData?.title) postUpdates.title = editData.title.trim();
-      if (editData?.content) postUpdates.content = editData.content.trim();
-      if (editData?.category) postUpdates.category = editData.category;
+      if (editData?.content !== undefined) postUpdates.content = editData.content?.trim() || null;
+      if (editData?.category !== undefined) postUpdates.category = editData.category;
 
       await admin.from("community_posts").update(postUpdates).eq("id", request.target_id);
       targetUrl = newStatus === "approved" ? `/dashboard/community/${request.target_id}` : "/dashboard/community";
@@ -2241,22 +2252,42 @@ export async function resolveAdminRequestAction({
     }
 
     // 3. Update admin_requests row
+    const requestUpdates = {
+      status: newStatus,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (isSaveOnly) {
+      if (editData?.title) requestUpdates.title = editData.title.trim();
+      if (editData?.description !== undefined) requestUpdates.details = editData.description?.trim() || null;
+      requestUpdates.metadata = {
+        ...(request.metadata || {}),
+        ...(editData || {}),
+      };
+    } else {
+      requestUpdates.admin_response = adminResponse?.trim() || null;
+      requestUpdates.reviewed_by = adminUser.id;
+      requestUpdates.reviewed_at = new Date().toISOString();
+      if (editData?.title) requestUpdates.title = editData.title.trim();
+      if (editData?.description !== undefined) requestUpdates.details = editData.description?.trim() || null;
+      if (editData) {
+        requestUpdates.metadata = {
+          ...(request.metadata || {}),
+          ...editData,
+        };
+      }
+    }
+
     const { data: updatedRequest, error: updateErr } = await admin
       .from("admin_requests")
-      .update({
-        status: newStatus,
-        admin_response: adminResponse?.trim() || null,
-        reviewed_by: adminUser.id,
-        reviewed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .update(requestUpdates)
       .eq("id", requestId)
       .select()
       .single();
 
     if (updateErr) throw updateErr;
 
-    // 4. Create user notification if target user is known
+    // 4. Create user notification if target user is known (skip if only saving draft edits)
     let targetUserId = request.user_id;
     if (!targetUserId && request.user_email) {
       try {
@@ -2271,7 +2302,7 @@ export async function resolveAdminRequestAction({
       } catch (profErr) {}
     }
 
-    if (targetUserId) {
+    if (targetUserId && !isSaveOnly) {
       const typeLabelMap = {
         document_upload: "Document Upload",
         discussion_approval: "Community Discussion",

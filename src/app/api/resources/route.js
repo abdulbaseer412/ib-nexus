@@ -50,7 +50,9 @@ export async function GET(request) {
   }
 
   if (!programme || programme === "auto") {
-    if (currentProfile?.programme) {
+    if (source === "community" || source === "community_resources" || source === "user") {
+      programme = "all";
+    } else if (currentProfile?.programme) {
       programme = currentProfile.programme.toLowerCase();
     } else if (currentProfile?.ib_program) {
       programme = currentProfile.ib_program.toLowerCase().includes("myp") ? "myp" : "dp";
@@ -111,7 +113,7 @@ export async function GET(request) {
     if (subject === "general" || subject === "General") {
       query = query.is("subject", null);
     } else {
-      query = query.eq("subject", subject);
+      query = query.ilike("subject", subject);
     }
   }
   if (level) query = query.eq("level", level);

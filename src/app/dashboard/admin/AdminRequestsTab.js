@@ -67,6 +67,7 @@ export default function AdminRequestsTab() {
   const [actionModal, setActionModal] = useState(null); // { request, action: 'approve' | 'reject' | 'resolve' }
   const [adminNote, setAdminNote] = useState("");
   const [editModal, setEditModal] = useState(null); // { request, editData }
+  const [confirmPublishModal, setConfirmPublishModal] = useState(null);
   const [deleteConfirmModal, setDeleteConfirmModal] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -167,11 +168,36 @@ export default function AdminRequestsTab() {
     }
   };
 
-  const handleSaveEditAndApprove = async () => {
+  const handleSaveEditOnly = async () => {
     if (!editModal) return;
     setSubmitting(true);
     try {
       const { request, editData } = editModal;
+      const res = await resolveAdminRequestAction({
+        requestId: request.id,
+        action: "save_only",
+        editData,
+      });
+
+      if (!res.success) throw new Error(res.error || "Failed to save edits");
+
+      setRequests(prev => prev.map(r => r.id === request.id ? res.request : r));
+      setBanner(`Changes to "${editData?.title || request.title}" saved successfully! Resource remains pending review.`);
+      setTimeout(() => setBanner(null), 5000);
+      setEditModal(null);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleSaveEditAndApprove = async () => {
+    const targetModal = confirmPublishModal || editModal;
+    if (!targetModal) return;
+    setSubmitting(true);
+    try {
+      const { request, editData } = targetModal;
       const res = await resolveAdminRequestAction({
         requestId: request.id,
         action: "approved",
@@ -182,8 +208,9 @@ export default function AdminRequestsTab() {
       if (!res.success) throw new Error(res.error || "Failed to update and approve");
 
       setRequests(prev => prev.map(r => r.id === request.id ? res.request : r));
-      setBanner(`Changes saved and "${request.title}" approved! Notification sent to student.`);
+      setBanner(`Changes saved and "${editData?.title || request.title}" approved! Published to Community Resources.`);
       setTimeout(() => setBanner(null), 5000);
+      setConfirmPublishModal(null);
       setEditModal(null);
       setAdminNote("");
     } catch (e) {
@@ -847,17 +874,85 @@ export default function AdminRequestsTab() {
               />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2">
+            <div className="flex items-center justify-end gap-2 pt-2 flex-wrap">
               <Button variant="ghost" onClick={() => setEditModal(null)} disabled={submitting}>
                 Cancel
               </Button>
               <Button
+                variant="secondary"
+                onClick={handleSaveEditOnly}
+                disabled={submitting || !editModal.editData.title.trim()}
+                className="border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/10 text-xs font-semibold"
+              >
+                {submitting ? <Spinner /> : "Save Changes (Keep Pending)"}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => setConfirmPublishModal(editModal)}
+                disabled={submitting || !editModal.editData.title.trim()}
+                className="bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/10 text-xs font-semibold"
+              >
+                Approve & Publish...
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Reconfirm Before Publishing Modal */}
+      {confirmPublishModal && (
+        <Modal
+          open={Boolean(confirmPublishModal)}
+          onClose={() => setConfirmPublishModal(null)}
+          title="Reconfirm Resource Publication"
+        >
+          <div className="space-y-4">
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-bold text-amber-200">Confirmation Required Before Publishing</p>
+                <p className="text-[11px] text-amber-300/90 leading-relaxed">
+                  Approving will instantly publish this resource to the public <strong>Community Resources</strong> repository for all students to discover and download. A notification will also be sent to the student author.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-[var(--surface)] border border-[var(--border)] text-xs space-y-1.5">
+              <div className="font-bold text-[var(--foreground)] text-sm">
+                {confirmPublishModal.editData?.title || confirmPublishModal.request.title}
+              </div>
+              <div className="text-[11px] text-[var(--muted)] flex items-center gap-2 flex-wrap">
+                <span>Programme: <strong className="uppercase text-[var(--foreground)]">{confirmPublishModal.editData?.programme || "DP"}</strong></span>
+                {confirmPublishModal.editData?.subject && (
+                  <span>· Subject: <strong className="text-[var(--foreground)]">{confirmPublishModal.editData.subject}</strong></span>
+                )}
+                {confirmPublishModal.editData?.level && (
+                  <span>· Level: <strong className="text-[var(--foreground)]">{confirmPublishModal.editData.level}</strong></span>
+                )}
+              </div>
+              {adminNote.trim() && (
+                <div className="mt-2 pt-2 border-t border-[var(--border)] text-[11px] text-[var(--muted)]">
+                  <span>Note to student: </span>
+                  <span className="text-[var(--foreground)] italic">&ldquo;{adminNote.trim()}&rdquo;</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmPublishModal(null)}
+                disabled={submitting}
+              >
+                Go Back to Editing
+              </Button>
+              <Button
                 variant="primary"
                 onClick={handleSaveEditAndApprove}
-                disabled={submitting || !editModal.editData.title.trim()}
-                className="bg-emerald-600 hover:bg-emerald-500 shadow-md shadow-emerald-500/10"
+                disabled={submitting}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs shadow-md shadow-emerald-500/20"
               >
-                {submitting ? <Spinner /> : "Save Changes & Approve"}
+                {submitting ? <Spinner /> : "Confirm & Publish to Resources"}
               </Button>
             </div>
           </div>

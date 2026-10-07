@@ -624,6 +624,7 @@ function EditResourceModal({ open, onClose, resource, onSaved, isAdmin }) {
   const [resourceType, setResourceType] = useState("other");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+  const [confirmPublish, setConfirmPublish] = useState(false);
 
   useEffect(() => {
     if (resource && open) {
@@ -634,6 +635,7 @@ function EditResourceModal({ open, onClose, resource, onSaved, isAdmin }) {
       setTopic(resource.topic || "");
       setResourceType(resource.resource_type || "other");
       setErr(null);
+      setConfirmPublish(false);
     }
   }, [resource, open]);
 
@@ -746,40 +748,76 @@ function EditResourceModal({ open, onClose, resource, onSaved, isAdmin }) {
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-[var(--border)]">
-          {isPending && isAdmin ? (
-            <>
-              <Button
-                type="button"
-                variant="danger"
-                onClick={() => handleUpdate("rejected")}
-                disabled={loading}
-                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs"
-              >
-                <XCircle className="w-3.5 h-3.5 mr-1" /> Reject Submission
+        {confirmPublish ? (
+          <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+            <div className="flex items-center gap-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Confirm Publication to Community Resources</span>
+            </div>
+            <p className="text-xs text-[var(--foreground)] leading-relaxed">
+              Are you sure you want to approve and publish <strong>"{title}"</strong>? It will immediately appear in the public <strong>Community Resources</strong> repository for all students to discover.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-500/20">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmPublish(false)} disabled={loading}>
+                Go Back
               </Button>
-              <div className="flex-1" />
-              <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
               <Button
                 type="button"
                 variant="primary"
+                size="sm"
                 onClick={() => handleUpdate("approved")}
                 disabled={loading}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-500/20"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-500/20 text-xs font-semibold"
               >
-                {loading ? <Spinner /> : <><CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve & Publish</>}
+                {loading ? <Spinner className="w-3.5 h-3.5" /> : "Confirm & Publish"}
               </Button>
-            </>
-          ) : (
-            <>
-              <div className="flex-1" />
-              <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
-              <Button type="submit" variant="primary" disabled={loading}>
-                {loading ? <Spinner /> : "Save Changes"}
-              </Button>
-            </>
-          )}
-        </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-[var(--border)]">
+            {isPending && isAdmin ? (
+              <>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => handleUpdate("rejected")}
+                  disabled={loading}
+                  className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs"
+                >
+                  <XCircle className="w-3.5 h-3.5 mr-1" /> Reject Submission
+                </Button>
+                <div className="flex-1" />
+                <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => handleUpdate(null)}
+                  disabled={loading}
+                  className="border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/10 text-xs"
+                >
+                  {loading ? <Spinner /> : "Save Changes (Keep Pending)"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => setConfirmPublish(true)}
+                  disabled={loading}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-500/20"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve & Publish
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="flex-1" />
+                <Button type="button" variant="ghost" onClick={onClose} disabled={loading}>Cancel</Button>
+                <Button type="submit" variant="primary" disabled={loading}>
+                  {loading ? <Spinner /> : "Save Changes"}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </form>
     </Modal>
   );
@@ -1323,6 +1361,9 @@ function AdminModerationQueueModal({ open, onClose, onRefreshResources, onPrevie
   }, [open, fetchPending]);
 
   const handleApprove = async (resource) => {
+    if (!window.confirm(`Are you sure you want to approve and publish "${resource.title}" to IB Community Resources? It will become publicly visible immediately.`)) {
+      return;
+    }
     setActionId(resource.id);
     try {
       const res = await fetch(`/api/resources/${resource.id}`, {
@@ -2239,16 +2280,20 @@ export default function ResourcesClient({ userProfile, userProgram, isAdmin, use
     const p = new URLSearchParams();
     if (tab === "nexus_library") {
       p.set("source", "platform");
+      p.set("programme", filters.programme || userProgram || "dp");
     } else if (tab === "community_resources") {
       p.set("source", "community");
+      // Community Resources is a shared global library across programmes
+      p.set("programme", filters.programme || "all");
     } else if (tab === "my_library" || tab === "community_library") {
       p.set("source", "user");
       p.set("scope", "mine");
+      // Personal Library shows all user uploads unless explicitly filtered
+      p.set("programme", filters.programme || "all");
     } else {
       p.set("source", "all");
+      p.set("programme", filters.programme || userProgram || "dp");
     }
-    // Strict programme locking (MYP vs DP)
-    p.set("programme", filters.programme || userProgram || "dp");
     if (filters.subject) p.set("subject", filters.subject);
     if (filters.level) p.set("level", filters.level);
     if (filters.resource_type) {
@@ -2762,6 +2807,47 @@ export default function ResourcesClient({ userProfile, userProgram, isAdmin, use
                 <BookOpen className="w-3.5 h-3.5" />
                 Subject-Specific ({resources.filter(r => !!r.subject).length})
               </button>
+
+              {/* Programme Quick Switcher for Community Resources */}
+              {tab === "community_resources" && (
+                <>
+                  <div className="h-4 w-[1px] bg-[var(--border)] mx-1 hidden sm:block" />
+                  <span className="text-xs font-semibold text-[var(--muted)] mr-1">Programme:</span>
+                  <button
+                    type="button"
+                    onClick={() => setFilters(f => ({ ...f, programme: null }))}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      !filters.programme || filters.programme === "all"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
+                    }`}
+                  >
+                    All Programmes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilters(f => ({ ...f, programme: "dp" }))}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      filters.programme === "dp"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
+                    }`}
+                  >
+                    DP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilters(f => ({ ...f, programme: "myp" }))}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      filters.programme === "myp"
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "bg-[var(--surface)] text-[var(--muted)] hover:text-[var(--foreground)] border border-[var(--border)]"
+                    }`}
+                  >
+                    MYP
+                  </button>
+                </>
+              )}
             </div>
           )}
 
