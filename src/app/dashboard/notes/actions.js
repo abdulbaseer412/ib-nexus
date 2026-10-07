@@ -8,9 +8,13 @@ import { extractTextFromTipTap } from "@/lib/utils/text-extractor";
 
 export async function getNotes() {
   const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
   const { data, error } = await supabase
     .from("ib_notes")
     .select("id, created_at, updated_at, title, subject, last_opened_at, is_favorite, is_archived, is_folder, parent_id, exam_importance, topic, level")
+    .eq("user_id", user.id)
     .order("last_opened_at", { ascending: false });
 
   if (error) {
@@ -22,10 +26,14 @@ export async function getNotes() {
 
 export async function getNote(id) {
   const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
   const { data, error } = await supabase
     .from("ib_notes")
     .select("*")
     .eq("id", id)
+    .eq("user_id", user.id)
     .single();
 
   if (error) {
@@ -37,7 +45,8 @@ export async function getNote(id) {
   await supabase
     .from("ib_notes")
     .update({ last_opened_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
     
   return data;
 }
@@ -122,10 +131,14 @@ export async function createFolder(title, subject, parentId = null, examImportan
 
 export async function bulkDeleteNotesAction(ids) {
   const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
   const { error } = await supabase
     .from("ib_notes")
     .delete()
-    .in("id", ids);
+    .in("id", ids)
+    .eq("user_id", user.id);
 
   if (error) {
     console.error("Error bulk deleting notes/folders:", error);
@@ -142,6 +155,8 @@ export async function bulkDeleteNotesAction(ids) {
 
 export async function updateNoteContent(id, contentStr) {
   const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Unauthorized" };
   
   const { data, error } = await supabase
     .from("ib_notes")
@@ -150,6 +165,7 @@ export async function updateNoteContent(id, contentStr) {
       updated_at: new Date().toISOString()
     })
     .eq("id", id)
+    .eq("user_id", user.id)
     .select("id, title, subject, level")
     .single();
 
@@ -160,8 +176,7 @@ export async function updateNoteContent(id, contentStr) {
   
   // Asynchronously index for Knowledge Lens (non-blocking)
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user && contentStr) {
+    if (contentStr) {
       const parsedContent = JSON.parse(contentStr);
       const extractedText = extractTextFromTipTap(parsedContent);
       
@@ -186,6 +201,8 @@ export async function updateNoteContent(id, contentStr) {
 
 export async function updateNoteMetadata(id, formData) {
   const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Unauthorized" };
   
   const title = formData.get("title");
   const subject = formData.get("subject");
@@ -203,7 +220,8 @@ export async function updateNoteMetadata(id, formData) {
   const { error } = await supabase
     .from("ib_notes")
     .update(updates)
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) {
     console.error("Error updating metadata:", error);
@@ -217,10 +235,14 @@ export async function updateNoteMetadata(id, formData) {
 
 export async function deleteNote(id) {
   const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthorized");
+
   const { error } = await supabase
     .from("ib_notes")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) {
     console.error("Error deleting note:", error);
@@ -236,6 +258,9 @@ export async function deleteNote(id) {
 
 export async function toggleNoteState(id, field, value) {
   const supabase = await createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Unauthorized" };
+
   const validFields = ["is_favorite", "is_pinned", "is_archived"];
   
   if (!validFields.includes(field)) {
@@ -245,7 +270,8 @@ export async function toggleNoteState(id, field, value) {
   const { error } = await supabase
     .from("ib_notes")
     .update({ [field]: value })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", user.id);
 
   if (error) {
     console.error(`Error toggling ${field}:`, error);
@@ -260,14 +286,14 @@ export async function toggleNoteState(id, field, value) {
 export async function duplicateNote(id) {
   const supabase = await createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
-  
   if (!user) return { error: "Unauthorized" };
 
-  // Fetch original note
+  // Fetch original note scoped to user
   const { data: note, error: fetchError } = await supabase
     .from("ib_notes")
     .select("*")
     .eq("id", id)
+    .eq("user_id", user.id)
     .single();
 
   if (fetchError || !note) {
@@ -338,7 +364,8 @@ export async function analyzeNoteReadiness(noteId, textContent) {
   const { error } = await supabase
     .from("ib_notes")
     .update({ revision_readiness: score })
-    .eq("id", noteId);
+    .eq("id", noteId)
+    .eq("user_id", user.id);
 
   if (error) {
     console.error("Error updating readiness:", error);

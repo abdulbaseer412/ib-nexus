@@ -37,13 +37,29 @@ function getEmailContent(category, name) {
 
 export async function submitContactForm(prevState, formData) {
   try {
-    const name = formData.get("name");
-    const email = formData.get("email");
-    const category = formData.get("category");
-    const message = formData.get("message");
+    const { checkRateLimit } = await import("@/lib/rate-limiter");
+
+    const name = (formData.get("name") || "").toString().trim().substring(0, 100);
+    const email = (formData.get("email") || "").toString().trim().toLowerCase().substring(0, 150);
+    const category = (formData.get("category") || "").toString().trim().substring(0, 50);
+    const message = (formData.get("message") || "").toString().trim().substring(0, 5000);
 
     if (!name || !email || !category || !message) {
       return { error: "Please fill out all fields.", fields: { name, email, category, message } };
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return { error: "Please provide a valid email address.", fields: { name, email, category, message } };
+    }
+
+    // Rate limit: max 5 contact submissions per 15 minutes per email
+    const rate = checkRateLimit(`contact_${email}`, { maxRequests: 5, windowMs: 15 * 60 * 1000 });
+    if (!rate.success) {
+      return {
+        error: "Too many messages sent. Please wait a few minutes before submitting another inquiry.",
+        fields: { name, email, category, message }
+      };
     }
 
     const supabase = await createServerClient();

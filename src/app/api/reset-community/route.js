@@ -1,21 +1,32 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/auth/session";
 import { revalidatePath } from "next/cache";
 
 export async function GET() {
+  return Response.json({ error: "Method not allowed. Admin POST authentication required." }, { status: 405 });
+}
+
+export async function POST() {
+  try {
+    await requireAdmin();
+  } catch {
+    return Response.json({ error: "Unauthorized. Admin privileges required." }, { status: 403 });
+  }
+
   const supabase = createAdminClient();
   
   // Delete all posts (cascades to replies, reactions, bookmarks, etc)
   const { error: postError } = await supabase.from("community_posts").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   
   if (postError) {
-    return Response.json({ error: postError.message });
+    return Response.json({ error: postError.message }, { status: 500 });
   }
 
   // Delete all existing rooms
   const { error: deleteRoomsError } = await supabase.from("community_rooms").delete().neq("id", "00000000-0000-0000-0000-000000000000");
 
   if (deleteRoomsError) {
-    return Response.json({ error: deleteRoomsError.message });
+    return Response.json({ error: deleteRoomsError.message }, { status: 500 });
   }
 
   // Seed new beautiful HL/SL structured rooms
@@ -57,7 +68,7 @@ export async function GET() {
   const { error: seedError } = await supabase.from("community_rooms").insert(newRooms);
 
   if (seedError) {
-    return Response.json({ error: seedError.message });
+    return Response.json({ error: seedError.message }, { status: 500 });
   }
   
   revalidatePath("/dashboard/community", "layout");

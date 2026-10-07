@@ -115,12 +115,23 @@ export async function PUT(request, { params }) {
   // For admin, use admin client to bypass RLS (platform resources have null user_id)
   const client = isAdmin ? createAdminClient() : supabase;
 
+  // Non-admin can only update their own resources and cannot modify protected fields (visibility, source, user_id)
+  let safeUpdates = { ...updates };
+  if (!isAdmin) {
+    delete safeUpdates.visibility;
+    delete safeUpdates.source;
+    delete safeUpdates.user_id;
+    delete safeUpdates.created_at;
+    delete safeUpdates.downloads_count;
+    delete safeUpdates.views_count;
+    delete safeUpdates.rating;
+  }
+
   let query = client
     .from("ib_resources")
-    .update({ ...updates, updated_at: new Date().toISOString() })
+    .update({ ...safeUpdates, updated_at: new Date().toISOString() })
     .eq("id", id);
 
-  // Non-admin can only update their own
   if (!isAdmin) {
     query = query.eq("user_id", user.id);
   }

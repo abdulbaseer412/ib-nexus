@@ -291,6 +291,20 @@ export async function middleware(request) {
     return redirectWithCookies(loginUrl);
   }
 
+  // 8. Strict Admin Route Protection
+  const isAdminRoute = pathname === "/dashboard/admin" || pathname.startsWith("/dashboard/admin/");
+  if (isAdminRoute) {
+    if (!user) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("next", pathname);
+      return redirectWithCookies(loginUrl);
+    }
+    if (!isAdmin) {
+      return redirectWithCookies(new URL("/dashboard", request.url));
+    }
+  }
+
   if (user && isAuthRoute(pathname)) {
     // Do not redirect if they are hitting an API auth route, OAuth callback,
     // if there are error / disabled_method / logout query params,

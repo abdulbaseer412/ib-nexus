@@ -6,9 +6,10 @@
  */
 
 import { createServerClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getAuthUser } from "@/lib/auth";
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit } from "@/lib/rate-limiter";
 
 const MAX_USER_SIZE = 20 * 1024 * 1024;   // 20 MB
 const MAX_ADMIN_SIZE = 50 * 1024 * 1024;  // 50 MB
@@ -38,11 +39,17 @@ export async function POST(request) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
+  // Rate limit uploads (max 10 uploads per 5 minutes per user)
+  const rate = checkRateLimit(`upload_${user.id}`, { maxRequests: 10, windowMs: 5 * 60 * 1000 });
+  if (!rate.success) {
+    return NextResponse.json(
+      { error: "Upload rate limit reached. Please wait a few minutes before uploading more files." },
+      { status: 429 }
+    );
+  }
+
   const supabase = await createServerClient();
-  const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "https://zdzeajqqxecyvvfrizmp.supabase.co",
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_-J4e0OL2owsV8UyDZuG0IA_PESeq3th"
-  );
+  const supabaseAdmin = createAdminClient();
 
   // Check admin status
   const { data: profile } = await supabase
@@ -54,7 +61,7 @@ export async function POST(request) {
 
   const formData = await request.formData();
   const file = formData.get("file");
-  const isAdminUpload = formData.get("admin_upload") === "true";
+  const isAdminUpload = isAdmin && formData.get("admin_upload") === "true";
 
   if (!file || typeof file === "string") {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
