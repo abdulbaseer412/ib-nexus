@@ -48,7 +48,7 @@ export async function GET(request, { params }) {
         avatar_url: pubProfile.avatar_url,
         school_name: pubProfile.school_name,
         program: pubProfile.ib_program,
-        role: pubProfile.is_admin ? "Administrator" : "Student Contributor",
+        role: "Student Contributor",
         is_admin: pubProfile.is_admin === true,
       };
     }
@@ -196,7 +196,7 @@ export async function PUT(request, { params }) {
         avatar_url: pubProfile.avatar_url,
         school_name: pubProfile.school_name,
         program: pubProfile.ib_program,
-        role: pubProfile.is_admin ? "Administrator" : "Student Contributor",
+        role: "Student Contributor",
         is_admin: pubProfile.is_admin === true,
       };
     }

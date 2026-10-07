@@ -160,7 +160,7 @@ export async function GET(request) {
           avatar_url: p.avatar_url,
           school_name: p.school_name,
           program: p.ib_program,
-          role: p.is_admin ? "Administrator" : "Student Contributor",
+          role: "Student Contributor",
           is_admin: p.is_admin === true,
         };
       }
@@ -350,7 +350,7 @@ export async function POST(request) {
       name: profile?.display_name || profile?.full_name || "Community Member",
       avatar_url: profile?.avatar_url,
       school_name: profile?.school_name,
-      role: isAdmin ? "Administrator" : "Student Contributor",
+      role: "Student Contributor",
       is_admin: isAdmin,
     }
   };

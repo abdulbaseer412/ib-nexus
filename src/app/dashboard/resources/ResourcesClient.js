@@ -786,22 +786,169 @@ function EditResourceModal({ open, onClose, resource, onSaved, isAdmin }) {
 }
 
 /* ── Publisher & Resource Details Modal ──────────────────────────────────── */
-function PublisherDetailsModal({ open, resource, onClose, onPreview, onStudy, directDownload }) {
-  if (!open || !resource) return null;
+function PublisherDetailsModal({ open, resource, onClose, onPreview, onStudy, directDownload, isAdmin, onResourceUpdated }) {
+  const [currentResource, setCurrentResource] = useState(resource);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editFileName, setEditFileName] = useState("");
+  const [editType, setEditType] = useState("other");
+  const [editProgramme, setEditProgramme] = useState("dp");
+  const [editSubject, setEditSubject] = useState("");
+  const [editLevel, setEditLevel] = useState("");
+  const [editTopic, setEditTopic] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [editError, setEditError] = useState(null);
 
-  const isPlatform = resource.source === "platform";
-  const pub = resource.publisher || {};
+  useEffect(() => {
+    if (resource) {
+      setCurrentResource(resource);
+      setEditTitle(resource.title || "");
+      setEditFileName(resource.file_name || resource.title || "");
+      setEditType(resource.resource_type || "other");
+      setEditProgramme(resource.programme || "dp");
+      setEditSubject(resource.subject || "");
+      setEditLevel(resource.level || "");
+      setEditTopic(resource.topic || "");
+      setEditDescription(resource.description || "");
+      setIsEditing(false);
+      setSaveSuccess(false);
+      setEditError(null);
+    }
+  }, [resource, open]);
+
+  if (!open || !currentResource) return null;
+
+  const isPlatform = currentResource.source === "platform";
+  const pub = currentResource.publisher || {};
   const pubName = isPlatform ? "IB Nexus Academic Board" : (pub.name || "Community Scholar");
-  const pubRole = isPlatform ? "Official Curriculum Board" : (pub.role || "Verified Student Contributor");
-  const pubSchool = isPlatform ? "IB Nexus Global Academy" : (pub.school_name || "IB World School Candidate");
+
+  // Clean publisher subtitle: remove "Administrator" field completely
+  const rawRole = pub.role || "";
+  const cleanRole = (!rawRole.toLowerCase().includes("admin")) ? rawRole : null;
+  const pubSchool = isPlatform ? "IB Nexus Global Academy" : (pub.school_name || null);
+
+  const subtitleText = isPlatform
+    ? "Official Curriculum Board · IB Nexus Global Academy"
+    : pubSchool
+      ? (cleanRole ? `${cleanRole} · ${pubSchool}` : pubSchool)
+      : (cleanRole || "Community Contributor");
+
   const pubAvatar = pub.avatar_url;
-  const isApproved = resource.visibility === "approved" || resource.visibility === "public" || isPlatform;
-  const isPending = resource.visibility === "pending_approval";
-  const isRejected = resource.visibility === "rejected";
+  const isApproved = currentResource.visibility === "approved" || currentResource.visibility === "public" || isPlatform;
+  const isPending = currentResource.visibility === "pending_approval";
+  const isRejected = currentResource.visibility === "rejected";
+
+  const handleSave = async (e) => {
+    if (e) e.preventDefault();
+    if (!editTitle.trim()) {
+      setEditError("Resource title cannot be blank.");
+      return;
+    }
+    setSaving(true);
+    setEditError(null);
+    try {
+      const payload = {
+        title: editTitle.trim(),
+        file_name: editFileName.trim() || editTitle.trim(),
+        resource_type: editType,
+        programme: editProgramme,
+        subject: editSubject.trim() || null,
+        level: editLevel || null,
+        topic: editTopic.trim() || null,
+        description: editDescription.trim() || null,
+      };
+
+      const res = await fetch(`/api/resources/${currentResource.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update resource");
+
+      const updated = {
+        ...currentResource,
+        ...data,
+        title: payload.title,
+        file_name: payload.file_name,
+        resource_type: payload.resource_type,
+        programme: payload.programme,
+        subject: payload.subject,
+        level: payload.level,
+        topic: payload.topic,
+        description: payload.description,
+      };
+
+      setCurrentResource(updated);
+      setIsEditing(false);
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 4000);
+
+      if (onResourceUpdated) {
+        onResourceUpdated(updated);
+      }
+    } catch (err) {
+      setEditError(err.message || "Failed to update resource");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Modal open={open} onClose={onClose} title="Resource & Contributor Overview">
-      <div className="space-y-5 max-h-[78vh] overflow-y-auto pr-1">
+      <div className="space-y-4 max-h-[78vh] overflow-y-auto pr-1">
+        {/* Document Header & File Title */}
+        <div className="p-3.5 rounded-2xl bg-[var(--surface)] border border-[var(--border)] flex items-start justify-between gap-3 shadow-sm">
+          <div className="space-y-1 min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-[var(--accent)] flex items-center gap-1">
+                <FileText className="w-3 h-3" /> Document Information
+              </span>
+              {currentResource.file_size && (
+                <span className="text-[10px] text-[var(--muted)] font-mono">
+                  ({fmtSize(currentResource.file_size)})
+                </span>
+              )}
+            </div>
+            <h3 className="font-bold text-base text-[var(--foreground)] leading-snug">
+              {currentResource.title || currentResource.file_name}
+            </h3>
+            {currentResource.file_name && currentResource.file_name !== currentResource.title && (
+              <p className="text-[11px] text-[var(--muted)] font-mono truncate">
+                File: {currentResource.file_name}
+              </p>
+            )}
+          </div>
+          {isAdmin && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => { setIsEditing(!isEditing); setEditError(null); }}
+              className={`shrink-0 text-xs h-8 px-2.5 transition-all ${
+                isEditing
+                  ? "bg-[var(--accent)] text-white hover:opacity-90"
+                  : "text-[var(--accent)] hover:bg-[var(--accent)]/10 border-[var(--accent)]/30"
+              }`}
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1" />
+              <span>{isEditing ? "View Details" : "Edit Info"}</span>
+            </Button>
+          )}
+        </div>
+
+        {saveSuccess && (
+          <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>Resource information updated successfully!</span>
+          </div>
+        )}
+
+        {editError && <Alert variant="error" title={editError} />}
+
         {/* Contributor Profile Card */}
         <div className="p-4 rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--surface)] to-[var(--surface-hover)] shadow-sm">
           <div className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted)] mb-3 flex items-center justify-between">
@@ -842,91 +989,272 @@ function PublisherDetailsModal({ open, resource, onClose, onPreview, onStudy, di
                   <span className="bg-purple-500/20 text-purple-300 text-[10px] font-bold px-1.5 py-0.5 rounded border border-purple-500/30">Contributor</span>
                 )}
               </div>
-              <p className="text-xs text-[var(--muted)] truncate mt-0.5">{pubRole} · {pubSchool}</p>
+              {/* Clean subtitle — "Administrator" field removed completely */}
+              {subtitleText && (
+                <p className="text-xs text-[var(--muted)] truncate mt-0.5">{subtitleText}</p>
+              )}
               <p className="text-[11px] text-[var(--muted)]/80 mt-1 flex items-center gap-1">
                 <Clock className="w-3 h-3 text-[var(--muted)]" />
-                <span>Uploaded {fmtDate(resource.created_at)}</span>
+                <span>Uploaded {fmtDate(currentResource.created_at)}</span>
               </p>
             </div>
           </div>
         </div>
 
-        {/* Academic & Syllabus Specifications */}
-        <div className="space-y-2">
-          <label className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Academic Specifications</label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Subject</span>
-              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
-                {resource.subject ? `${resource.subject}${resource.level ? ` (${resource.level})` : ""}` : "General (All Subjects)"}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Category</span>
-              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
-                {typeLabel(resource.resource_type)}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Programme</span>
-              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block uppercase">
-                {resource.programme || "DP"}
-              </span>
-            </div>
-            {resource.topic && (
-              <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] sm:col-span-2">
-                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Unit / Topic</span>
-                <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
-                  {resource.topic}
-                </span>
+        {/* ADMIN EDITING FORM */}
+        {isEditing && isAdmin ? (
+          <form onSubmit={handleSave} className="p-4 rounded-2xl border border-[var(--accent)]/40 bg-[var(--surface)] shadow-md space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[var(--border)]">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-[var(--accent)]" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--foreground)]">
+                  Edit Resource Specifications (Admin)
+                </h4>
               </div>
-            )}
-            {resource.year && (
+              <span className="text-[10px] font-semibold text-[var(--accent)] bg-[var(--accent)]/10 px-2 py-0.5 rounded-full">
+                Editing Mode
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                  Document Title *
+                </label>
+                <input
+                  type="text"
+                  className="field w-full text-xs font-medium"
+                  value={editTitle}
+                  onChange={e => setEditTitle(e.target.value)}
+                  placeholder="e.g. German Revision Guide"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                  File Name
+                </label>
+                <input
+                  type="text"
+                  className="field w-full text-xs font-mono"
+                  value={editFileName}
+                  onChange={e => setEditFileName(e.target.value)}
+                  placeholder="e.g. Claude (1).docx"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                    Resource Category *
+                  </label>
+                  <select
+                    className="field w-full text-xs"
+                    value={editType}
+                    onChange={e => setEditType(e.target.value)}
+                  >
+                    {RESOURCE_TYPES.map(t => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                    Programme *
+                  </label>
+                  <select
+                    className="field w-full text-xs"
+                    value={editProgramme}
+                    onChange={e => setEditProgramme(e.target.value)}
+                  >
+                    <option value="dp">DP (Diploma Programme)</option>
+                    <option value="myp">MYP (Middle Years Programme)</option>
+                    <option value="all">All Programmes / General</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                    Subject
+                  </label>
+                  <input
+                    type="text"
+                    className="field w-full text-xs"
+                    value={editSubject}
+                    onChange={e => setEditSubject(e.target.value)}
+                    placeholder="e.g. German, Mathematics (or blank for General)"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                    Level
+                  </label>
+                  <select
+                    className="field w-full text-xs"
+                    value={editLevel}
+                    onChange={e => setEditLevel(e.target.value)}
+                  >
+                    <option value="">None / Core</option>
+                    <option value="SL">Standard Level (SL)</option>
+                    <option value="HL">Higher Level (HL)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                  Unit / Topic
+                </label>
+                <input
+                  type="text"
+                  className="field w-full text-xs"
+                  value={editTopic}
+                  onChange={e => setEditTopic(e.target.value)}
+                  placeholder="e.g. Grammar, Paper 1 Revision"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-[var(--foreground)] block mb-1">
+                  Contributor Notes & Guidance
+                </label>
+                <textarea
+                  className="field w-full text-xs resize-y"
+                  rows={3}
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  placeholder="Additional context or revision notes..."
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--border)]">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => { setIsEditing(false); setEditError(null); }}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={saving}
+                className="bg-[var(--accent)] hover:opacity-90 shadow-sm"
+              >
+                {saving ? (
+                  <>
+                    <Spinner className="w-3.5 h-3.5 mr-1.5" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </form>
+        ) : (
+          /* ACADEMIC SPECIFICATIONS VIEW */
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">Academic Specifications</label>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(true)}
+                  className="text-[11px] font-semibold text-[var(--accent)] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Pencil className="w-3 h-3" /> Edit Specifications
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Session / Year</span>
+                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Subject</span>
                 <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
-                  {resource.exam_session ? `${resource.exam_session.toUpperCase()} ` : ""}{resource.year}
+                  {currentResource.subject ? `${currentResource.subject}${currentResource.level ? ` (${currentResource.level})` : ""}` : "General (All Subjects)"}
                 </span>
               </div>
-            )}
-            <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-              <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">File Size</span>
-              <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block">
-                {fmtSize(resource.file_size) || "Unknown"}
-              </span>
+              <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Category</span>
+                <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
+                  {typeLabel(currentResource.resource_type)}
+                </span>
+              </div>
+              <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Programme</span>
+                <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block uppercase">
+                  {currentResource.programme || "DP"}
+                </span>
+              </div>
+              {currentResource.topic && (
+                <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] sm:col-span-2">
+                  <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Unit / Topic</span>
+                  <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
+                    {currentResource.topic}
+                  </span>
+                </div>
+              )}
+              {currentResource.year && (
+                <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                  <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">Session / Year</span>
+                  <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block truncate">
+                    {currentResource.exam_session ? `${currentResource.exam_session.toUpperCase()} ` : ""}{currentResource.year}
+                  </span>
+                </div>
+              )}
+              <div className="p-3 rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+                <span className="text-[10px] text-[var(--muted)] uppercase font-semibold block">File Size</span>
+                <span className="text-xs font-bold text-[var(--foreground)] mt-0.5 block">
+                  {fmtSize(currentResource.file_size) || "Unknown"}
+                </span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Highlighted Notes / Contributor Guidance */}
-        {resource.description && (
+        {!isEditing && currentResource.description && (
           <div className="p-4 rounded-2xl bg-[var(--surface-hover)] border border-[var(--border)]">
             <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[var(--accent)] mb-1.5">
               <Sparkles className="w-3.5 h-3.5" />
               <span>Contributor Notes & Key Highlights</span>
             </div>
             <p className="text-xs sm:text-sm text-[var(--foreground)]/90 leading-relaxed whitespace-pre-line">
-              {resource.description}
+              {currentResource.description}
             </p>
           </div>
         )}
 
         {/* Moderation Verification Note */}
-        <div className="p-3 rounded-xl border border-[var(--border)]/60 bg-[var(--surface)] text-[11px] text-[var(--muted)] flex items-center gap-2.5">
-          <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>
-            {isPlatform
-              ? "Official platform resource published and vetted directly by IB Nexus curriculum directors."
-              : "Quality & Academic Integrity: Community submissions are manually checked and approved by IB Nexus moderators before appearing here."}
-          </span>
-        </div>
+        {!isEditing && (
+          <div className="p-3 rounded-xl border border-[var(--border)]/60 bg-[var(--surface)] text-[11px] text-[var(--muted)] flex items-center gap-2.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              {isPlatform
+                ? "Official platform resource published and vetted directly by IB Nexus curriculum directors."
+                : "Quality & Academic Integrity: Community submissions are manually checked and approved by IB Nexus moderators before appearing here."}
+            </span>
+          </div>
+        )}
 
         {/* Action Buttons */}
-        <div className="flex items-center gap-2 pt-2 border-t border-[var(--border)]">
+        <div className="flex items-center gap-2 pt-2 border-t border-[var(--border)] flex-wrap">
           <Button
             type="button"
             variant="primary"
-            onClick={() => { onClose(); onPreview && onPreview(resource); }}
+            onClick={() => { onClose(); onPreview && onPreview(currentResource); }}
             className="flex-1"
           >
             <BookOpen className="w-4 h-4 mr-2" /> Open in Viewer
@@ -934,16 +1262,26 @@ function PublisherDetailsModal({ open, resource, onClose, onPreview, onStudy, di
           <Button
             type="button"
             variant="secondary"
-            onClick={() => directDownload(resource)}
+            onClick={() => directDownload(currentResource)}
             className="shrink-0"
           >
             <Download className="w-4 h-4 mr-1.5" /> Download
           </Button>
+          {isAdmin && !isEditing && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsEditing(true)}
+              className="shrink-0 text-xs text-[var(--accent)] border-[var(--accent)]/30 hover:bg-[var(--accent)]/10"
+            >
+              <Pencil className="w-3.5 h-3.5 mr-1" /> Edit
+            </Button>
+          )}
           {onStudy && (
             <Button
               type="button"
               variant="secondary"
-              onClick={() => { onClose(); onStudy(resource); }}
+              onClick={() => { onClose(); onStudy(currentResource); }}
               className="shrink-0"
               title="Add to study plan"
             >
@@ -2744,6 +3082,11 @@ export default function ResourcesClient({ userProfile, userProgram, isAdmin, use
         onPreview={setPreviewResource}
         onStudy={setStudyResource}
         directDownload={directDownload}
+        isAdmin={isAdmin}
+        onResourceUpdated={(updated) => {
+          handleResourceUpdated(updated);
+          setDetailsResource(updated);
+        }}
       />
 
       {isAdmin && (
